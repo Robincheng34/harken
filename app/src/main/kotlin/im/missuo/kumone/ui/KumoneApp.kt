@@ -21,7 +21,10 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.foundation.layout.navigationBarsPadding
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -38,6 +41,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
@@ -52,7 +56,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.toIntSize
 import android.graphics.Bitmap
 import android.os.Build
-import kotlinx.coroutines.delay
+import android.util.Log
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -96,6 +100,17 @@ import im.missuo.kumone.storage.settings.AppAppearance
 import im.missuo.kumone.storage.settings.AppSettings
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
+
+/**
+ * 背后内容截帧的最大重试次数（逐帧等待，见 [TabsScreen]）。
+ *
+ * 图层录制与首帧绘制存在时序竞争：首次组合 / 切 Tab 时可能截到尚未录制的空图层，
+ * 因此逐帧等待并重试，尺寸非零才算成功。
+ */
+private const val BEHIND_CAPTURE_ATTEMPTS = 5
+
+/** 镜片诊断日志 tag（真机 `adb logcat -s LiquidGlassLens` 观察捕获结果）。 */
+private const val TAG_LENS = "LiquidGlassLens"
 
 /**
  * 应用根。由 [MainActivity] 调用，包裹主题与全部 CompositionLocal。
@@ -246,6 +261,11 @@ private fun TabsScreen(
     var behindBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
     var screenHeightPx by remember { mutableStateOf(0) }
 
+    // 底部系统手势栏内边距（px）。悬浮 chrome 用 navigationBarsPadding 抬到其上，
+    // 因此折射源条带必须取「手势栏之上」的底部一段，且传给 GlassTabBar 的高度也要
+    // 扣掉这段，否则镜片裁剪会整体错位一个手势栏高度。
+    val navInsetPx = WindowInsets.navigationBars.getBottom(LocalDensity.current)
+
     // 折射源条带高度（px）：必须在可组合作用域内解析 Density——
     // LaunchedEffect 的协程体内不能读取 CompositionLocal。
     val stripHeightPx = with(LocalDensity.current) {
@@ -254,23 +274,38 @@ private fun TabsScreen(
 
     // 捕获 TabBar 背后内容条带，作为 IT之家液态玻璃「选中标尺」折射源（仅 API33+）。
     // 内容 Box 经 drawWithContent + GraphicsLayer.record 把绘制命令重定向到
-    // behindLayer（Compose 1.7 捕获可组合内容为位图的官方模式），待布局稳定后
-    // toImageBitmap 并裁剪底部条带。任何异常都回落 null → Canvas 兜底，绝不破坏运行。
-    LaunchedEffect(behindLayer, selectedTab) {
-        if (Build.VERSION.SDK_INT >= 33) {
-            delay(48)
-            try {
-                val full = behindLayer.toImageBitmap()
-                val src = full.asAndroidBitmap()
-                val h = minOf(stripHeightPx, src.height)
-                val y = maxOf(0, src.height - h)
-                behindBitmap = if (src.width > 0 && h > 0) {
-                    Bitmap.createBitmap(src, 0, y, src.width, h).asImageBitmap()
-                } else {
-                    null
+    // behindLayer（Compose 1.7 捕获可组合内容为位图的官方模式）。
+    // 图层录制与首帧绘制存在时序竞争：单发一次容易截到空图层（镜片回落扁平药丸），
+    // 故逐帧等待、最多重试 [BEHIND_CAPTURE_ATTEMPTS] 次，尺寸非零才算成功；
+    // 全部失败才置 null → Canvas 兜底，绝不破坏运行。
+    LaunchedEffect(behindLayer, selectedTab, screenHeightPx) {
+        if (Build.VERSION.SDK_INT >= 33 && screenHeightPx > 0) {
+            var captured: ImageBitmap? = null
+            for (attempt in 0 until BEHIND_CAPTURE_ATTEMPTS) {
+                // 等下一帧，确保图层至少被录制过一次内容。
+                withFrameNanos { }
+                try {
+                    val src = behindLayer.toImageBitmap().asAndroidBitmap()
+                    val h = minOf(stripHeightPx, src.height)
+                    // 条带顶边与 GlassTabBar 的 stripTopInScreen 对齐
+                    // （= screenHeightPx - stripHeightPx），故同样扣除手势栏高度。
+                    val top = maxOf(0, src.height - navInsetPx - h)
+                    if (src.width > 0 && h > 0 && top + h <= src.height) {
+                        captured = Bitmap
+                            .createBitmap(src, 0, top, src.width, h)
+                            .asImageBitmap()
+                    }
+                } catch (e: Exception) {
+                    captured = null
                 }
-            } catch (e: Exception) {
-                behindBitmap = null
+                if (captured != null) break
+            }
+            behindBitmap = if (captured != null) {
+                Log.i(TAG_LENS, "behind capture: ${captured.width}x${captured.height}")
+                captured
+            } else {
+                Log.i(TAG_LENS, "behind capture: null")
+                null
             }
         } else {
             behindBitmap = null
@@ -301,26 +336,36 @@ private fun TabsScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .onSizeChanged { screenHeightPx = it.height }
-            .then(captureModifier),
+            .onSizeChanged { screenHeightPx = it.height },
     ) {
-        when (selectedTab) {
-            AppTab.HOME -> HomeScreen(navController = overlayNav)
-            AppTab.EXPLORE -> ExploreScreen(navController = overlayNav)
-            AppTab.SEARCH -> SearchScreen(navController = overlayNav)
-            AppTab.FM -> FmScreen(onOpenLogin = { overlayNav.navigate(Destinations.LOGIN) })
-            AppTab.LIBRARY -> LibraryScreen(
-                onNavigate = { overlayNav.navigate(it) },
-                onOpenLogin = { overlayNav.navigate(Destinations.LOGIN) },
-            )
+        // 只把「Tab 页面内容」录进折射图层：悬浮 chrome（迷你播放条 / TabBar）必须留在
+        // 图层之外，否则镜片折射到的是 TabBar 自身的深色玻璃像素而不是背后内容。
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .then(captureModifier),
+        ) {
+            when (selectedTab) {
+                AppTab.HOME -> HomeScreen(navController = overlayNav)
+                AppTab.EXPLORE -> ExploreScreen(navController = overlayNav)
+                AppTab.SEARCH -> SearchScreen(navController = overlayNav)
+                AppTab.FM -> FmScreen(onOpenLogin = { overlayNav.navigate(Destinations.LOGIN) })
+                AppTab.LIBRARY -> LibraryScreen(
+                    onNavigate = { overlayNav.navigate(it) },
+                    onOpenLogin = { overlayNav.navigate(Destinations.LOGIN) },
+                )
+            }
         }
 
         // 迷你播放条（Tab 内容之上、TabBar 上方）：以 bottom padding 抬到 TabBar 上方避免重合；
         // 收集播放状态以在有曲目时自动弹出；下滑可收起，切歌时自动重新弹出。
         // 弹出/收起带丝滑滑动动画（起播从底部滑入、收起向下滑出，官方客户端同款）。
+        // navigationBarsPadding：edge-to-edge（targetSdk 35）下抬到系统手势栏之上，
+        // 否则底栏被手势栏压住，不悬浮、玻璃观感丢失。
         Box(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
+                .navigationBarsPadding()
                 .padding(bottom = Layout.tabBarHeight + Layout.barSpacing),
         ) {
             val controller = LocalMusicController.current
@@ -360,13 +405,20 @@ private fun TabsScreen(
             }
         }
 
-        Box(modifier = Modifier.align(Alignment.BottomCenter)) {
+        // navigationBarsPadding：抬到系统手势栏之上，底栏完整圆角与留白可见。
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .navigationBarsPadding(),
+        ) {
             GlassTabBar(
                 selected = selectedTab,
                 onSelect = onSelectTab,
                 tabs = tabs,
                 behindBackground = behindBitmap,
-                screenHeightPx = screenHeightPx,
+                // 传「手势栏之上的内容高度」：GlassTabBar 以 screenHeightPx - stripHeightPx
+                // 定位条带顶边，与上面按 navInsetPx 裁出的位图保持 1:1 对齐。
+                screenHeightPx = (screenHeightPx - navInsetPx).coerceAtLeast(0),
             )
         }
     }

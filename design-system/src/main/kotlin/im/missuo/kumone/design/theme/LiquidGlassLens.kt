@@ -74,15 +74,15 @@ fun createLensRuntimeShader(
         BitmapShader(background, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP),
     )
     rs.setFloatUniform("tintColor", tint.red, tint.green, tint.blue)
-    rs.setFloatUniform("tintAlpha", 0.14f)
+    rs.setFloatUniform("tintAlpha", 0.05f)
     rs.setFloatUniform("isDark", if (isDark) 1f else 0f)
     rs.setFloatUniform("offset", 0f, 0f)
     rs.setFloatUniform("refractionAxis", 1f, 1f)
-    rs.setFloatUniform("depthEffect", 0.5f)
-    rs.setFloatUniform("dispersion", 0.06f)
-    rs.setFloatUniform("contrast", 0.08f)
-    rs.setFloatUniform("whitePoint", 0f)
-    rs.setFloatUniform("chromaMultiplier", 1.0f)
+    rs.setFloatUniform("depthEffect", 0.75f)
+    rs.setFloatUniform("dispersion", 0.22f)
+    rs.setFloatUniform("contrast", 0.20f)
+    rs.setFloatUniform("whitePoint", 0.60f)
+    rs.setFloatUniform("chromaMultiplier", 1.2f)
     // size / cornerRadius / refractionHeight / refractionAmount / edgeHighlight 在绘制时设置。
     return rs
 }
@@ -104,8 +104,8 @@ fun LiquidGlassLens(
     edgeHighlight: Float,
     modifier: Modifier = Modifier,
     cornerRadiusDp: Dp = 30.dp,
-    refractionHeightDp: Dp = 26.dp,
-    refractionAmountDp: Dp = 10.dp,
+    refractionHeightDp: Dp = 48.dp,
+    refractionAmountDp: Dp = 36.dp,
 ) {
     val density = LocalDensity.current.density
     val cornerRadiusPx = cornerRadiusDp.value * density
@@ -118,6 +118,7 @@ fun LiquidGlassLens(
         val bmp = remember(background) { background.asAndroidBitmap() }
         val isDark = isSystemInDarkTheme()
         val rs = remember(agsl, bmp, tint, isDark) {
+            android.util.Log.i("LiquidGlassLens", "lens shader created for ${bmp.width}x${bmp.height}")
             createLensRuntimeShader(agsl, bmp, tint, isDark)
         }
         Box(

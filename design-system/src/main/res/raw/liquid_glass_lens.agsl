@@ -131,5 +131,5 @@ half4 main(float2 coord) {
     color = mix(color, contourColor,
             rim * (1.0 - lightFacing) * edgeHighlight * 0.42 * rimVisibility);
 
-    return half4(color, source.a);
+    return half4(color, 1.0);
 }

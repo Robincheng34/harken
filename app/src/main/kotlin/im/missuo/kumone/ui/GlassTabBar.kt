@@ -124,6 +124,9 @@ private fun TabItem(
     val scale = remember { Animatable(1f) }
     // 同一 InteractionSource 供 clickable 与按压态监听共用（避免重复创建导致状态错位）。
     val interactionSource = remember { MutableInteractionSource() }
+    // API33+ 且有背后内容位图时，选中态由 IT之家液态玻璃镜片承担高亮；
+    // 此时隐藏独立的品牌色光斑（否则红粉色光斑会与镜片争抢注意力，玻璃观感被淹没）。
+    val useLens = isSelected && behindBackground != null && Build.VERSION.SDK_INT >= 33
 
     // 镜片区域在屏幕中的绝对位置（onPlaced 写入），用于将背后位图裁剪到本 Tab 区域，
     // 使镜片局部坐标与折射源 1:1 对齐（否则只会折射到整条位图左上角）。
@@ -160,7 +163,7 @@ private fun TabItem(
     val edgeHighlight by animateFloatAsState(
         targetValue = when {
             isPressed -> 1f
-            isSelected -> 0.55f
+            isSelected -> 1.0f
             else -> 0f
         },
         animationSpec = spring(
@@ -254,20 +257,21 @@ private fun TabItem(
             verticalArrangement = Arrangement.spacedBy(3.dp),
         ) {
             Box(contentAlignment = Alignment.Center) {
-                // 光斑 Box 常驻（原 bug：if (glow > 0.01f) 在组合期读 animateFloatAsState
-                // 的值，动画期间整项每帧重组）；alpha/scale 全部移入 graphicsLayer
-                // lambda 延迟读取，动画期仅重绘不重组。
-                Box(
-                    modifier = Modifier
-                        .size(36.dp)
-                        .graphicsLayer {
-                            alpha = glow.coerceAtMost(1f)
-                            scaleX = 0.6f + 0.4f * glow
-                            scaleY = 0.6f + 0.4f * glow
-                        }
-                        .clip(CircleShape)
-                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.16f)),
-                )
+                // 光斑 Box 仅在未启用镜片（API<33 兜底 / 无背后内容）时显示；
+                // 镜片启用时由上方 LiquidGlassLens 承担高亮，避免红粉色光斑盖过玻璃观感。
+                if (!useLens) {
+                    Box(
+                        modifier = Modifier
+                            .size(36.dp)
+                            .graphicsLayer {
+                                alpha = glow.coerceAtMost(1f)
+                                scaleX = 0.6f + 0.4f * glow
+                                scaleY = 0.6f + 0.4f * glow
+                            }
+                            .clip(CircleShape)
+                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)),
+                    )
+                }
                 Icon(
                     imageVector = tab.icon,
                     contentDescription = tab.label,
