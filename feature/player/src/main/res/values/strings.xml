@@ -1,0 +1,50 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 播放（feature/player）中文文案真源。 -->
+<resources>
+    <string name="player_lyrics">歌词</string>
+    <string name="player_cover">封面</string>
+    <string name="player_queue">播放队列</string>
+    <string name="player_queue_empty">队列为空</string>
+    <string name="player_no_lyrics">暂无歌词</string>
+    <string name="player_instrumental">纯音乐</string>
+    <string name="player_trial">试听</string>
+    <!--
+      试听提示文案已移至 :core:player 的 strings.xml（同名 player_trial_toast）：
+      提示由常驻 MusicController 下发，文案宿主须与发出者同模块，此处保留会形成
+      两份真源。
+    -->
+    <string name="player_upcoming">即将播放</string>
+    <string name="player_clear_queue">清空队列</string>
+
+    <!-- 官方客户端播放页（顶栏 / 社交行 / 音质标签 / 五图标行）。 -->
+    <string name="player_playing">正在播放</string>
+    <string name="player_share">分享</string>
+    <string name="player_follow">关注</string>
+    <string name="player_following">已关注</string>
+    <string name="player_like">喜欢</string>
+    <string name="player_comment">评论</string>
+    <string name="player_sound_effect">音效</string>
+    <string name="player_song_info">歌曲信息</string>
+    <string name="player_download">下载</string>
+    <string name="player_more">更多</string>
+    <string name="player_sound_effect_unsupported">音效调节暂未支持</string>
+    <string name="player_download_unsupported">下载功能暂未支持</string>
+    <string name="player_comment_unsupported">评论功能暂未支持</string>
+    <string name="player_copy_link">复制链接</string>
+    <string name="player_link_copied">链接已复制</string>
+    <string name="player_login_required">请先登录</string>
+    <string name="player_quality_standard">标准</string>
+    <string name="player_quality_higher">较高</string>
+    <string name="player_quality_exhigh">极高</string>
+    <string name="player_quality_lossless">无损</string>
+    <string name="player_quality_hires">高解析</string>
+    <string name="player_quality_tag">%1$s音质·智能音效</string>
+    <string name="player_info_title">歌曲信息</string>
+    <string name="player_info_song">歌曲</string>
+    <string name="player_info_artist">歌手</string>
+    <string name="player_info_album">专辑</string>
+    <string name="player_info_duration">时长</string>
+    <string name="player_info_quality">音质</string>
+    <string name="player_info_id">歌曲 ID</string>
+    <string name="player_share_chooser">分享歌曲</string>
+</resources>

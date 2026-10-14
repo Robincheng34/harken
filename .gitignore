@@ -1,0 +1,23 @@
+# Kumone 雲音 — Gradle project layout
+.gradle/
+build/
+local.properties
+captures/
+.externalNativeBuild/
+.cxx/
+build_*.log
+*.log
+
+# IDE
+.idea/
+*.iml
+.kotlin/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Signing material (never commit)
+*.jks
+*.keystore
+keystore.properties

@@ -1,0 +1,21 @@
+{
+  "code": 200,
+  "list": [
+    {
+      "id": 19723756,
+      "name": "飙升榜",
+      "coverImgUrl": "http://p1.music.126.net/toplist=cover.jpg",
+      "updateFrequency": "每天更新",
+      "tracks": [{ "first": "海阔天空", "second": "Beyond" }],
+      "playCount": 1.92E7
+    },
+    {
+      "id": 3779629,
+      "name": "新歌榜",
+      "coverImgUrl": "http://p2.music.126.net/toplist2.jpg",
+      "updateFrequency": "每天更新",
+      "tracks": [],
+      "playCount": 12345678
+    }
+  ]
+}

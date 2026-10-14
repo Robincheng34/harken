@@ -1,0 +1,41 @@
+{
+  "code": 200,
+  "playlist": {
+    "id": 3136952023,
+    "name": "海阔天空 Beyond 精选",
+    "coverImgUrl": "http://p1.music.126.net/playlist=cover.jpg",
+    "creator": {
+      "userId": 1,
+      "nickname": "missuo",
+      "avatarUrl": "http://p1.music.126.net/avatar.jpg"
+    },
+    "description": "Beyond 经典合集",
+    "trackCount": 2,
+    "playCount": 1.92E7,
+    "subscribedCount": 1234,
+    "subscribed": false,
+    "trackIds": [{ "id": 347230 }, { "id": 347231 }],
+    "tracks": [
+      {
+        "id": 347230,
+        "name": "海阔天空",
+        "ar": [{ "id": 6472, "name": "Beyond" }],
+        "al": { "id": 34512, "name": "海阔天空", "picUrl": "http://p1.music.126.net/al=34512.jpg" },
+        "dt": 326000
+      },
+      {
+        "id": 347231,
+        "name": "光辉岁月",
+        "ar": [{ "id": 6472, "name": "Beyond" }],
+        "al": { "id": 34513, "name": "乐与怒" },
+        "dt": 285000
+      }
+    ],
+    "specialType": 0,
+    "updateTime": 1700000000000
+  },
+  "privileges": [
+    { "id": 347230, "fee": 0, "pl": 320000, "st": 0, "cs": false },
+    { "id": 347231, "fee": 1, "pl": 0, "st": 0, "cs": false }
+  ]
+}

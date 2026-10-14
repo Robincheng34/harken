@@ -1,0 +1,373 @@
+// Ported from kumone by missuo (LGPL-3.0)
+//
+// 应用根可组合（架构文档 §3 `ui/KumoneApp.kt`）。
+//
+// 结构：
+//  - `TabsScreen`：当前 Tab 内容 + 迷你播放条（52dp）+ 悬浮 GlassTabBar。
+//  - 覆盖层 `NavHost`：详情 / 登录 / 全屏播放 / 设置 / P1 页面叠加其上，不影响 Tab 状态。
+//  - 未登录时自动升起 `LoginSheet`。
+//  - 下发 MusicController / NeteaseApi / SettingsRepository / PlaybackCommands /
+//    登录态 / Toast 六个 CompositionLocal。
+
+package im.missuo.kumone.ui
+
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutVertically
+import androidx.compose.foundation.background
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.padding
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.ModalBottomSheet
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.saveable.rememberSaveable
+import androidx.compose.runtime.setValue
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.layer.drawLayer
+import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.graphics.asAndroidBitmap
+import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.graphics.rememberGraphicsLayer
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.toIntSize
+import android.graphics.Bitmap
+import android.os.Build
+import kotlinx.coroutines.delay
+import androidx.navigation.NavHostController
+import androidx.navigation.compose.NavHost
+import androidx.navigation.compose.composable
+import androidx.navigation.compose.rememberNavController
+import im.missuo.kumone.design.component.ToastCenter
+import im.missuo.kumone.design.component.rememberToastState
+import im.missuo.kumone.design.composition.LocalIsLoggedIn
+import im.missuo.kumone.design.composition.LocalMusicController
+import im.missuo.kumone.design.composition.LocalNeteaseApi
+import im.missuo.kumone.design.composition.LocalOnLoginConfirmed
+import im.missuo.kumone.design.composition.LocalOnLoggedOut
+import im.missuo.kumone.design.composition.LocalOpenNowPlaying
+import im.missuo.kumone.design.composition.LocalPlaybackCommands
+import im.missuo.kumone.design.composition.LocalSettingsRepository
+import im.missuo.kumone.design.composition.LocalToastState
+import im.missuo.kumone.design.navigation.Destinations
+import im.missuo.kumone.design.theme.Layout
+import im.missuo.kumone.design.theme.KumoneTheme
+import im.missuo.kumone.design.theme.QUICK_MILLIS
+import im.missuo.kumone.design.theme.SMOOTH_MILLIS
+import im.missuo.kumone.design.theme.STANDARD_MILLIS
+import im.missuo.kumone.di.AppGraph
+import im.missuo.kumone.di.LoginState
+import im.missuo.kumone.feature.detail.detailGraph
+import im.missuo.kumone.feature.explore.ExploreScreen
+import im.missuo.kumone.feature.explore.exploreGraph
+import im.missuo.kumone.feature.fm.FmScreen
+import im.missuo.kumone.feature.fm.fmGraph
+import im.missuo.kumone.feature.home.HomeScreen
+import im.missuo.kumone.feature.home.homeGraph
+import im.missuo.kumone.feature.library.LibraryScreen
+import im.missuo.kumone.feature.library.libraryGraph
+import im.missuo.kumone.feature.login.LoginSheet
+import im.missuo.kumone.feature.login.loginGraph
+import im.missuo.kumone.feature.player.MiniPlayerBar
+import im.missuo.kumone.feature.player.playerGraph
+import im.missuo.kumone.feature.search.SearchScreen
+import im.missuo.kumone.feature.search.searchGraph
+import im.missuo.kumone.feature.settings.settingsGraph
+import im.missuo.kumone.storage.settings.AppAppearance
+import im.missuo.kumone.storage.settings.AppSettings
+import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.launch
+
+/**
+ * 应用根。由 [MainActivity] 调用，包裹主题与全部 CompositionLocal。
+ */
+@Composable
+fun KumoneApp(graph: AppGraph) {
+    val appScope = rememberCoroutineScope()
+    val toastState = rememberToastState()
+
+    // 外观设置（原 bug：KumoneTheme 未传 darkTheme，「外观」设置从未生效）。
+    // 在主题外收集完整 AppSettings，按 appearance 解析深浅色：
+    // AUTO → 跟随系统；LIGHT/DARK → 强制。
+    val settings by graph.settings.settings.collectAsStateWithLifecycle(initialValue = null)
+    val darkTheme = when (settings?.appearance) {
+        AppAppearance.LIGHT -> false
+        AppAppearance.DARK -> true
+        else -> isSystemInDarkTheme()
+    }
+
+    KumoneTheme(darkTheme = darkTheme) {
+        CompositionLocalProvider(
+            LocalMusicController provides graph.musicController,
+            LocalNeteaseApi provides graph.neteaseApi,
+            LocalSettingsRepository provides graph.settings,
+            LocalPlaybackCommands provides graph.playbackCommands,
+            LocalIsLoggedIn provides graph.isLoggedIn,
+            LocalToastState provides toastState,
+            LocalOnLoginConfirmed provides {
+                appScope.launch {
+                    graph.bootstrap()
+                }
+            },
+            // 登出成功后刷新全局登录态（原 bug：AppGraph.onLoggedOut 零调用）。
+            LocalOnLoggedOut provides {
+                graph.onLoggedOut()
+            },
+        ) {
+            AppContent(graph)
+        }
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun AppContent(graph: AppGraph) {
+    val overlayNav: NavHostController = rememberNavController()
+    // rememberSaveable：旋转/进程重建后保留选中 Tab（enum 可序列化）。
+    var selectedTab by rememberSaveable { mutableStateOf(AppTab.HOME) }
+    val toastState = LocalToastState.current
+
+    // 底部导航栏自定义配置：按设置页保存的顺序渲染可见 Tab（未配置时为全部默认顺序）。
+    val settingsRepository = LocalSettingsRepository.current
+    val storedSettings by remember(settingsRepository) {
+        settingsRepository?.settings ?: flowOf<AppSettings?>(null)
+    }.collectAsStateWithLifecycle(initialValue = null)
+    val visibleTabs = remember(storedSettings) {
+        storedSettings?.tabOrder
+            ?.mapNotNull { key -> AppTab.entries.firstOrNull { it.name == key } }
+            ?.distinct()
+            ?.ifEmpty { AppTab.entries.toList() }
+            ?: AppTab.entries.toList()
+    }
+    // 当前选中的 Tab 被隐藏时，回落到第一个可见 Tab。
+    LaunchedEffect(visibleTabs) {
+        if (selectedTab !in visibleTabs) selectedTab = visibleTabs.first()
+    }
+
+    // 播放层提示（试听 / 已使用第三方音源）：由常驻 MusicController 判定并上抛
+    // 资源 ID，此处统一解析并弹（iOS PlayerService.swift:1093-1100）。挂在根
+    // 可组合上，因此任意页面、播放页未打开时都能弹出。
+    // 资源 ID 由 MusicController（非 Composable 层）上抛，此处在可组合作用域内
+    // 解析成文案；`stringResource` 不能在 LaunchedEffect 的协程体内调用。
+    val context = LocalContext.current
+    LaunchedEffect(graph.musicController) {
+        graph.musicController.playerToastEvent.collect { event ->
+            val text = if (event.args.isEmpty()) {
+                context.getString(event.messageRes)
+            } else {
+                context.getString(event.messageRes, *event.args.toTypedArray())
+            }
+            toastState.show(text)
+        }
+    }
+
+    // 官方客户端行为：点击歌曲起播后自动跳转全屏播放页。
+    // 收口在 PlaybackCommands.play（歌单/专辑/歌手/搜索/推荐等一切点歌路径），
+    // 此处把该回调桥到覆盖层 NavController；已在播放页则不重复入栈。
+    val openNowPlaying: () -> Unit = {
+        if (overlayNav.currentDestination?.route != Destinations.NOW_PLAYING) {
+            overlayNav.navigate(Destinations.NOW_PLAYING)
+        }
+    }
+    LaunchedEffect(graph.playbackCommands, overlayNav) {
+        graph.playbackCommands.onPlayStarted = openNowPlaying
+    }
+    DisposableEffect(graph.playbackCommands) {
+        onDispose { graph.playbackCommands.onPlayStarted = null }
+    }
+
+    // LocalOpenNowPlaying 必须在本作用域提供（overlayNav 在此创建）；
+    // 迷你播放条等入口经它打开全屏播放页，与起播钩子同一导航函数。
+    CompositionLocalProvider(LocalOpenNowPlaying provides openNowPlaying) {
+        Box(modifier = Modifier.fillMaxSize()) {
+            TabsScreen(
+                selectedTab = selectedTab,
+                onSelectTab = { selectedTab = it },
+                overlayNav = overlayNav,
+                tabs = visibleTabs,
+            )
+
+            // 覆盖层：详情 / 登录 / 全屏播放 / 设置 / P1。
+            NavHost(
+                navController = overlayNav,
+                startDestination = Destinations.NONE,
+                modifier = Modifier.fillMaxSize(),
+            ) {
+                composable(Destinations.NONE) { Box(Modifier.fillMaxSize()) }
+                homeGraph(overlayNav)
+                exploreGraph(overlayNav)
+                searchGraph(overlayNav)
+                detailGraph(overlayNav)
+                fmGraph(overlayNav)
+                libraryGraph(overlayNav)
+                settingsGraph(overlayNav)
+                loginGraph(overlayNav)
+                playerGraph(overlayNav)
+            }
+
+            // 进程级 Toast 中心。
+            ToastCenter(state = toastState)
+        }
+    }
+}
+
+/**
+ * 底部 Tab 容器：渲染当前 Tab 内容 + 迷你播放条 + 悬浮 GlassTabBar。
+ *
+ * @param tabs 由设置页「导航栏」配置的可见 Tab 列表（已按自定义顺序排列）。
+ */
+@Composable
+private fun TabsScreen(
+    selectedTab: AppTab,
+    onSelectTab: (AppTab) -> Unit,
+    overlayNav: NavHostController,
+    tabs: List<AppTab>,
+) {
+    val behindLayer = rememberGraphicsLayer()
+    var behindBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
+    var screenHeightPx by remember { mutableStateOf(0) }
+
+    // 折射源条带高度（px）：必须在可组合作用域内解析 Density——
+    // LaunchedEffect 的协程体内不能读取 CompositionLocal。
+    val stripHeightPx = with(LocalDensity.current) {
+        (Layout.tabBarHeight + Layout.bottomMargin + Layout.extraPadding).roundToPx()
+    }
+
+    // 捕获 TabBar 背后内容条带，作为 IT之家液态玻璃「选中标尺」折射源（仅 API33+）。
+    // 内容 Box 经 drawWithContent + GraphicsLayer.record 把绘制命令重定向到
+    // behindLayer（Compose 1.7 捕获可组合内容为位图的官方模式），待布局稳定后
+    // toImageBitmap 并裁剪底部条带。任何异常都回落 null → Canvas 兜底，绝不破坏运行。
+    LaunchedEffect(behindLayer, selectedTab) {
+        if (Build.VERSION.SDK_INT >= 33) {
+            delay(48)
+            try {
+                val full = behindLayer.toImageBitmap()
+                val src = full.asAndroidBitmap()
+                val h = minOf(stripHeightPx, src.height)
+                val y = maxOf(0, src.height - h)
+                behindBitmap = if (src.width > 0 && h > 0) {
+                    Bitmap.createBitmap(src, 0, y, src.width, h).asImageBitmap()
+                } else {
+                    null
+                }
+            } catch (e: Exception) {
+                behindBitmap = null
+            }
+        } else {
+            behindBitmap = null
+        }
+    }
+
+    // 截帧修饰符仅 API33+ 挂载：API<33 设备 behindBitmap 恒为 null、不使用镜片，
+    // 若仍每帧把整屏内容重录进离屏 GraphicsLayer 再合成回来，纯属浪费 GPU，
+    // 构成老设备性能回归。门控后 API<33 内容正常直绘（零回归），API33+ 行为不变。
+    val captureModifier = if (Build.VERSION.SDK_INT >= 33) {
+        // 将内容的绘制命令重定向到 behindLayer，再把它绘制到可见画布
+        // （Compose 1.7 官方捕获模式；位图仅在 API33+ 的 LaunchedEffect 中读取）。
+        Modifier.drawWithContent {
+            behindLayer.record(
+                this,
+                layoutDirection,
+                size.toIntSize(),
+            ) {
+                this@drawWithContent.drawContent()
+            }
+            drawLayer(behindLayer)
+        }
+    } else {
+        Modifier
+    }
+
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .background(MaterialTheme.colorScheme.background)
+            .onSizeChanged { screenHeightPx = it.height }
+            .then(captureModifier),
+    ) {
+        when (selectedTab) {
+            AppTab.HOME -> HomeScreen(navController = overlayNav)
+            AppTab.EXPLORE -> ExploreScreen(navController = overlayNav)
+            AppTab.SEARCH -> SearchScreen(navController = overlayNav)
+            AppTab.FM -> FmScreen(onOpenLogin = { overlayNav.navigate(Destinations.LOGIN) })
+            AppTab.LIBRARY -> LibraryScreen(
+                onNavigate = { overlayNav.navigate(it) },
+                onOpenLogin = { overlayNav.navigate(Destinations.LOGIN) },
+            )
+        }
+
+        // 迷你播放条（Tab 内容之上、TabBar 上方）：以 bottom padding 抬到 TabBar 上方避免重合；
+        // 收集播放状态以在有曲目时自动弹出；下滑可收起，切歌时自动重新弹出。
+        // 弹出/收起带丝滑滑动动画（起播从底部滑入、收起向下滑出，官方客户端同款）。
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .padding(bottom = Layout.tabBarHeight + Layout.barSpacing),
+        ) {
+            val controller = LocalMusicController.current
+            if (controller != null) {
+                val playerState by controller.state.collectAsStateWithLifecycle()
+                val currentTrackId = playerState.currentTrack?.id
+                var miniPlayerCollapsed by remember { mutableStateOf(false) }
+                // 切换到新曲目时自动重新弹出（用户下滑收起后，换歌会再次出现）。
+                LaunchedEffect(currentTrackId) { miniPlayerCollapsed = false }
+                // 打开播放页统一走 AppContent 注入的带守卫入口（原 bug：直接
+                // navigate 无 currentDestination 守卫，双击重复入栈播放页）。
+                val openNowPlaying = LocalOpenNowPlaying.current
+                AnimatedVisibility(
+                    visible = currentTrackId != null && !miniPlayerCollapsed,
+                    enter = slideInVertically(
+                        initialOffsetY = { it },
+                        animationSpec = tween(
+                            durationMillis = SMOOTH_MILLIS,
+                            easing = FastOutSlowInEasing,
+                        ),
+                    ) + fadeIn(animationSpec = tween(durationMillis = STANDARD_MILLIS)),
+                    exit = slideOutVertically(
+                        targetOffsetY = { it },
+                        animationSpec = tween(
+                            durationMillis = SMOOTH_MILLIS,
+                            easing = FastOutSlowInEasing,
+                        ),
+                    ) + fadeOut(animationSpec = tween(durationMillis = QUICK_MILLIS)),
+                ) {
+                    MiniPlayerBar(
+                        // 复用带 currentDestination 守卫的入口（原 bug：直接
+                        // navigate 无守卫，双击重复入栈播放页）。
+                        onOpenNowPlaying = { openNowPlaying?.invoke() },
+                        onCollapse = { miniPlayerCollapsed = true },
+                    )
+                }
+            }
+        }
+
+        Box(modifier = Modifier.align(Alignment.BottomCenter)) {
+            GlassTabBar(
+                selected = selectedTab,
+                onSelect = onSelectTab,
+                tabs = tabs,
+                behindBackground = behindBitmap,
+                screenHeightPx = screenHeightPx,
+            )
+        }
+    }
+}

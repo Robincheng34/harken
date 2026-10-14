@@ -1,0 +1,23 @@
+{
+  "playlist": [
+    {
+      "id": 3136952023,
+      "name": "雷达歌单",
+      "coverImgUrl": "http://p1.music.126.net/radar=example.jpg",
+      "playCount": 1.92E7,
+      "trackCount": 40,
+      "creator": { "userId": 1, "nickname": "missuo" },
+      "specialType": 0,
+      "subscribed": true
+    },
+    {
+      "id": 123456,
+      "name": "我喜欢的音乐",
+      "picUrl": "http://p2.music.126.net/liked=example.jpg",
+      "playcount": 12345678.0,
+      "trackCount": 210,
+      "specialType": 5
+    }
+  ],
+  "more": true
+}

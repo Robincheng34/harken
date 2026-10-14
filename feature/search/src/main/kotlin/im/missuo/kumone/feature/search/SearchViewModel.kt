@@ -1,0 +1,163 @@
+// Ported from kumone by missuo (LGPL-3.0)
+//
+// 搜索页 ViewModel（T20 `SearchViewModel.kt`，iOS `SearchViewModel` 1:1 移植）。
+//
+// 惰性按 Tab 加载（iOS `load(tab:)`）：每个 Tab 首次展示时并发/单独发起对应类型的
+// 检索；`loadedTabs` 记录已加载的 Tab，不重复请求；查询词变化时清空结果与已加载
+// 集合（iOS `setQuery`）。输入过程另发联想建议（`searchSuggest`）。
+// 纯 Kotlin + 协程，可纯 JVM 单测（见 `SearchViewModelTest`）。
+
+package im.missuo.kumone.feature.search
+
+import im.missuo.kumone.net.api.NeteaseApi
+import im.missuo.kumone.net.model.AlbumSummary
+import im.missuo.kumone.net.model.ArtistSummary
+import im.missuo.kumone.net.model.PlaylistSummary
+import im.missuo.kumone.net.model.SearchSuggestBody
+import im.missuo.kumone.net.model.Track
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.launch
+
+class SearchViewModel(
+    private val api: NeteaseApi,
+    private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
+) {
+    private val _uiState: MutableStateFlow<SearchUiState> = MutableStateFlow(SearchUiState())
+    val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
+
+    private var loadJob: Job? = null
+
+    /** 输入变化：更新关键字、清空旧结果与已加载集合，并触发联想（iOS `setQuery`）。 */
+    fun setQuery(query: String) {
+        val previous = _uiState.value.query
+        if (previous == query) return
+        loadJob?.cancel()
+        _uiState.update {
+            it.copy(
+                query = query,
+                // 查询词变化 → 结果与已加载 Tab 全部失效（iOS loadedTabs.removeAll）。
+                songs = emptyList(),
+                artists = emptyList(),
+                albums = emptyList(),
+                playlists = emptyList(),
+                loadedTabs = emptySet(),
+                suggestions = null,
+                error = null,
+                isSearching = false,
+            )
+        }
+        if (query.isNotBlank()) suggest(query)
+    }
+
+    /** 切换结果分区（iOS `model.tab`）：首次进入该 Tab 时按需加载。 */
+    fun selectTab(tab: SearchTab) {
+        _uiState.update { it.copy(tab = tab) }
+        load(tab)
+    }
+
+    /** 提交搜索（搜索按钮 / 回车）：加载当前 Tab。 */
+    fun search() {
+        load(_uiState.value.tab)
+    }
+
+    /**
+     * 按需加载某 Tab（iOS `load(tab:)`）：空查询或已加载则跳过。
+     *
+     * `ALL` 并发拉四路（limit 与 iOS 一致：songs 12 / 其余 10）；单类型 Tab
+     * 单路拉取（songs 100 / 其余 50）。
+     */
+    fun load(tab: SearchTab) {
+        val snapshot = _uiState.value
+        val keywords = snapshot.query.trim()
+        if (keywords.isEmpty()) return
+        if (tab in snapshot.loadedTabs) return
+
+        loadJob = scope.launch {
+            _uiState.update { it.copy(isSearching = true, error = null) }
+            try {
+                when (tab) {
+                    SearchTab.ALL -> loadAll(keywords)
+                    SearchTab.SONGS -> {
+                        val songs = runCatching { api.search(keywords, SearchTab.SONGS.searchType!!, 100) }
+                            .getOrNull()?.songs.orEmpty()
+                        _uiState.update { it.copy(songs = songs) }
+                    }
+                    SearchTab.ARTISTS -> {
+                        val artists = runCatching { api.search(keywords, SearchTab.ARTISTS.searchType!!, 50) }
+                            .getOrNull()?.artists.orEmpty()
+                        _uiState.update { it.copy(artists = artists) }
+                    }
+                    SearchTab.ALBUMS -> {
+                        val albums = runCatching { api.search(keywords, SearchTab.ALBUMS.searchType!!, 50) }
+                            .getOrNull()?.albums.orEmpty()
+                        _uiState.update { it.copy(albums = albums) }
+                    }
+                    SearchTab.PLAYLISTS -> {
+                        val playlists = runCatching { api.search(keywords, SearchTab.PLAYLISTS.searchType!!, 50) }
+                            .getOrNull()?.playlists.orEmpty()
+                        _uiState.update { it.copy(playlists = playlists) }
+                    }
+                }
+                _uiState.update {
+                    it.copy(isSearching = false, loadedTabs = it.loadedTabs + tab)
+                }
+            } catch (cancelled: kotlinx.coroutines.CancellationException) {
+                throw cancelled
+            } catch (error: Exception) {
+                _uiState.update {
+                    // 原 bug：catch 分支也把 tab 加入 loadedTabs，失败后该 Tab
+                    // 永不可重试。失败仅记错误态、不标记已加载，保留重试入口。
+                    it.copy(
+                        isSearching = false,
+                        error = error.message ?: ERROR_SEARCH,
+                    )
+                }
+            }
+        }
+    }
+
+    /** `ALL`：四路并发（iOS `async let` ×4，同一 scope 内并行）。 */
+    private suspend fun loadAll(keywords: String) = coroutineScope {
+        val songs = async { runCatching { api.search(keywords, SearchTab.SONGS.searchType!!, 12) }.getOrNull()?.songs }
+        val artists = async { runCatching { api.search(keywords, SearchTab.ARTISTS.searchType!!, 10) }.getOrNull()?.artists }
+        val albums = async { runCatching { api.search(keywords, SearchTab.ALBUMS.searchType!!, 10) }.getOrNull()?.albums }
+        val playlists = async { runCatching { api.search(keywords, SearchTab.PLAYLISTS.searchType!!, 10) }.getOrNull()?.playlists }
+        _uiState.update {
+            it.copy(
+                songs = songs.await().orEmpty(),
+                artists = artists.await().orEmpty(),
+                albums = albums.await().orEmpty(),
+                playlists = playlists.await().orEmpty(),
+            )
+        }
+    }
+
+    private fun suggest(keywords: String) {
+        scope.launch {
+            val body: SearchSuggestBody? = runCatching { api.searchSuggest(keywords) }.getOrNull()
+            // 仅当仍是同一关键字时才写入（避免竞态覆盖）。
+            if (_uiState.value.query == keywords) {
+                _uiState.update { it.copy(suggestions = body) }
+            }
+        }
+    }
+
+    /** 取消内部协程（页面销毁时由 UI 调用，避免收集器常驻泄漏）。 */
+    fun cancel() {
+        scope.cancel()
+    }
+
+    private companion object {
+        const val ERROR_SEARCH = "搜索失败"
+    }
+}

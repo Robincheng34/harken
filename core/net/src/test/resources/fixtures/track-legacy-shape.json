@@ -1,0 +1,38 @@
+{
+  "songs": [
+    {
+      "id": "347230",
+      "name": "海阔天空",
+      "artists": [
+        { "id": "6472", "name": "Beyond" }
+      ],
+      "album": {
+        "id": 34512,
+        "name": "海阔天空",
+        "picUrl": "https://p1.music.126.net/abc=example.jpg"
+      },
+      "duration": 326000,
+      "alias": ["海闊天空"],
+      "noCopyrightRcmd": null,
+      "pc": { "songId": 347230 },
+      "privilege": { "id": 347230, "fee": 1, "pl": 0, "st": 0, "cs": false }
+    },
+    {
+      "id": 999888,
+      "name": "无版权歌曲",
+      "ar": [{ "id": 1, "name": "某人" }],
+      "al": { "id": 2, "name": "某专辑" },
+      "dt": 200000,
+      "noCopyrightRcmd": { "songId": 999888 }
+    },
+    {
+      "id": 777666,
+      "name": "已下架歌曲",
+      "ar": [{ "id": 3, "name": "某人" }],
+      "al": { "id": 4, "name": "某专辑" },
+      "dt": 200000,
+      "privilege": { "id": 777666, "fee": 0, "pl": 0, "st": -100, "cs": false }
+    }
+  ],
+  "privileges": []
+}

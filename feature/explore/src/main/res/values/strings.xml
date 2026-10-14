@@ -1,0 +1,37 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 发现页（feature/explore）中文文案真源（硬约束 11）。 -->
+<resources>
+    <!-- 分区与网格 -->
+    <string name="explore_loading_more">加载中…</string>
+    <string name="explore_network_error">网络连接失败</string>
+    <string name="explore_load_failed">加载失败</string>
+
+    <!-- 分类 chips（iOS ExploreViewModel.categories） -->
+    <string name="explore_category_all">全部</string>
+    <string name="explore_category_recommended">推荐歌单</string>
+    <string name="explore_category_high_quality">精品歌单</string>
+    <string name="explore_category_toplists">排行榜</string>
+    <string name="explore_category_official">官方</string>
+    <string name="explore_category_chinese">华语</string>
+    <string name="explore_category_pop">流行</string>
+    <string name="explore_category_rock">摇滚</string>
+    <string name="explore_category_folk">民谣</string>
+    <string name="explore_category_electronic">电子</string>
+    <string name="explore_category_light">轻音乐</string>
+    <string name="explore_category_rap">说唱</string>
+    <string name="explore_category_jazz">爵士</string>
+    <string name="explore_category_classical">古典</string>
+    <string name="explore_category_soundtrack">影视原声</string>
+    <string name="explore_category_acg">ACG</string>
+    <string name="explore_category_ancient_style">古风</string>
+    <string name="explore_category_retro">怀旧</string>
+    <string name="explore_category_healing">治愈</string>
+    <string name="explore_category_relax">放松</string>
+    <string name="explore_category_sad">伤感</string>
+    <string name="explore_category_happy">快乐</string>
+    <string name="explore_category_study">学习</string>
+    <string name="explore_category_work">工作</string>
+    <string name="explore_category_exercise">运动</string>
+    <string name="explore_category_driving">驾车</string>
+    <string name="explore_category_night">夜晚</string>
+</resources>

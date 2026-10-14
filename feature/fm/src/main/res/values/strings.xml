@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 漫游（feature/fm）中文文案真源。 -->
+<resources>
+    <string name="fm_title">私人漫游</string>
+    <string name="fm_subtitle">为你 endless 随机推荐</string>
+    <string name="fm_start">开始漫游</string>
+    <string name="fm_loading">正在生成漫游…</string>
+    <string name="fm_empty">暂时没有可推荐的歌曲</string>
+    <string name="fm_load_failed">漫游失败</string>
+    <string name="fm_dislike">不喜欢</string>
+    <string name="fm_next">下一首</string>
+    <string name="fm_end">已经到底啦</string>
+</resources>

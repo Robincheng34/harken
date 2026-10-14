@@ -1,0 +1,29 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 设置（feature/settings）中文文案真源。 -->
+<resources>
+    <string name="settings_title">设置</string>
+    <string name="settings_playback">播放</string>
+    <string name="settings_audio_quality">音质</string>
+    <string name="settings_appearance">外观</string>
+    <string name="settings_theme_light">浅色</string>
+    <string name="settings_theme_dark">深色</string>
+    <string name="settings_theme_auto">跟随系统</string>
+    <string name="settings_lyrics">歌词</string>
+    <string name="settings_show_translation">显示翻译</string>
+    <string name="settings_verbatim">逐字歌词</string>
+    <string name="settings_lyrics_annotation">歌词注音</string>
+    <string name="settings_now_playing_mode">播放页样式</string>
+    <string name="settings_vinyl">黑胶</string>
+    <string name="settings_cover">封面</string>
+    <string name="settings_advanced">高级</string>
+    <string name="settings_unblock">灰色解锁</string>
+    <string name="settings_unblock_summary">尝试解锁无版权歌曲（默认关闭）</string>
+    <string name="settings_account">账号</string>
+    <string name="settings_logout">退出登录</string>
+    <string name="settings_navbar">导航栏</string>
+    <string name="settings_navbar_summary">自定义底部导航栏的显示与顺序</string>
+    <string name="settings_navbar_reset">恢复默认导航栏</string>
+    <string name="settings_navbar_last_tab">至少保留一个标签页</string>
+    <string name="settings_about">关于</string>
+    <string name="settings_version">版本</string>
+</resources>

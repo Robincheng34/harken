@@ -1,0 +1,135 @@
+// Dedicated selector lens for the kumone bottom navigation bar.
+//
+// Ported from IT之家 / NetEase-style LiquidBottomTabsView selector lens
+// (reverse-engineered from com.ruanmei.ithome resources: res/raw/bottom_tab_lens.agsl).
+//
+// Original upstream (generic glass.agsl): MIT License, Copyright (c) 2025 QmDeve,
+// https://github.com/QmDeve/AndroidLiquidGlassView — Modified By iruanmi.com.
+// The selector-lens variant (bottom_tab_lens.agsl) is the iruanmi adaptation used by
+// IT之家's bottom bar. This kumone copy preserves the exact math and uniform contract.
+//
+// Effect: a rounded-rect refraction band that samples the navigation capsule directly
+// from rmContent, applies chromatic dispersion, an iOS-style optical rim, and a
+// press-driven edgeHighlight. tintColor/tintAlpha give the kumone brand-red wash.
+
+uniform shader rmContent;
+
+uniform float2 size;
+uniform float2 offset;
+uniform float4 cornerRadius;
+uniform float refractionHeight;
+uniform float refractionAmount;
+uniform float2 refractionAxis;
+uniform float depthEffect;
+uniform float dispersion;
+
+uniform float isDark;
+uniform float edgeHighlight;
+uniform float contrast;
+uniform float whitePoint;
+uniform float chromaMultiplier;
+uniform float3 tintColor;
+uniform float tintAlpha;
+
+const half3 kLuminance = half3(0.2126, 0.7152, 0.0722);
+
+float radiusAt(float2 coord, float4 radii) {
+    if (coord.x >= 0.0) {
+        return coord.y <= 0.0 ? radii.y : radii.z;
+    }
+    return coord.y <= 0.0 ? radii.x : radii.w;
+}
+
+float sdRoundedRect(float2 coord, float2 halfSize, float radius) {
+    float2 cornerCoord = abs(coord) - (halfSize - float2(radius));
+    float outside = length(max(cornerCoord, 0.0)) - radius;
+    float inside = min(max(cornerCoord.x, cornerCoord.y), 0.0);
+    return outside + inside;
+}
+
+float2 safeNormalize(float2 value, float2 fallback) {
+    float valueLength = length(value);
+    return valueLength > 0.001 ? value / valueLength : fallback;
+}
+
+float2 roundedRectGradient(float2 coord, float2 halfSize, float radius) {
+    float2 cornerCoord = abs(coord) - (halfSize - float2(radius));
+    if (cornerCoord.x >= 0.0 || cornerCoord.y >= 0.0) {
+        float2 outside = max(cornerCoord, 0.0);
+        return safeNormalize(sign(coord) * outside, float2(sign(coord.x), 0.0));
+    }
+    float useX = step(cornerCoord.y, cornerCoord.x);
+    return sign(coord) * float2(useX, 1.0 - useX);
+}
+
+float lensCurve(float value) {
+    float clamped = clamp(value, 0.0, 1.0);
+    return 1.0 - sqrt(max(0.0, 1.0 - clamped * clamped));
+}
+
+half3 saturateColor(half3 color, float amount) {
+    half3 linear = toLinearSrgb(color);
+    half gray = dot(linear, kLuminance);
+    return fromLinearSrgb(mix(half3(gray), linear, amount));
+}
+
+half4 main(float2 coord) {
+    float2 halfSize = size * 0.5;
+    float2 centeredCoord = coord + offset - halfSize;
+    float radius = radiusAt(centeredCoord, cornerRadius);
+    float lensSd = sdRoundedRect(centeredCoord, halfSize, radius);
+    if (lensSd > 0.0) {
+        return half4(0.0);
+    }
+
+    float2 refractedCoord = coord;
+    float2 chromaDirection = float2(0.0, 0.0);
+    float chromaAmount = 0.0;
+    // Refract the entire rim continuously. Restricting this to the end caps creates a visible
+    // vertical join where a horizontal source edge enters the cap.
+    if (refractionHeight > 0.001 && -lensSd < refractionHeight) {
+        float rimDistance = clamp(-lensSd / refractionHeight, 0.0, 1.0);
+        float displacement = lensCurve(1.0 - rimDistance) * refractionAmount;
+        float2 shapeGradient = roundedRectGradient(centeredCoord, halfSize, radius);
+        float2 centreGradient = safeNormalize(centeredCoord, shapeGradient);
+        float2 gradient = safeNormalize(shapeGradient + depthEffect * centreGradient, shapeGradient);
+        refractedCoord += displacement * gradient * refractionAxis;
+        // Keep the split sub-pixel sized and confined to the active refraction slope.
+        chromaDirection = gradient * refractionAxis;
+        chromaAmount = dispersion * refractionHeight * lensCurve(1.0 - rimDistance);
+    }
+
+    half4 source = rmContent.eval(refractedCoord);
+    if (chromaAmount > 0.001) {
+        half4 redSample = rmContent.eval(refractedCoord + chromaDirection * chromaAmount);
+        half4 blueSample = rmContent.eval(refractedCoord - chromaDirection * chromaAmount);
+        source.r = redSample.r;
+        source.b = blueSample.b;
+    }
+    half3 color = saturateColor(source.rgb, chromaMultiplier);
+    half3 whiteOrBlack = whitePoint > 0.0 ? half3(1.0) : half3(0.0);
+    color = mix(color, whiteOrBlack, abs(whitePoint));
+    color = (color - 0.5) * (1.0 + contrast) + 0.5;
+    color = mix(color, half3(tintColor), tintAlpha);
+
+    // iOS-like optical rim: a dark hairline establishes the silhouette, with a broader
+    // upper-left reflection and a much softer opposing shade inside it.
+    float rimWidth = max(2.25, refractionHeight * 0.22);
+    float rim = 1.0 - smoothstep(0.0, rimWidth, -lensSd);
+    float hairlineWidth = max(1.20, refractionHeight * 0.05);
+    float hairline = 1.0 - smoothstep(0.0, hairlineWidth, -lensSd);
+    float2 outwardNormal = roundedRectGradient(centeredCoord, halfSize, radius);
+    float2 lightDirection = safeNormalize(float2(-0.28, -0.96), float2(0.0, -1.0));
+    float lightFacing = 0.35 + 0.65 * max(dot(outwardNormal, lightDirection), 0.0);
+    // edgeHighlight is driven by press progress. The resting selector is only a darker glass
+    // background; its optical outline appears once it expands into the pressed lens.
+    float rimVisibility = smoothstep(0.001, 0.12, edgeHighlight);
+    half3 rimColor = isDark > 0.5 ? half3(0.86) : half3(1.0);
+    half3 contourColor = isDark > 0.5 ? half3(0.13) : half3(0.18);
+    color = mix(color, contourColor, hairline * (isDark > 0.5 ? 0.62 : 0.42) * rimVisibility);
+    color = mix(color, rimColor, rim * lightFacing * edgeHighlight * rimVisibility);
+    color = mix(color, contourColor,
+            rim * (1.0 - lightFacing) * edgeHighlight * 0.42 * rimVisibility);
+
+    return half4(color, source.a);
+}

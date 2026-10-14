@@ -1,0 +1,8 @@
+
+/**
+ * 导航图占位：本页为 Tab 内容（由 `:app` TabsScreen 直接调用 `*Screen` 渲染），
+ * 二级详情统一走 `:feature:detail` 的路由，故此处无独立覆盖层路由。
+ */
+fun NavGraphBuilder.${m}Graph(navController: NavHostController) {
+    // no-op：见上方说明。
+}

@@ -1,0 +1,16 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 详情页（feature/detail）中文文案真源。 -->
+<resources>
+    <string name="detail_playlist">歌单详情</string>
+    <string name="detail_album">专辑详情</string>
+    <string name="detail_artist">歌手详情</string>
+    <string name="detail_load_failed">加载失败</string>
+    <string name="detail_play_all">播放全部</string>
+    <string name="detail_subscribe">收藏</string>
+    <string name="detail_subscribed">已收藏</string>
+    <string name="detail_hot_songs">热门歌曲</string>
+    <string name="detail_hot_albums">热门专辑</string>
+    <string name="detail_artist_albums">专辑</string>
+    <string name="detail_unknown_artist">未知歌手</string>
+    <string name="detail_loading_tracks">正在加载歌曲…</string>
+</resources>

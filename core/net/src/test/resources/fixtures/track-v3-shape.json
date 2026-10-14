@@ -1,0 +1,27 @@
+{
+  "songs": [
+    {
+      "id": 347230,
+      "name": "海阔天空",
+      "ar": [
+        { "id": 6472, "name": "Beyond" },
+        { "id": 1234, "name": "黄家驹" }
+      ],
+      "al": {
+        "id": 34512,
+        "name": "海阔天空",
+        "picUrl": "http://p1.music.126.net/abc=example.jpg"
+      },
+      "dt": 326000,
+      "alia": ["海闊天空"],
+      "tns": ["Boundless Oceans, Vast Skies"],
+      "fee": 0,
+      "mv": 123,
+      "no": 1,
+      "cd": "1"
+    }
+  ],
+  "privileges": [
+    { "id": 347230, "fee": 0, "pl": 320000, "st": 0, "cs": false, "maxbr": 999000 }
+  ]
+}

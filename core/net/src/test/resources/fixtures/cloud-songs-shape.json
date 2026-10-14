@@ -1,0 +1,35 @@
+{
+  "data": [
+    {
+      "songId": 100,
+      "songName": "云盘歌曲",
+      "artist": "Beyond",
+      "fileSize": "12345678",
+      "simpleSong": {
+        "id": 100,
+        "name": "云盘歌曲",
+        "ar": [{ "id": 6472, "name": "Beyond" }],
+        "al": { "id": 1, "name": "云盘专辑" },
+        "dt": 326000
+      }
+    },
+    {
+      "privateCloud": {
+        "songId": 200,
+        "song": "旧版云盘歌曲",
+        "artist": "someone",
+        "fileSize": 999
+      },
+      "simpleSong": {
+        "id": 200,
+        "name": "旧版云盘歌曲",
+        "ar": [{ "id": 9, "name": "someone" }],
+        "al": { "id": 2, "name": "旧版专辑" },
+        "dt": 100000
+      }
+    }
+  ],
+  "hasMore": true,
+  "size": "1073741824",
+  "maxSize": 2147483648
+}
