@@ -12,6 +12,7 @@ package im.missuo.kumone.ui
 import android.os.Build
 import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.runtime.collectAsState
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import im.missuo.kumone.design.theme.LiquidGlassLens
 import androidx.compose.animation.animateColorAsState
@@ -77,9 +78,16 @@ fun GlassTabBar(
     screenHeightPx: Int = 0,
 ) {
     val tokens = glassTokens()
+    // 完全透明：导航栏不带任何颜色——无填充、无高光、无描边、无投影。
+    // 玻璃观感全部来自底下「真·磨砂」层（背后内容本身被糊化）与选中镜片的折射
+    // 形变，而不是在背后内容上叠一层白/灰/品牌色半透明色块。此前叠色块的写法
+    // 正是「颜色也不是玻璃的透明」的来源：色块越厚，越像贴纸而不是玻璃。
     GlassBox(
         shape = RoundedCornerShape(22.dp),
-        tokens = tokens,
+        tokens = tokens.copy(fill = Color.Transparent),
+        addSpecular = false,
+        addBorder = false,
+        addShadow = false,
         modifier = modifier
             .fillMaxWidth()
             .padding(start = 12.dp, end = 12.dp, bottom = Layout.bottomMargin)
@@ -155,17 +163,14 @@ private fun TabItem(
         label = "tabGlow",
     )
 
-    // 按压态：监听 InteractionSource 的 Press 事件。按下为高亮峰值 1f，
-    // 选中静止 0.55f，未选中 0f。edgeHighlight 驱动液态玻璃镜片的光学轮廓。
+    // 按压态：监听 InteractionSource 的 Press 事件。edgeHighlight 驱动液态玻璃镜片的
+    // 光学轮廓（发丝 + 高光）。静止时恒为 0f——导航栏完全透明、不带任何描边色；
+    // 只在手指按下时才浮现玻璃光学轮廓，作为液态玻璃的按压反馈。
     val isPressed by interactionSource.interactions
         .map { it is PressInteraction.Press }
         .collectAsState(initial = false)
     val edgeHighlight by animateFloatAsState(
-        targetValue = when {
-            isPressed -> 1f
-            isSelected -> 1.0f
-            else -> 0f
-        },
+        targetValue = if (isPressed) 1f else 0f,
         animationSpec = spring(
             dampingRatio = Spring.DampingRatioMediumBouncy,
             stiffness = Spring.StiffnessMedium,
@@ -228,12 +233,22 @@ private fun TabItem(
                     val width = (rect.right - rect.left).coerceAtMost(src.width - left)
                     val height = (rect.bottom - rect.top).coerceAtMost(src.height - top)
                     if (width > 0 && height > 0) {
-                        Bitmap.createBitmap(src, left, top, width, height).asImageBitmap()
+                        val cropped = Bitmap.createBitmap(src, left, top, width, height)
+                        // AGSL RuntimeShader 的输入着色器无法采样 HARDWARE 位图
+                        // （GPU 显存，rmContent.eval 恒返回黑色）——必须复制为软件
+                        // 位图。behindLayer.toImageBitmap() 产出的正是 HARDWARE 位图，
+                        // 这正是选中镜片渲染成纯黑药丸的根因。
+                        val soft = cropped.copy(Bitmap.Config.ARGB_8888, false)
+                        soft.asImageBitmap()
                     } else {
                         behindBackground
                     }
                 }
             }
+            // 选中态：API33+ 有背后内容位图时由 IT之家液态玻璃镜片承担高亮；
+            // API<33（无捕获位图）回落半透明圆角药丸，保证老设备选中态可见。
+            // 未选中态不再画药丸：直接透出底下真·磨砂条，规避「死板半透明色块」
+            // 的贴纸感（用户反馈「颜色也不是玻璃的透明」）。
             if (isSelected && lensBackground != null && Build.VERSION.SDK_INT >= 33) {
                 LiquidGlassLens(
                     background = lensBackground,
@@ -241,7 +256,7 @@ private fun TabItem(
                     edgeHighlight = edgeHighlight,
                     modifier = Modifier.matchParentSize(),
                 )
-            } else {
+            } else if (isSelected) {
                 Box(
                     Modifier
                         .matchParentSize()

@@ -70,16 +70,19 @@ fun createLensRuntimeShader(
 ): RuntimeShader {
     val rs = RuntimeShader(agsl)
     rs.setFloatUniform("tintColor", tint.red, tint.green, tint.blue)
-    rs.setFloatUniform("tintAlpha", 0.06f)
+    // 完全透明：镜片不带任何颜色——既无品牌红染色，也无白底提亮。
+    // 用户要求「导航栏完全透明不带任何颜色」：选中态可见性由红色图标/文案承担，
+    // 镜片本身只做折射形变 + 色散 + 折射边缘，颜色全部来自背后真实内容像素。
+    rs.setFloatUniform("tintAlpha", 0f)
     rs.setFloatUniform("isDark", if (isDark) 1f else 0f)
     rs.setFloatUniform("offset", 0f, 0f)
     rs.setFloatUniform("refractionAxis", 1f, 1f)
     rs.setFloatUniform("depthEffect", 0.75f)
     rs.setFloatUniform("dispersion", 0.22f)
     rs.setFloatUniform("contrast", 0.18f)
-    // whitePoint 只做很轻的提亮：镜片主体保持透明，让背后内容透出产生折射，
-    // 玻璃质感主要靠顶部 specular 高光 + 光学描边，而非把镜片糊成一层白。
-    rs.setFloatUniform("whitePoint", 0.15f)
+    // whitePoint = 0：不往镜片里混任何白色。镜片主体必须完全透明，让背后内容原样
+    // 透出产生折射；一旦掺白，玻璃就会退化成一层半透明白色贴纸。
+    rs.setFloatUniform("whitePoint", 0f)
     rs.setFloatUniform("chromaMultiplier", 1.2f)
     // rmContent 由 LiquidGlassLens 热替换；size/cornerRadius/refractionHeight/
     // refractionAmount/edgeHighlight 在绘制时设置。
@@ -91,7 +94,7 @@ fun createLensRuntimeShader(
  *
  * @param background 背后内容位图（折射源）；为 null 时回落 Canvas 兜底。
  * @param tint 品牌色（选中态 primary）。
- * @param edgeHighlight 边缘光学轮廓强度：按压 1f、选中静止 0.55f、未选中 0f。
+ * @param edgeHighlight 边缘光学轮廓强度：按压 1f，其余 0f（静止态完全透明、不带描边色）。
  * @param cornerRadiusDp 镜片圆角。
  * @param refractionHeightDp 折射带高度。
  * @param refractionAmountDp 折射位移量。

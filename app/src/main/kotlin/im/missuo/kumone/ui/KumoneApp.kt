@@ -51,7 +51,19 @@ import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.rememberGraphicsLayer
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.BlurEffect
+import androidx.compose.ui.graphics.TileMode
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.positionInRoot
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.toIntSize
 import android.graphics.Bitmap
@@ -107,6 +119,12 @@ import kotlinx.coroutines.launch
  * 与 GPU 回读开销（见 [TabsScreen]）。
  */
 private const val LIVE_CAPTURE_INTERVAL_NANOS = 66_000_000L
+
+/**
+ * 底栏「真·磨砂」背景的高斯模糊半径（px）。把整屏 behindLayer 平移到位后经
+ * RenderEffect 模糊，垫在悬浮底栏之下，形成 IT之家风格的毛玻璃底（见 [TabsScreen]）。
+ */
+private const val FROST_BLUR_RADIUS = 26f
 
 /** 镜片诊断日志 tag（真机 `adb logcat -s LiquidGlassLens` 观察捕获结果）。 */
 private const val TAG_LENS = "LiquidGlassLens"
@@ -316,12 +334,14 @@ private fun TabsScreen(
     val captureModifier = if (Build.VERSION.SDK_INT >= 33) {
         // 将内容的绘制命令重定向到 behindLayer，再把它绘制到可见画布
         // （Compose 1.7 官方捕获模式；位图仅在 API33+ 的 LaunchedEffect 中读取）。
+        //
+        // 必须调用 DrawScope.record(layer) 扩展（而非 GraphicsLayer.record(density,
+        // layoutDirection, size, block) 原生的四参重载）：扩展内部会把本 DrawScope 的
+        // canvas 临时切换为图层的录制画布，drawContent() 才会真正画进图层；四参重载的
+        // 区块接收者是图层自己的 scope，外层 drawContent() 仍画到屏幕，图层恒为空
+        // （磨砂磨不到内容、镜片采样到透明→渲染成黑药丸）。
         Modifier.drawWithContent {
-            behindLayer.record(
-                this,
-                layoutDirection,
-                size.toIntSize(),
-            ) {
+            behindLayer.record {
                 this@drawWithContent.drawContent()
             }
             drawLayer(behindLayer)
@@ -338,10 +358,18 @@ private fun TabsScreen(
     ) {
         // 只把「Tab 页面内容」录进折射图层：悬浮 chrome（迷你播放条 / TabBar）必须留在
         // 图层之外，否则镜片折射到的是 TabBar 自身的深色玻璃像素而不是背后内容。
+        //
+        // 主题背景必须画在捕获修饰符的*内层*（.then(captureModifier) 之后）：
+        // Compose 绘制顺序为外→内，background 若放在捕获修饰符外层，它的绘制发生在
+        // record{} 之外，永远不会进入图层。页面（如首页列表末尾 / 我的页）不绘制底色的
+        // 区域在图层里是透明的；磨砂层能透出下层根背景所以看不出问题，但镜片把透明输入
+        // 渲染成黑色（选中标尺变成黑药丸）。把背景并入图层后，镜片采样到的就是真实可见
+        // 的背后内容（页面像素或主题底色），与磨砂层保持一致。
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .then(captureModifier),
+                .then(captureModifier)
+                .background(MaterialTheme.colorScheme.background),
         ) {
             when (selectedTab) {
                 AppTab.HOME -> HomeScreen(navController = overlayNav)
@@ -409,6 +437,38 @@ private fun TabsScreen(
                 .align(Alignment.BottomCenter)
                 .navigationBarsPadding(),
         ) {
+            // 真·磨砂背景（仅 API33+）：把整屏 behindLayer 平移到底栏位置后经 RenderEffect
+            // 高斯模糊，裁成与 GlassBox 相同的圆角矩形，垫在悬浮底栏之下。背后内容实时
+            // 磨砂（滚动时随之更新），无需回读位图；读取失败/首帧时 behindLayer 为空则
+            // 自然透明，不影响运行。这是 IT之家毛玻璃「糊化背后内容」的真正做法。
+            if (Build.VERSION.SDK_INT >= 33) {
+                var frostOrigin by remember { mutableStateOf(Offset.Zero) }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .padding(start = 12.dp, end = 12.dp, bottom = Layout.bottomMargin)
+                        .height(Layout.tabBarHeight)
+                        .onGloballyPositioned { frostOrigin = it.positionInRoot() }
+                        .clip(RoundedCornerShape(22.dp))
+                        .graphicsLayer {
+                            renderEffect = BlurEffect(
+                                FROST_BLUR_RADIUS,
+                                FROST_BLUR_RADIUS,
+                                TileMode.Clamp,
+                            )
+                        }
+                        .drawWithContent {
+                            // behindLayer 为整屏内容（原点在窗口 0,0）；平移 -frostOrigin 后，
+                            // 本 Box 的视口正好落在「底栏背后」的那块内容上，再被外层模糊+圆角裁剪。
+                            if (frostOrigin != Offset.Zero) {
+                                translate(-frostOrigin.x, -frostOrigin.y) {
+                                    drawLayer(behindLayer)
+                                }
+                            }
+                            drawContent()
+                        },
+                )
+            }
             GlassTabBar(
                 selected = selectedTab,
                 onSelect = onSelectTab,
