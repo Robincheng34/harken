@@ -49,10 +49,11 @@ fun rememberLensAgsl(context: Context): String {
 }
 
 /**
- * 用背后内容位图构建 IT之家「选中标尺」液态玻璃 [RuntimeShader]。
+ * 构建 IT之家「选中标尺」液态玻璃 [RuntimeShader]（仅固定 uniform，不含背后内容）。
  *
- * 仅设置与绘制无关的固定 uniform；尺寸 / 圆角 / 折射强度 / 边缘高光在
- * 每次绘制前由 [LiquidGlassLens] 动态写入。
+ * 该函数不含背后位图参数：AGSL 程序编译代价高，因此 [RuntimeShader] 只创建一次，
+ * 背后内容位图由 [LiquidGlassLens] 在位图每次更新时通过 [RuntimeShader.setInputShader]
+ * 热替换 `rmContent`，从而支持「实时折射」（内容滚动时持续更新）而不必每帧重编译。
  *
  * 注意：必须使用 framework 的 [BitmapShader]（不是 Compose 包装），因为
  * [RuntimeShader.setInputShader] 接收的是 [Shader]（android.graphics.Shader）。
@@ -64,26 +65,24 @@ fun rememberLensAgsl(context: Context): String {
 @RequiresApi(33)
 fun createLensRuntimeShader(
     agsl: String,
-    background: android.graphics.Bitmap,
     tint: Color,
     isDark: Boolean,
 ): RuntimeShader {
     val rs = RuntimeShader(agsl)
-    rs.setInputShader(
-        "rmContent",
-        BitmapShader(background, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP),
-    )
     rs.setFloatUniform("tintColor", tint.red, tint.green, tint.blue)
-    rs.setFloatUniform("tintAlpha", 0.05f)
+    rs.setFloatUniform("tintAlpha", 0.06f)
     rs.setFloatUniform("isDark", if (isDark) 1f else 0f)
     rs.setFloatUniform("offset", 0f, 0f)
     rs.setFloatUniform("refractionAxis", 1f, 1f)
     rs.setFloatUniform("depthEffect", 0.75f)
     rs.setFloatUniform("dispersion", 0.22f)
-    rs.setFloatUniform("contrast", 0.20f)
-    rs.setFloatUniform("whitePoint", 0.60f)
+    rs.setFloatUniform("contrast", 0.18f)
+    // whitePoint 只做很轻的提亮：镜片主体保持透明，让背后内容透出产生折射，
+    // 玻璃质感主要靠顶部 specular 高光 + 光学描边，而非把镜片糊成一层白。
+    rs.setFloatUniform("whitePoint", 0.15f)
     rs.setFloatUniform("chromaMultiplier", 1.2f)
-    // size / cornerRadius / refractionHeight / refractionAmount / edgeHighlight 在绘制时设置。
+    // rmContent 由 LiquidGlassLens 热替换；size/cornerRadius/refractionHeight/
+    // refractionAmount/edgeHighlight 在绘制时设置。
     return rs
 }
 
@@ -117,14 +116,22 @@ fun LiquidGlassLens(
         val agsl = rememberLensAgsl(ctx)
         val bmp = remember(background) { background.asAndroidBitmap() }
         val isDark = isSystemInDarkTheme()
-        val rs = remember(agsl, bmp, tint, isDark) {
-            android.util.Log.i("LiquidGlassLens", "lens shader created for ${bmp.width}x${bmp.height}")
-            createLensRuntimeShader(agsl, bmp, tint, isDark)
+        // RuntimeShader 只随主题/品牌色创建一次；背后内容位图每次实时捕获都变，
+        // 通过 remember(bmp) 重建 BitmapShader 并经 SideEffect 热替换 rmContent，
+        // 实现「内容滚动→实时折射」而无需每帧重编译 AGSL。
+        val rs = remember(agsl, tint, isDark) {
+            createLensRuntimeShader(agsl, tint, isDark)
+        }
+        val contentInput = remember(bmp) {
+            BitmapShader(bmp, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
         }
         Box(
             modifier = modifier.then(
                 Modifier.drawWithContent {
                     val px = this.size
+                    // 每帧绑定最新背后内容（contentInput 仅在 bmp 变化时重建），
+                    // 实现实时折射而无需重编译 AGSL。
+                    rs.setInputShader("rmContent", contentInput)
                     rs.setFloatUniform("size", px.width, px.height)
                     rs.setFloatUniform(
                         "cornerRadius",

@@ -196,7 +196,7 @@ private fun TabItem(
                 }
                 onSelect(tab)
             }
-            .padding(vertical = 8.dp),
+            .padding(vertical = 4.dp),
     ) {
         // 背景层（最底层）：API33+ 且有背后内容位图时使用 IT之家液态玻璃镜片；
         // 否则沿用既有半透明圆角药丸，保证老设备零回归。
@@ -262,7 +262,7 @@ private fun TabItem(
                 if (!useLens) {
                     Box(
                         modifier = Modifier
-                            .size(36.dp)
+                            .size(28.dp)
                             .graphicsLayer {
                                 alpha = glow.coerceAtMost(1f)
                                 scaleX = 0.6f + 0.4f * glow

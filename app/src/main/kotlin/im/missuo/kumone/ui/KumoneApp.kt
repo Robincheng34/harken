@@ -102,12 +102,11 @@ import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 
 /**
- * 背后内容截帧的最大重试次数（逐帧等待，见 [TabsScreen]）。
- *
- * 图层录制与首帧绘制存在时序竞争：首次组合 / 切 Tab 时可能截到尚未录制的空图层，
- * 因此逐帧等待并重试，尺寸非零才算成功。
+ * 实时折射捕获间隔（纳秒）。IT之家液态玻璃的标志是「内容滑过底栏时产生扭曲」，
+ * 因此逐帧把 behindLayer 截成底栏条带喂给镜片；节流到约 15fps 以平衡折射实时性
+ * 与 GPU 回读开销（见 [TabsScreen]）。
  */
-private const val BEHIND_CAPTURE_ATTEMPTS = 5
+private const val LIVE_CAPTURE_INTERVAL_NANOS = 66_000_000L
 
 /** 镜片诊断日志 tag（真机 `adb logcat -s LiquidGlassLens` 观察捕获结果）。 */
 private const val TAG_LENS = "LiquidGlassLens"
@@ -272,18 +271,18 @@ private fun TabsScreen(
         (Layout.tabBarHeight + Layout.bottomMargin + Layout.extraPadding).roundToPx()
     }
 
-    // 捕获 TabBar 背后内容条带，作为 IT之家液态玻璃「选中标尺」折射源（仅 API33+）。
-    // 内容 Box 经 drawWithContent + GraphicsLayer.record 把绘制命令重定向到
-    // behindLayer（Compose 1.7 捕获可组合内容为位图的官方模式）。
-    // 图层录制与首帧绘制存在时序竞争：单发一次容易截到空图层（镜片回落扁平药丸），
-    // 故逐帧等待、最多重试 [BEHIND_CAPTURE_ATTEMPTS] 次，尺寸非零才算成功；
-    // 全部失败才置 null → Canvas 兜底，绝不破坏运行。
-    LaunchedEffect(behindLayer, selectedTab, screenHeightPx) {
+    // 实时折射（仅 API33+）：逐帧（节流到 ~15fps）把背后内容截成底栏条带喂给镜片，
+    // 使页面内容滚动时持续透过镜片产生扭曲——这正是 IT之家液态玻璃的核心特征
+    // （“文字/封面透过底部导航栏的折射效果特别明显”）。读取失败时保留上一帧，
+    // 绝不置空（避免闪回扁平药丸）。
+    LaunchedEffect(behindLayer, screenHeightPx) {
         if (Build.VERSION.SDK_INT >= 33 && screenHeightPx > 0) {
-            var captured: ImageBitmap? = null
-            for (attempt in 0 until BEHIND_CAPTURE_ATTEMPTS) {
-                // 等下一帧，确保图层至少被录制过一次内容。
-                withFrameNanos { }
+            var lastCaptureNanos = 0L
+            var logged = false
+            while (true) {
+                val frameNanos = withFrameNanos { it }
+                if (frameNanos - lastCaptureNanos < LIVE_CAPTURE_INTERVAL_NANOS) continue
+                lastCaptureNanos = frameNanos
                 try {
                     val src = behindLayer.toImageBitmap().asAndroidBitmap()
                     val h = minOf(stripHeightPx, src.height)
@@ -291,21 +290,20 @@ private fun TabsScreen(
                     // （= screenHeightPx - stripHeightPx），故同样扣除手势栏高度。
                     val top = maxOf(0, src.height - navInsetPx - h)
                     if (src.width > 0 && h > 0 && top + h <= src.height) {
-                        captured = Bitmap
+                        behindBitmap = Bitmap
                             .createBitmap(src, 0, top, src.width, h)
                             .asImageBitmap()
+                        if (!logged) {
+                            Log.i(TAG_LENS, "behind capture(live): ${src.width}x$h")
+                            logged = true
+                        }
                     }
                 } catch (e: Exception) {
-                    captured = null
+                    if (!logged) {
+                        Log.i(TAG_LENS, "behind capture error: ${e.message}")
+                        logged = true
+                    }
                 }
-                if (captured != null) break
-            }
-            behindBitmap = if (captured != null) {
-                Log.i(TAG_LENS, "behind capture: ${captured.width}x${captured.height}")
-                captured
-            } else {
-                Log.i(TAG_LENS, "behind capture: null")
-                null
             }
         } else {
             behindBitmap = null
