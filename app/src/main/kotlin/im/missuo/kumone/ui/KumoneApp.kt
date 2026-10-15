@@ -278,6 +278,9 @@ private fun TabsScreen(
     var behindBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
     var screenHeightPx by remember { mutableStateOf(0) }
 
+    // 水丝拉断水滴交互状态（用户参考 demo 移植，见 WaterDropOverlay.kt）。
+    val waterDropState = rememberWaterDropState()
+
     // 底部系统手势栏内边距（px）。悬浮 chrome 用 navigationBarsPadding 抬到其上，
     // 因此折射源条带必须取「手势栏之上」的底部一段，且传给 GlassTabBar 的高度也要
     // 扣掉这段，否则镜片裁剪会整体错位一个手势栏高度。
@@ -435,7 +438,11 @@ private fun TabsScreen(
         Box(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .navigationBarsPadding(),
+                .navigationBarsPadding()
+                // 水丝拉断手势挂底栏容器（Tab clickable 的父节点，父子共享指针事件，
+                // 零消费零干扰）；容器根坐标原点供局部→根换算。见 WaterDropOverlay.kt。
+                .onGloballyPositioned { waterDropState.barOrigin = it.positionInRoot() }
+                .waterDropGesture(waterDropState),
         ) {
             // 真·磨砂背景（仅 API33+）：把整屏 behindLayer 平移到底栏位置后经 RenderEffect
             // 高斯模糊，裁成与 GlassBox 相同的圆角矩形，垫在悬浮底栏之下。背后内容实时
@@ -479,5 +486,13 @@ private fun TabsScreen(
                 screenHeightPx = (screenHeightPx - navInsetPx).coerceAtLeast(0),
             )
         }
+
+        // 水丝拉断水滴交互层：全屏绘制 + 手势观察（零事件消费），画在 TabBar 之上，
+        // 水滴拖出底栏后仍悬浮在页面内容上方。见 WaterDropOverlay.kt。
+        WaterDropOverlay(
+            state = waterDropState,
+            color = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.matchParentSize(),
+        )
     }
 }
