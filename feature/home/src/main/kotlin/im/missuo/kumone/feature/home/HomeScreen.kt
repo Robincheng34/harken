@@ -39,6 +39,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
@@ -66,9 +67,14 @@ import kotlinx.coroutines.launch
  * 首页主屏幕。
  *
  * @param navController 覆盖层导航控制器，用于跳转歌单/专辑/歌手详情。
+ * @param bottomClearance 列表尾部净空：有曲目（迷你播放条占位）时为
+ *   [Layout.fullChromeClearance]，否则为 [Layout.tabBarClearance]。
  */
 @Composable
-fun HomeScreen(navController: NavHostController) {
+fun HomeScreen(
+    navController: NavHostController,
+    bottomClearance: Dp = Layout.fullChromeClearance,
+) {
     val api = LocalNeteaseApi.current
         ?: error("LocalNeteaseApi 必须在 KumoneApp 提供")
     val commands = LocalPlaybackCommands.current
@@ -145,7 +151,6 @@ fun HomeScreen(navController: NavHostController) {
                     item(key = "radar") {
                         HomeShelf(
                             title = stringResource(R.string.home_radar_playlists),
-                            rowHeight = Layout.coverShelfHeight,
                         ) {
                             itemsIndexed(
                                 uiState.radarPlaylists,
@@ -194,9 +199,10 @@ fun HomeScreen(navController: NavHostController) {
                     }
                 }
 
-                // iOS: PlayerClearanceSpacer()（迷你条 52 + 间距 8 + TabBar 64 + 6 + 12）。
+                // 底部悬浮 chrome 净空：有迷你播放条时 = 迷你条 52 + 间距 8 + TabBar 64 + 6 + 12；
+                // 无曲目时迷你条不占位，只需 TabBar 净空，否则列表末尾悬着 60dp 死白。
                 item(key = "clearance") {
-                    Spacer(Modifier.height(Layout.fullChromeClearance))
+                    Spacer(Modifier.height(bottomClearance))
                 }
             }
     }

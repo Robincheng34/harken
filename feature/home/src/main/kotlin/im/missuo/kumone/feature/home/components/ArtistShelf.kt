@@ -4,7 +4,7 @@
 // 与 HomeView 推荐歌手 Shelf 1:1 移植）。
 //
 // 128dp 圆形头像（256 缩放）+ primary 0.08 细描边；名字 13sp medium 一行；
-// 整卡宽 140dp；行高 artistShelfHeight（196dp）。
+// 整卡宽 140dp；行高由 [HomeShelf] 依内容自适应（不再写死 196dp）。
 
 package im.missuo.kumone.feature.home.components
 
@@ -29,7 +29,6 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
-import im.missuo.kumone.design.theme.Layout
 import im.missuo.kumone.feature.home.R
 import im.missuo.kumone.net.model.ArtistSummary
 import im.missuo.kumone.net.model.Formatters
@@ -54,7 +53,6 @@ fun ArtistShelf(
 ) {
     HomeShelf(
         title = stringResource(R.string.home_top_artists),
-        rowHeight = Layout.artistShelfHeight,
         modifier = modifier,
     ) {
         itemsIndexed(items, key = { _, artist -> artist.id }) { _, artist ->

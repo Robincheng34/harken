@@ -297,6 +297,15 @@ private fun TabsScreen(
     // 扣掉这段，否则镜片裁剪会整体错位一个手势栏高度。
     val navInsetPx = WindowInsets.navigationBars.getBottom(LocalDensity.current)
 
+    // 迷你播放条是否占位：无曲目时底部只悬浮 TabBar，页面尾部净空应为
+    // tabBarClearance（82dp）而非 fullChromeClearance（142dp）——否则首页滚到底后
+    // 「推荐歌手」下方还要白扛 60dp 空闲（用户反馈「底部空白太大」）。
+    val controller = LocalMusicController.current
+    val playerState = controller?.state?.collectAsStateWithLifecycle()
+    val currentTrackId = playerState?.value?.currentTrack?.id
+    val bottomClearance =
+        if (currentTrackId != null) Layout.fullChromeClearance else Layout.tabBarClearance
+
     // 折射源条带高度（px）：必须在可组合作用域内解析 Density——
     // LaunchedEffect 的协程体内不能读取 CompositionLocal。
     val stripHeightPx = with(LocalDensity.current) {
@@ -389,7 +398,10 @@ private fun TabsScreen(
                 .background(MaterialTheme.colorScheme.background),
         ) {
             when (selectedTab) {
-                AppTab.HOME -> HomeScreen(navController = overlayNav)
+                AppTab.HOME -> HomeScreen(
+                    navController = overlayNav,
+                    bottomClearance = bottomClearance,
+                )
                 AppTab.EXPLORE -> ExploreScreen(navController = overlayNav)
                 AppTab.SEARCH -> SearchScreen(navController = overlayNav)
                 AppTab.FM -> FmScreen(onOpenLogin = { overlayNav.navigate(Destinations.LOGIN) })
@@ -411,10 +423,7 @@ private fun TabsScreen(
                 .navigationBarsPadding()
                 .padding(bottom = Layout.tabBarHeight + Layout.barSpacing),
         ) {
-            val controller = LocalMusicController.current
             if (controller != null) {
-                val playerState by controller.state.collectAsStateWithLifecycle()
-                val currentTrackId = playerState.currentTrack?.id
                 var miniPlayerCollapsed by remember { mutableStateOf(false) }
                 // 切换到新曲目时自动重新弹出（用户下滑收起后，换歌会再次出现）。
                 LaunchedEffect(currentTrackId) { miniPlayerCollapsed = false }
