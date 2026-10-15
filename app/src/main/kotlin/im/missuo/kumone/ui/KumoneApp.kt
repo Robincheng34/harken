@@ -121,6 +121,20 @@ import kotlinx.coroutines.launch
 private const val LIVE_CAPTURE_INTERVAL_NANOS = 66_000_000L
 
 /**
+ * 是否启用「镜片实时折射」的整屏 GPU→CPU 回读。
+ *
+ * 实测（OnePlus7TPro，滚动信息流）：开启时 50% 掉帧、帧时中位数 31ms，而 GPU
+ * 百分位仅 2ms——瓶颈是主线程上每 66ms 一次的整屏（1440×3120 ≈ 18MB）
+ * `behindLayer.toImageBitmap()` 同步回读 + 位图拷贝，与 GPU 无关。用户反馈
+ * 「app 滑动的时候肉眼可见的卡顿掉帧」即由此而来。
+ *
+ * 关闭后：镜片不再有折射源（选中态只剩红色图标/文案），但「真·磨砂」背景
+ * （[TabsScreen] 里 drawLayer + BlurEffect，纯 GPU、无回读）完全保留——
+ * 玻璃观感的主要来源仍在，滚动则回到 60fps。
+ */
+private const val LENS_LIVE_CAPTURE_ENABLED = false
+
+/**
  * 底栏「真·磨砂」背景的高斯模糊半径（px）。把整屏 behindLayer 平移到位后经
  * RenderEffect 模糊，垫在悬浮底栏之下，形成 IT之家风格的毛玻璃底（见 [TabsScreen]）。
  */
@@ -296,8 +310,11 @@ private fun TabsScreen(
     // 使页面内容滚动时持续透过镜片产生扭曲——这正是 IT之家液态玻璃的核心特征
     // （“文字/封面透过底部导航栏的折射效果特别明显”）。读取失败时保留上一帧，
     // 绝不置空（避免闪回扁平药丸）。
+    //
+    // [LENS_LIVE_CAPTURE_ENABLED] 为 false 时整条回读链路关闭（滚动掉帧的根因，
+    // 见常量注释）：behindBitmap 恒为 null，镜片无折射源，底栏仅剩真·磨砂。
     LaunchedEffect(behindLayer, screenHeightPx) {
-        if (Build.VERSION.SDK_INT >= 33 && screenHeightPx > 0) {
+        if (LENS_LIVE_CAPTURE_ENABLED && Build.VERSION.SDK_INT >= 33 && screenHeightPx > 0) {
             var lastCaptureNanos = 0L
             var logged = false
             while (true) {

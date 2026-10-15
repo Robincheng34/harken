@@ -111,7 +111,10 @@ fun HomeScreen(navController: NavHostController) {
             else -> LazyColumn(
                 modifier = Modifier.fillMaxSize(),
                 contentPadding = PaddingValues(vertical = Layout.contentInset - 8.dp),
-                verticalArrangement = Arrangement.spacedBy(34.dp),
+                // 分区间距：12dp（LazyColumn）+ SectionHeader 上内边距 12dp = 视觉
+                // 间隔 24dp。原 34dp 叠加 header 内边距后视觉间隔 46dp，用户反馈
+                // 「推荐歌单底部与排行榜顶部上下间隔太大」。
+                verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
                 // 功能卡（仅登录态；iOS `if account.isLoggedIn`）。
                 if (isLoggedIn) {

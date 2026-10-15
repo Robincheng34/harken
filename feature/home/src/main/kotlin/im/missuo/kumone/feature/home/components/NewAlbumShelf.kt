@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
@@ -51,16 +50,17 @@ fun NewAlbumShelf(
             modifier = Modifier.padding(horizontal = Layout.contentInset),
         )
         BoxWithConstraints(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(Layout.coverShelfHeight),
+            modifier = Modifier.fillMaxWidth(),
         ) {
             // iOS: fittedShelfCardSize(availableWidth: geometry.size.width, leadingInset: contentInset)
             val cardSize: Dp = Layout.fittedShelfCardSize(maxWidth, Layout.contentInset)
+            // 不再固定 coverShelfHeight（226dp）：自适应卡宽算出的内容高度随屏宽变化
+            // （1440px 屏上卡片 ~113dp，内容总高 ~180dp），固定行高会在 shelf 底部留出
+            // ~46dp 空档，叠加分区间距后就是用户看到的「上下间隔太大」。让 LazyRow
+            // 按内容自撑高度，卡片顶对齐，底部不再有多余空隙。
             LazyRow(
                 modifier = Modifier
                     .fillMaxWidth()
-                    .height(Layout.coverShelfHeight)
                     .padding(vertical = 6.dp),
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
                 contentPadding = PaddingValues(horizontal = 8.dp),
