@@ -4,5 +4,5 @@
     <color name="kumone_primary">#EC4949</color>
     <color name="kumone_primary_dark">#C92929</color>
     <color name="kumone_background">#FFFFFF</color>
-    <color name="kumone_ic_launcher_background">#FFFFFF</color>
+    <color name="kumone_ic_launcher_background">#000000</color>
 </resources>
