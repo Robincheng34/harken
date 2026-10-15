@@ -132,9 +132,6 @@ private fun TabItem(
     val scale = remember { Animatable(1f) }
     // 同一 InteractionSource 供 clickable 与按压态监听共用（避免重复创建导致状态错位）。
     val interactionSource = remember { MutableInteractionSource() }
-    // API33+ 且有背后内容位图时，选中态由 IT之家液态玻璃镜片承担高亮；
-    // 此时隐藏独立的品牌色光斑（否则红粉色光斑会与镜片争抢注意力，玻璃观感被淹没）。
-    val useLens = isSelected && behindBackground != null && Build.VERSION.SDK_INT >= 33
 
     // 镜片区域在屏幕中的绝对位置（onPlaced 写入），用于将背后位图裁剪到本 Tab 区域，
     // 使镜片局部坐标与折射源 1:1 对齐（否则只会折射到整条位图左上角）。
@@ -153,15 +150,9 @@ private fun TabItem(
         animationSpec = tween(durationMillis = 200),
         label = "tabTint",
     )
-    // 选中态图标背后的柔和光斑（液态玻璃「镜片」）：弹性浮现。
-    val glow by animateFloatAsState(
-        targetValue = if (isSelected) 1f else 0f,
-        animationSpec = spring(
-            dampingRatio = Spring.DampingRatioMediumBouncy,
-            stiffness = Spring.StiffnessMedium,
-        ),
-        label = "tabGlow",
-    )
+    // 选中态图标背后的品牌色光斑（28dp 圆形）已按用户要求移除：
+    // 「点击时出现的圆环效果」取消——选中态只保留颜色过渡（图标/文案转品牌红）
+    // 与点击弹跳，底栏保持完全透明不带任何颜色。
 
     // 按压态：监听 InteractionSource 的 Press 事件。edgeHighlight 驱动液态玻璃镜片的
     // 光学轮廓（发丝 + 高光）。静止时恒为 0f——导航栏完全透明、不带任何描边色；
@@ -245,23 +236,16 @@ private fun TabItem(
                     }
                 }
             }
-            // 选中态：API33+ 有背后内容位图时由 IT之家液态玻璃镜片承担高亮；
-            // API<33（无捕获位图）回落半透明圆角药丸，保证老设备选中态可见。
-            // 未选中态不再画药丸：直接透出底下真·磨砂条，规避「死板半透明色块」
-            // 的贴纸感（用户反馈「颜色也不是玻璃的透明」）。
+            // 选中态背景：API33+ 且有折射源位图时由 IT之家液态玻璃镜片承担（当前
+            // LENS_LIVE_CAPTURE_ENABLED=false，折射源恒为 null，镜片不渲染）。
+            // 原半透明药丸兜底已按用户要求移除——「导航栏完全透明不带任何颜色」，
+            // 选中态仅靠图标/文案的品牌红区分。
             if (isSelected && lensBackground != null && Build.VERSION.SDK_INT >= 33) {
                 LiquidGlassLens(
                     background = lensBackground,
                     tint = MaterialTheme.colorScheme.primary,
                     edgeHighlight = edgeHighlight,
                     modifier = Modifier.matchParentSize(),
-                )
-            } else if (isSelected) {
-                Box(
-                    Modifier
-                        .matchParentSize()
-                        .clip(RoundedCornerShape(30.dp))
-                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.12f)),
                 )
             }
         }
@@ -272,21 +256,6 @@ private fun TabItem(
             verticalArrangement = Arrangement.spacedBy(3.dp),
         ) {
             Box(contentAlignment = Alignment.Center) {
-                // 光斑 Box 仅在未启用镜片（API<33 兜底 / 无背后内容）时显示；
-                // 镜片启用时由上方 LiquidGlassLens 承担高亮，避免红粉色光斑盖过玻璃观感。
-                if (!useLens) {
-                    Box(
-                        modifier = Modifier
-                            .size(28.dp)
-                            .graphicsLayer {
-                                alpha = glow.coerceAtMost(1f)
-                                scaleX = 0.6f + 0.4f * glow
-                                scaleY = 0.6f + 0.4f * glow
-                            }
-                            .clip(CircleShape)
-                            .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.08f)),
-                    )
-                }
                 Icon(
                     imageVector = tab.icon,
                     contentDescription = tab.label,
