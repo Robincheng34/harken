@@ -80,6 +80,7 @@ import im.missuo.kumone.design.composition.LocalMusicController
 import im.missuo.kumone.design.composition.LocalNeteaseApi
 import im.missuo.kumone.design.composition.LocalOnLoginConfirmed
 import im.missuo.kumone.design.composition.LocalOnLoggedOut
+import im.missuo.kumone.design.composition.LocalSearchHistoryRepository
 import im.missuo.kumone.design.composition.LocalOpenNowPlaying
 import im.missuo.kumone.design.composition.LocalPlaybackCommands
 import im.missuo.kumone.design.composition.LocalSettingsRepository
@@ -166,6 +167,7 @@ fun KumoneApp(graph: AppGraph) {
             LocalMusicController provides graph.musicController,
             LocalNeteaseApi provides graph.neteaseApi,
             LocalSettingsRepository provides graph.settings,
+            LocalSearchHistoryRepository provides graph.searchHistory,
             LocalPlaybackCommands provides graph.playbackCommands,
             LocalIsLoggedIn provides graph.isLoggedIn,
             LocalToastState provides toastState,
@@ -403,7 +405,10 @@ private fun TabsScreen(
                     bottomClearance = bottomClearance,
                 )
                 AppTab.EXPLORE -> ExploreScreen(navController = overlayNav)
-                AppTab.SEARCH -> SearchScreen(navController = overlayNav)
+                AppTab.SEARCH -> SearchScreen(
+                    navController = overlayNav,
+                    bottomClearance = bottomClearance,
+                )
                 AppTab.FM -> FmScreen(onOpenLogin = { overlayNav.navigate(Destinations.LOGIN) })
                 AppTab.LIBRARY -> LibraryScreen(
                     onNavigate = { overlayNav.navigate(it) },

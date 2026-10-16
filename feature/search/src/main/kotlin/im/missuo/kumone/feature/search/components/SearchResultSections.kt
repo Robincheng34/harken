@@ -40,6 +40,7 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
@@ -64,6 +65,7 @@ import im.missuo.kumone.net.model.Track
  * @param onPlayTrack 点击单曲。
  * @param onOpenArtist / onOpenAlbum / onOpenPlaylist 三类详情跳转。
  * @param onSeeAllAll 分区「查看全部」→ 切 Tab。
+ * @param bottomClearance 列表尾部净空（迷你播放条 + TabBar 悬浮 chrome 占位）。
  */
 @Composable
 fun SearchResultSections(
@@ -75,7 +77,9 @@ fun SearchResultSections(
     onOpenPlaylist: (Long) -> Unit,
     onSelectTab: (SearchTab) -> Unit,
     modifier: Modifier = Modifier,
+    bottomClearance: Dp = 0.dp,
 ) {
+    val contentModifier = modifier.padding(bottom = bottomClearance)
     when (uiState.tab) {
         SearchTab.ALL -> AllTab(
             uiState = uiState,
@@ -85,32 +89,32 @@ fun SearchResultSections(
             onOpenAlbum = onOpenAlbum,
             onOpenPlaylist = onOpenPlaylist,
             onSelectTab = onSelectTab,
-            modifier = modifier,
+            modifier = contentModifier,
         )
 
         SearchTab.SONGS -> TrackListView(
             tracks = uiState.songs,
             currentTrackId = currentTrackId,
             onPlay = onPlayTrack,
-            modifier = modifier.fillMaxWidth(),
+            modifier = contentModifier.fillMaxWidth(),
         )
 
         SearchTab.ARTISTS -> ArtistGrid(
             artists = uiState.artists,
             onOpenArtist = onOpenArtist,
-            modifier = modifier,
+            modifier = contentModifier,
         )
 
         SearchTab.ALBUMS -> AlbumGrid(
             albums = uiState.albums,
             onOpenAlbum = onOpenAlbum,
-            modifier = modifier,
+            modifier = contentModifier,
         )
 
         SearchTab.PLAYLISTS -> PlaylistGrid(
             playlists = uiState.playlists,
             onOpenPlaylist = onOpenPlaylist,
-            modifier = modifier,
+            modifier = contentModifier,
         )
     }
 }

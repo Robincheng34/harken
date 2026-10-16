@@ -13,6 +13,8 @@ import im.missuo.kumone.net.model.ArtistResponse
 import im.missuo.kumone.net.model.ArtistSummary
 import im.missuo.kumone.net.model.CloudResponse
 import im.missuo.kumone.net.model.HighQualityResponse
+import im.missuo.kumone.net.model.HotSearchDetailResponse
+import im.missuo.kumone.net.model.HotSearchItem
 import im.missuo.kumone.net.model.LyricResponse
 import im.missuo.kumone.net.model.NewAlbumsResponse
 import im.missuo.kumone.net.model.PlayRecordItem
@@ -504,6 +506,12 @@ open class NeteaseApi(private val client: NeteaseClient) {
     open suspend fun searchSuggest(keywords: String): SearchSuggestBody? {
         val response: SearchSuggestResponse = weapi("/search/suggest/web", mapOf("s" to keywords))
         return response.result
+    }
+
+    /** 热搜榜（官方搜索落地页，实际 weapi 端点为 `/weapi/hotsearchlist/get`）。 */
+    open suspend fun hotSearchDetail(): List<HotSearchItem> {
+        val response: HotSearchDetailResponse = weapi("/hotsearchlist/get", emptyMap())
+        return response.data
     }
 
     // MARK: - Albums

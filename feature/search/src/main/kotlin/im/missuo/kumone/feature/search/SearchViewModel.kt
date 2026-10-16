@@ -15,6 +15,7 @@ import im.missuo.kumone.net.model.ArtistSummary
 import im.missuo.kumone.net.model.PlaylistSummary
 import im.missuo.kumone.net.model.SearchSuggestBody
 import im.missuo.kumone.net.model.Track
+import im.missuo.kumone.storage.search.SearchHistoryRepository
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -30,12 +31,34 @@ import kotlinx.coroutines.launch
 
 class SearchViewModel(
     private val api: NeteaseApi,
+    private val history: SearchHistoryRepository? = null,
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
 ) {
     private val _uiState: MutableStateFlow<SearchUiState> = MutableStateFlow(SearchUiState())
     val uiState: StateFlow<SearchUiState> = _uiState.asStateFlow()
 
     private var loadJob: Job? = null
+
+    init {
+        // 搜索历史：仓库冷 Flow → UI 状态（官方落地页「搜索历史」）。
+        history?.let { repo ->
+            scope.launch {
+                repo.history.collect { list ->
+                    _uiState.update { it.copy(history = list) }
+                }
+            }
+        }
+    }
+
+    /** 热搜榜（官方落地页）：拉一次，失败静默（落地页降级为仅历史）。 */
+    fun loadHotSearches() {
+        if (_uiState.value.hotSearches.isNotEmpty() || _uiState.value.isLoadingHot) return
+        scope.launch {
+            _uiState.update { it.copy(isLoadingHot = true) }
+            val hot = runCatching { api.hotSearchDetail() }.getOrNull().orEmpty()
+            _uiState.update { it.copy(hotSearches = hot, isLoadingHot = false) }
+        }
+    }
 
     /** 输入变化：更新关键字、清空旧结果与已加载集合，并触发联想（iOS `setQuery`）。 */
     fun setQuery(query: String) {
@@ -54,9 +77,33 @@ class SearchViewModel(
                 suggestions = null,
                 error = null,
                 isSearching = false,
+                // 回到「输入中」态：显联想而非结果（官方：改字即回下拉建议）。
+                hasSearched = false,
             )
         }
         if (query.isNotBlank()) suggest(query)
+    }
+
+    /**
+     * 提交搜索（官方：点热搜/历史/建议、回车、点搜索按钮均走此路）：
+     * 写入搜索历史 → 置查询词 → 触发当前 Tab 检索。
+     */
+    fun submit(keyword: String) {
+        val trimmed = keyword.trim()
+        if (trimmed.isEmpty()) return
+        scope.launch { history?.add(trimmed) }
+        setQuery(trimmed)
+        search()
+    }
+
+    /** 删除单条搜索历史（官方：历史项左滑/长按删除）。 */
+    fun removeHistory(keyword: String) {
+        scope.launch { history?.remove(keyword) }
+    }
+
+    /** 清空搜索历史（官方：历史区标题垃圾桶）。 */
+    fun clearHistory() {
+        scope.launch { history?.clear() }
     }
 
     /** 切换结果分区（iOS `model.tab`）：首次进入该 Tab 时按需加载。 */
@@ -67,6 +114,7 @@ class SearchViewModel(
 
     /** 提交搜索（搜索按钮 / 回车）：加载当前 Tab。 */
     fun search() {
+        _uiState.update { it.copy(hasSearched = true) }
         load(_uiState.value.tab)
     }
 

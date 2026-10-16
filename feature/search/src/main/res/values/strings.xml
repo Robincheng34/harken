@@ -7,9 +7,7 @@
     <string name="search_clear">清空</string>
     <string name="search_nav_title">搜索</string>
 
-    <!-- 空态引导（iOS emptySearchPrompt） -->
-    <string name="search_empty_title">探索海量华语流行与经典音乐</string>
-    <string name="search_empty_subtitle">输入歌曲名称、歌手名或歌单关键字开始搜索</string>
+    <!-- 空态引导（结果页无结果时） -->
     <string name="search_no_result">没有找到相关结果</string>
     <string name="search_failed">搜索失败</string>
 
@@ -26,4 +24,19 @@
     <string name="search_section_albums">专辑</string>
     <string name="search_section_playlists">歌单</string>
     <string name="search_see_all">查看全部</string>
+
+    <!-- 官方搜索落地页：热搜榜 / 搜索历史 -->
+    <string name="search_hot_title">热搜榜</string>
+    <string name="search_history_title">搜索历史</string>
+    <string name="search_history_clear">清空搜索历史</string>
+    <string name="search_cancel">取消</string>
+    <string name="search_hot_loading">热搜榜加载中…</string>
+    <string name="search_hot_empty">热搜榜暂不可用</string>
+    <string name="search_history_empty">暂无搜索历史</string>
+
+    <!-- 热搜角标（官方 iconType：1=热 2=新 3=沸 4=爆） -->
+    <string name="search_hot_badge_hot">热</string>
+    <string name="search_hot_badge_new">新</string>
+    <string name="search_hot_badge_boil">沸</string>
+    <string name="search_hot_badge_boom">爆</string>
 </resources>

@@ -21,6 +21,7 @@ import im.missuo.kumone.player.MusicController
 import im.missuo.kumone.player.PlaybackCommands
 import im.missuo.kumone.player.PlayerDependencies
 import im.missuo.kumone.storage.cookies.DataStoreCookieStore
+import im.missuo.kumone.storage.search.SearchHistoryRepository
 import im.missuo.kumone.storage.settings.SettingsRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -48,6 +49,7 @@ class AppGraph private constructor(context: Context) {
 
     val cookieStore: DataStoreCookieStore = DataStoreCookieStore(dataStore)
     val settings: SettingsRepository = SettingsRepository(dataStore)
+    val searchHistory: SearchHistoryRepository = SearchHistoryRepository(dataStore)
     val neteaseClient: NeteaseClient = NeteaseClient(cookieStore)
     val neteaseApi: NeteaseApi = NeteaseApi(neteaseClient)
 

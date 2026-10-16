@@ -65,7 +65,7 @@ class SearchViewModelTest {
     }
 
     private fun viewModel(api: NeteaseApi, dispatcher: TestDispatcher): SearchViewModel =
-        SearchViewModel(api, CoroutineScope(dispatcher))
+        SearchViewModel(api, scope = CoroutineScope(dispatcher))
 
     @Test
     fun `all tab merges results from four types`() = runTest {

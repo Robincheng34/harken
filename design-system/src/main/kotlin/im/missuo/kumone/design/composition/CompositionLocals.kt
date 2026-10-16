@@ -19,6 +19,7 @@ import im.missuo.kumone.design.component.ToastState
 import im.missuo.kumone.net.api.NeteaseApi
 import im.missuo.kumone.player.MusicController
 import im.missuo.kumone.player.PlaybackCommands
+import im.missuo.kumone.storage.search.SearchHistoryRepository
 import im.missuo.kumone.storage.settings.SettingsRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -31,6 +32,10 @@ val LocalNeteaseApi: ProvidableCompositionLocal<NeteaseApi?> = compositionLocalO
 
 /** Settings repository (audio quality, appearance, lyric preferences, …). */
 val LocalSettingsRepository: ProvidableCompositionLocal<SettingsRepository?> = compositionLocalOf { null }
+
+/** 搜索历史仓库（官方搜索页「搜索历史」）。 */
+val LocalSearchHistoryRepository: ProvidableCompositionLocal<SearchHistoryRepository?> =
+    compositionLocalOf { null }
 
 /**
  * 播放指令集合（`PlaybackCommands`）：把「取数 → 成队列 → 播放」的编排从各
