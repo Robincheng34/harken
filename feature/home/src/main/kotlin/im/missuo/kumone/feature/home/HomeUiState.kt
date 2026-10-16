@@ -21,6 +21,8 @@ data class RadarPlaylist(
 /** 首页聚合状态。 */
 data class HomeUiState(
     val isLoading: Boolean = true,
+    /** 下拉刷新中（保留内容，后台重拉；区别于 [isLoading] 的「全量骨架」）。 */
+    val isRefreshing: Boolean = false,
     val error: String? = null,
     val recommendPlaylists: List<PlaylistSummary> = emptyList(),
     val radarPlaylists: List<RadarPlaylist> = emptyList(),

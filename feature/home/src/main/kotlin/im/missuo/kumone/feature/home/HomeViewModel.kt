@@ -86,6 +86,56 @@ class HomeViewModel(
         load(loggedIn)
     }
 
+    /** 下拉刷新：保留当前内容，后台重新拉全量数据（失败静默、不闪骨架）。 */
+    fun refresh(loggedIn: Boolean) {
+        scope.launch {
+            _uiState.update { it.copy(isRefreshing = true) }
+            // 与 load() 相同的并发拉取逻辑（复用同一组 api 调用，失败分支静默）。
+            val recommend = async {
+                runCatching {
+                    if (loggedIn) {
+                        val head = api.recommendResource()
+                        val tail = api.personalizedPlaylists(limit = 30)
+                        val seen = HashSet<Long>()
+                        (head + tail).filter { seen.add(it.id) }
+                    } else {
+                        api.personalizedPlaylists(limit = 30)
+                    }
+                }.getOrNull() ?: emptyList()
+            }
+            val daily = async { runCatching { api.dailyRecommendSongs() }.getOrNull() ?: emptyList<Track>() }
+            val tops = async { runCatching { api.toplists() }.getOrNull() ?: emptyList<ToplistItem>() }
+            val albums = async { runCatching { api.newAlbums(limit = 20) }.getOrNull() ?: emptyList<AlbumSummary>() }
+            val artists = async { runCatching { api.topArtists(limit = 12) }.getOrNull() ?: emptyList<ArtistSummary>() }
+            val radar = if (loggedIn) {
+                async { runCatching { loadRadarPlaylists() }.getOrNull() ?: emptyList<RadarPlaylist>() }
+            } else null
+
+            val recommendList = recommend.await()
+            val dailyList = daily.await()
+            val toplistItems = tops.await().filter { it.id in OFFICIAL_TOPLIST_IDS }
+            val albumList = albums.await()
+            val artistList = artists.await().shuffled().take(6)
+
+            _uiState.update {
+                it.copy(
+                    isRefreshing = false,
+                    // 仅当拉取成功（非空）才更新内容；失败保留旧数据（下拉刷新
+                    // 不应闪回错误态 / 骨架，用户期望是「数据没变」而非「页面崩了」）。
+                    recommendPlaylists = recommendList.ifEmpty { it.recommendPlaylists },
+                    dailySongs = dailyList.ifEmpty { it.dailySongs },
+                    dailyFirstCover = dailyList.firstOrNull()?.album?.picUrl
+                        ?: it.dailyFirstCover,
+                    toplists = toplistItems.ifEmpty { it.toplists },
+                    newAlbums = albumList.ifEmpty { it.newAlbums },
+                    artists = artistList.ifEmpty { it.artists },
+                    radarPlaylists = (radar?.await() ?: emptyList()).ifEmpty { it.radarPlaylists },
+                    error = null,
+                )
+            }
+        }
+    }
+
     /** 雷达歌单：四个个性化雷达 ID 拉简要信息，标题按「|」拆分（iOS loadRadarPlaylists）。 */
     private suspend fun loadRadarPlaylists(): List<RadarPlaylist> {
         val result = mutableListOf<RadarPlaylist>()

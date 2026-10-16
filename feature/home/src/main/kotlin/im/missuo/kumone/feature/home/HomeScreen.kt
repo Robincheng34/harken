@@ -9,6 +9,8 @@
 // 详情导航走 [navController]。P0 阶段未就绪入口（每日推荐/心动模式）点击后 Toast
 // 「敬请期待」（架构文档 §9.6），P1 批（T30）统一开放。
 
+@file:OptIn(ExperimentalMaterial3Api::class)
+
 package im.missuo.kumone.feature.home
 
 import androidx.compose.foundation.layout.Arrangement
@@ -22,6 +24,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
@@ -43,6 +46,24 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
+import androidx.compose.animation.core.LinearEasing
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
+import androidx.compose.foundation.background
+import androidx.compose.foundation.shape.CircleShape
+import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
+import androidx.compose.material3.pulltorefresh.PullToRefreshState
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.res.painterResource
 import im.missuo.kumone.design.component.CoverCard
 import im.missuo.kumone.design.component.ErrorStateView
 import im.missuo.kumone.design.component.SectionHeader
@@ -86,6 +107,7 @@ fun HomeScreen(
     // 页面销毁时取消 ViewModel 内部协程（原 bug：自建 scope 永不取消，收集器常驻泄漏）。
     DisposableEffect(Unit) { onDispose { viewModel.cancel() } }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val ptrState = rememberPullToRefreshState()
 
     LaunchedEffect(isLoggedIn) { viewModel.load(isLoggedIn) }
 
@@ -113,98 +135,115 @@ fun HomeScreen(
                 onRetry = { viewModel.reload(isLoggedIn) },
             )
 
-            // iOS: case .loaded -> loadedBody
-            else -> LazyColumn(
+            // iOS: case .loaded -> loadedBody，外层包 Material3 下拉刷新。
+            else -> PullToRefreshBox(
+                isRefreshing = uiState.isRefreshing,
+                onRefresh = { viewModel.refresh(isLoggedIn) },
+                state = ptrState,
                 modifier = Modifier.fillMaxSize(),
-                contentPadding = PaddingValues(vertical = Layout.contentInset - 8.dp),
-                // 分区间距：12dp（LazyColumn）+ SectionHeader 上内边距 12dp = 视觉
-                // 间隔 24dp。原 34dp 叠加 header 内边距后视觉间隔 46dp，用户反馈
-                // 「推荐歌单底部与排行榜顶部上下间隔太大」。
-                verticalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                // 功能卡（仅登录态；iOS `if account.isLoggedIn`）。
-                if (isLoggedIn) {
-                    item(key = "feature-cards") {
-                        FunctionCards(
-                            onDaily = { toast.show(comingSoon) }, // P1（T30）开放
-                            onFM = { commands?.startFM() },
-                            onHeartbeat = { toast.show(comingSoon) }, // P1（T30）开放
-                            dailyCover = uiState.dailyFirstCover,
-                            modifier = Modifier.padding(top = 8.dp),
-                        )
-                    }
-                }
-
-                if (uiState.recommendPlaylists.isNotEmpty()) {
-                    item(key = "recommend") {
-                        PlaylistShelf(
-                            title = stringResource(R.string.home_recommend_playlists),
-                            items = uiState.recommendPlaylists.take(12), // iOS: prefix(12)
-                            onOpen = { navController.navigate(playlistDetailRoute(it)) },
-                            onPlay = onPlaylist,
-                            staggered = true,
-                        )
-                    }
-                }
-
-                if (uiState.radarPlaylists.isNotEmpty()) {
-                    item(key = "radar") {
-                        HomeShelf(
-                            title = stringResource(R.string.home_radar_playlists),
-                        ) {
-                            itemsIndexed(
-                                uiState.radarPlaylists,
-                                key = { _, radar -> radar.id },
-                            ) { _, radar ->
-                                CoverCard(
-                                    imageUrl = Formatters.resizedImageURL(radar.coverURL, 384),
-                                    contentDescription = radar.title,
-                                    title = radar.title,
-                                    subtitle = radar.subtitle,
-                                    size = Layout.cardSize,
-                                    onPlay = { onPlaylist(radar.id) },
-                                    onClick = { navController.navigate(playlistDetailRoute(radar.id)) },
+                indicator = {
+                    KumoneAppIconIndicator(
+                        state = ptrState,
+                        isRefreshing = uiState.isRefreshing,
+                        modifier = Modifier
+                            .align(Alignment.TopCenter)
+                            .padding(top = 24.dp),
+                    )
+                },
+                content = {
+                    LazyColumn(
+                        modifier = Modifier.fillMaxSize(),
+                        contentPadding = PaddingValues(vertical = Layout.contentInset - 8.dp),
+                        // 分区间距：12dp（LazyColumn）+ SectionHeader 上内边距 12dp = 视觉
+                        // 间隔 24dp。原 34dp 叠加 header 内边距后视觉间隔 46dp，用户反馈
+                        // 「推荐歌单底部与排行榜顶部上下间隔太大」。
+                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                    ) {
+                        // 功能卡（仅登录态；iOS `if account.isLoggedIn`）。
+                        if (isLoggedIn) {
+                            item(key = "feature-cards") {
+                                FunctionCards(
+                                    onDaily = { toast.show(comingSoon) }, // P1（T30）开放
+                                    onFM = { commands?.startFM() },
+                                    onHeartbeat = { toast.show(comingSoon) }, // P1（T30）开放
+                                    dailyCover = uiState.dailyFirstCover,
+                                    modifier = Modifier.padding(top = 8.dp),
                                 )
                             }
                         }
-                    }
-                }
 
-                if (uiState.toplists.isNotEmpty()) {
-                    item(key = "toplists") {
-                        ToplistShelf(
-                            title = stringResource(R.string.home_toplists),
-                            items = uiState.toplists,
-                            onOpen = { navController.navigate(playlistDetailRoute(it)) },
-                        )
-                    }
-                }
+                        if (uiState.recommendPlaylists.isNotEmpty()) {
+                            item(key = "recommend") {
+                                PlaylistShelf(
+                                    title = stringResource(R.string.home_recommend_playlists),
+                                    items = uiState.recommendPlaylists.take(12), // iOS: prefix(12)
+                                    onOpen = { navController.navigate(playlistDetailRoute(it)) },
+                                    onPlay = onPlaylist,
+                                    staggered = true,
+                                )
+                            }
+                        }
 
-                if (uiState.newAlbums.isNotEmpty()) {
-                    item(key = "new-albums") {
-                        NewAlbumShelf(
-                            items = uiState.newAlbums,
-                            onOpen = { navController.navigate(albumDetailRoute(it)) },
-                            onPlay = onAlbum,
-                        )
-                    }
-                }
+                        if (uiState.radarPlaylists.isNotEmpty()) {
+                            item(key = "radar") {
+                                HomeShelf(
+                                    title = stringResource(R.string.home_radar_playlists),
+                                ) {
+                                    itemsIndexed(
+                                        uiState.radarPlaylists,
+                                        key = { _, radar -> radar.id },
+                                    ) { _, radar ->
+                                        CoverCard(
+                                            imageUrl = Formatters.resizedImageURL(radar.coverURL, 384),
+                                            contentDescription = radar.title,
+                                            title = radar.title,
+                                            subtitle = radar.subtitle,
+                                            size = Layout.cardSize,
+                                            onPlay = { onPlaylist(radar.id) },
+                                            onClick = { navController.navigate(playlistDetailRoute(radar.id)) },
+                                        )
+                                    }
+                                }
+                            }
+                        }
 
-                if (uiState.artists.isNotEmpty()) {
-                    item(key = "artists") {
-                        ArtistShelf(
-                            items = uiState.artists,
-                            onOpen = { navController.navigate(artistDetailRoute(it)) },
-                        )
-                    }
-                }
+                        if (uiState.toplists.isNotEmpty()) {
+                            item(key = "toplists") {
+                                ToplistShelf(
+                                    title = stringResource(R.string.home_toplists),
+                                    items = uiState.toplists,
+                                    onOpen = { navController.navigate(playlistDetailRoute(it)) },
+                                )
+                            }
+                        }
 
-                // 底部悬浮 chrome 净空：有迷你播放条时 = 迷你条 52 + 间距 8 + TabBar 64 + 6 + 12；
-                // 无曲目时迷你条不占位，只需 TabBar 净空，否则列表末尾悬着 60dp 死白。
-                item(key = "clearance") {
-                    Spacer(Modifier.height(bottomClearance))
-                }
-            }
+                        if (uiState.newAlbums.isNotEmpty()) {
+                            item(key = "new-albums") {
+                                NewAlbumShelf(
+                                    items = uiState.newAlbums,
+                                    onOpen = { navController.navigate(albumDetailRoute(it)) },
+                                    onPlay = onAlbum,
+                                )
+                            }
+                        }
+
+                        if (uiState.artists.isNotEmpty()) {
+                            item(key = "artists") {
+                                ArtistShelf(
+                                    items = uiState.artists,
+                                    onOpen = { navController.navigate(artistDetailRoute(it)) },
+                                )
+                            }
+                        }
+
+                        // 底部悬浮 chrome 净空：有迷你播放条时 = 迷你条 52 + 间距 8 + TabBar 64 + 6 + 12；
+                        // 无曲目时迷你条不占位，只需 TabBar 净空，否则列表末尾悬着 60dp 死白。
+                        item(key = "clearance") {
+                            Spacer(Modifier.height(bottomClearance))
+                        }
+                    }
+                },
+            )
     }
 }
 
@@ -265,5 +304,45 @@ private fun HomeSkeletonShelf() {
                 }
             }
         }
+    }
+}
+
+/**
+ * 自定义下拉刷新指示器：仿网易云音乐官方——下拉时顶部出现 App 图标（黑底金色螺旋），
+ * 随拖拽进度旋转，刷新时持续旋转。基于 Material3 [PullToRefreshBox] 的 indicator 槽位。
+ */
+@Composable
+private fun KumoneAppIconIndicator(
+    state: PullToRefreshState,
+    isRefreshing: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    val infiniteTransition = rememberInfiniteTransition(label = "refreshSpin")
+    val spin by infiniteTransition.animateFloat(
+        initialValue = 0f,
+        targetValue = 360f,
+        animationSpec = infiniteRepeatable(
+            animation = tween(900, easing = LinearEasing),
+            repeatMode = RepeatMode.Restart,
+        ),
+        label = "spin",
+    )
+    val distanceFraction = state.distanceFraction.coerceIn(0f, 1f)
+    Box(
+        modifier = modifier
+            .size(42.dp)
+            .alpha(distanceFraction)
+            .clip(CircleShape)
+            .background(Color.Black)
+            .graphicsLayer {
+                rotationZ = if (isRefreshing) spin else distanceFraction * 360f
+            },
+        contentAlignment = Alignment.Center,
+    ) {
+        Image(
+            painter = painterResource(R.drawable.ic_app_logo),
+            contentDescription = null,
+            modifier = Modifier.size(30.dp),
+        )
     }
 }
