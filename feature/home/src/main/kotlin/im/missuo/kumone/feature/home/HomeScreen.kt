@@ -53,15 +53,11 @@ import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
-import androidx.compose.foundation.background
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshState
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.ui.draw.alpha
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
 import im.missuo.kumone.design.component.CoverCard
@@ -147,7 +143,7 @@ fun HomeScreen(
                         isRefreshing = uiState.isRefreshing,
                         modifier = Modifier
                             .align(Alignment.TopCenter)
-                            .padding(top = 24.dp),
+                            .padding(top = 8.dp),
                     )
                 },
                 content = {
@@ -308,7 +304,7 @@ private fun HomeSkeletonShelf() {
 }
 
 /**
- * 自定义下拉刷新指示器：仿网易云音乐官方——下拉时顶部出现 App 图标（黑底金色螺旋），
+ * 自定义下拉刷新指示器：仿网易云音乐官方——下拉时顶部出现 App 金色螺旋图标，
  * 随拖拽进度旋转，刷新时持续旋转。基于 Material3 [PullToRefreshBox] 的 indicator 槽位。
  */
 @Composable
@@ -328,21 +324,14 @@ private fun KumoneAppIconIndicator(
         label = "spin",
     )
     val distanceFraction = state.distanceFraction.coerceIn(0f, 1f)
-    Box(
+    Image(
+        painter = painterResource(R.drawable.ic_app_logo),
+        contentDescription = null,
         modifier = modifier
-            .size(42.dp)
+            .size(32.dp)
             .alpha(distanceFraction)
-            .clip(CircleShape)
-            .background(Color.Black)
             .graphicsLayer {
                 rotationZ = if (isRefreshing) spin else distanceFraction * 360f
             },
-        contentAlignment = Alignment.Center,
-    ) {
-        Image(
-            painter = painterResource(R.drawable.ic_app_logo),
-            contentDescription = null,
-            modifier = Modifier.size(30.dp),
-        )
-    }
+    )
 }
