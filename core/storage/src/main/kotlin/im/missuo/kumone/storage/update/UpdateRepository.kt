@@ -48,7 +48,14 @@ class UpdateRepository(
         return InstalledVersion(code, info.versionName ?: "")
     }
 
-    suspend fun fetchManifest(): UpdateManifest = checker.fetchManifest()
+    /** 当前生效的更新源地址：本地覆盖优先，否则回落默认常量。 */
+    suspend fun getUpdateSourceUrl(): String =
+        dataStore.data.first()[Keys.UPDATE_URL] ?: checker.manifestUrl
+
+    suspend fun setUpdateSourceUrl(url: String) =
+        dataStore.edit { it[Keys.UPDATE_URL] = url }
+
+    suspend fun fetchManifest(): UpdateManifest = checker.fetchManifest(getUpdateSourceUrl())
 
     suspend fun downloadApk(url: String, onProgress: (DownloadProgress) -> Unit = {}): File =
         withContext(Dispatchers.IO) {
@@ -101,6 +108,7 @@ class UpdateRepository(
         val PENDING_URL = stringPreferencesKey("update.pending.url")
         val PENDING_NOTE = stringPreferencesKey("update.pending.note")
         val PENDING_FORCE = booleanPreferencesKey("update.pending.force")
+        val UPDATE_URL = stringPreferencesKey("update.sourceUrl")
     }
 
     suspend fun getLastCheckMillis(): Long =

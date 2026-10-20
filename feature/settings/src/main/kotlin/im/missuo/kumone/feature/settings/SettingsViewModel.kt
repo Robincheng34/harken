@@ -57,6 +57,12 @@ class SettingsViewModel(
                 _uiState.update { it.copy(updateCheck = UpdateCheckUi.Available(pending)) }
             }
         }
+        // 读取已保存的更新源地址（若有本地覆盖），回写状态供设置页展示。
+        scope.launch {
+            runCatching { updateRepository.getUpdateSourceUrl() }.getOrNull()?.let { url ->
+                _uiState.update { it.copy(updateSourceUrl = url) }
+            }
+        }
     }
 
     fun setAudioQuality(quality: AudioQuality) = scope.launch {
@@ -147,6 +153,12 @@ class SettingsViewModel(
     }
 
     // ── 在线检测更新 ──────────────────────────────────────────────
+
+    /** 设置更新源地址（本地覆盖，回落默认常量）。 */
+    fun setUpdateSourceUrl(url: String) = scope.launch {
+        updateRepository.setUpdateSourceUrl(url)
+        _uiState.update { it.copy(updateSourceUrl = url) }
+    }
 
     /** 检查更新：拉取清单，比对已安装 versionCode，决定提示新版本或已是最新。 */
     fun checkUpdate() {

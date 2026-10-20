@@ -59,6 +59,7 @@ import androidx.compose.material.icons.filled.Image
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Slider
 import androidx.compose.material3.TextButton
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
@@ -154,6 +155,10 @@ fun SettingsScreen(
     }
     val updateState = uiState.updateCheck
     var downloadedFile by remember { mutableStateOf<File?>(null) }
+
+    // 更新源地址编辑弹窗状态。
+    var showSourceUrlDialog by remember { mutableStateOf(false) }
+    var sourceUrlDraft by remember { mutableStateOf("") }
 
     // 安装未知来源权限授予后，重新尝试安装已下载的 APK。
     val installPermissionLauncher = rememberLauncherForActivityResult(
@@ -335,6 +340,14 @@ fun SettingsScreen(
                 onClick = {},
             )
             ClickableSubtitleRow(
+                title = "更新源地址",
+                subtitle = if (uiState.updateSourceUrl.isBlank()) "默认（内置常量）" else uiState.updateSourceUrl,
+                onClick = {
+                    sourceUrlDraft = uiState.updateSourceUrl
+                    showSourceUrlDialog = true
+                },
+            )
+            ClickableSubtitleRow(
                 title = "检查更新",
                 subtitle = updateCheckSubtitle(uiState.updateCheck),
                 onClick = viewModel::checkUpdate,
@@ -398,6 +411,38 @@ fun SettingsScreen(
                             Text("正在下载更新包 ${((updateState as UpdateCheckUi.Downloading).fraction * 100).toInt()}%")
                         } else {
                             Text(manifest?.updateNote?.ifBlank { "有新的版本可用，是否立即更新？" } ?: "有新的版本可用，是否立即更新？")
+                        }
+                    },
+                )
+            }
+
+            // 更新源地址编辑弹窗（自托管 version.json：可手动填任意 HTTPS 地址，留空回落内置常量）。
+            if (showSourceUrlDialog) {
+                AlertDialog(
+                    onDismissRequest = { showSourceUrlDialog = false },
+                    confirmButton = {
+                        TextButton(onClick = {
+                            viewModel.setUpdateSourceUrl(sourceUrlDraft.trim())
+                            showSourceUrlDialog = false
+                        }) { Text("保存") }
+                    },
+                    dismissButton = { TextButton(onClick = { showSourceUrlDialog = false }) { Text("取消") } },
+                    title = { Text("更新源地址") },
+                    text = {
+                        Column {
+                            Text(
+                                text = "填写你的 version.json 地址（建议境内 OSS/COS + CDN）。留空则使用内置默认地址。检查更新时会拉取该地址并比对版本号。",
+                                style = MaterialTheme.typography.bodySmall,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                            Spacer(modifier = Modifier.height(12.dp))
+                            OutlinedTextField(
+                                value = sourceUrlDraft,
+                                onValueChange = { sourceUrlDraft = it },
+                                singleLine = true,
+                                placeholder = { Text("https://your-cdn/kumone/version.json") },
+                                modifier = Modifier.fillMaxWidth(),
+                            )
                         }
                     },
                 )

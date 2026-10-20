@@ -19,6 +19,7 @@ data class SettingsUiState(
     val nickname: String = "",
     val isLoggingOut: Boolean = false,
     val updateCheck: UpdateCheckUi = UpdateCheckUi.Idle,
+    val updateSourceUrl: String = "",
 )
 
 /** 音质可选项（对应 `AudioQuality`，自高到低）。 */

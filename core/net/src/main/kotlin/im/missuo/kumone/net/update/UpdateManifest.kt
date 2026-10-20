@@ -34,8 +34,8 @@ class UpdateChecker(
     private val httpClient: OkHttpClient = defaultClient(),
     val manifestUrl: String = UPDATE_MANIFEST_URL,
 ) {
-    suspend fun fetchManifest(): UpdateManifest = withContext(Dispatchers.IO) {
-        val request = Request.Builder().url(manifestUrl)
+    suspend fun fetchManifest(url: String = manifestUrl): UpdateManifest = withContext(Dispatchers.IO) {
+        val request = Request.Builder().url(url)
             .header("User-Agent", "Kumone-UpdateChecker").build()
         try {
             httpClient.newCall(request).execute().use { resp ->
