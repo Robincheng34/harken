@@ -9,6 +9,8 @@ package im.missuo.kumone.feature.library
 import im.missuo.kumone.net.api.NeteaseApi
 import im.missuo.kumone.net.client.InMemoryCookieStore
 import im.missuo.kumone.net.client.NeteaseClient
+import im.missuo.kumone.net.model.AlbumSummary
+import im.missuo.kumone.net.model.PlayRecordItem
 import im.missuo.kumone.net.model.PlaylistCreator
 import im.missuo.kumone.net.model.PlaylistSummary
 import im.missuo.kumone.net.model.UserProfile
@@ -36,6 +38,11 @@ class LibraryViewModelTest {
 
         override suspend fun userPlaylists(uid: Long, limit: Int, offset: Int): List<PlaylistSummary> =
             playlists
+
+        // 新增的「收藏专辑 / 最近播放」取数：测试内保持 hermetic，不触真实网络。
+        override suspend fun likedAlbums(limit: Int, offset: Int): List<AlbumSummary> = emptyList()
+
+        override suspend fun playRecords(uid: Long, week: Boolean): List<PlayRecordItem> = emptyList()
     }
 
     @Test

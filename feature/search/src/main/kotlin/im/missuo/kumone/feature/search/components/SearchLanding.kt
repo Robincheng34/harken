@@ -29,9 +29,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.Category
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Person
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -42,6 +45,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -90,6 +94,7 @@ fun SearchLandingPage(
     onHotItemClick: (String) -> Unit,
     onHistoryItemClick: (String) -> Unit,
     onClearHistory: () -> Unit,
+    onQuickEntryClick: (SearchQuickEntry) -> Unit,
     modifier: Modifier = Modifier,
     bottomClearance: Dp = 24.dp,
 ) {
@@ -97,6 +102,9 @@ fun SearchLandingPage(
         modifier = modifier.fillMaxSize(),
         contentPadding = PaddingValues(bottom = bottomClearance),
     ) {
+        item(key = "quick") {
+            QuickEntryRow(onEntryClick = onQuickEntryClick)
+        }
         item(key = "hot") {
             HotSearchBoard(
                 items = uiState.hotSearches,
@@ -200,7 +208,7 @@ private fun HotSearchRow(
             color = MaterialTheme.colorScheme.onSurface,
             maxLines = 1,
             overflow = TextOverflow.Ellipsis,
-            modifier = Modifier.weight(1f, fill = false),
+            modifier = Modifier.weight(1f),
         )
         Spacer(modifier = Modifier.width(6.dp))
         HotSearchBadge(iconType = item.iconType, iconUrl = item.iconUrl)
@@ -212,6 +220,8 @@ private fun HotSearchRow(
                 fontSize = 11.sp,
                 color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                 maxLines = 1,
+                textAlign = TextAlign.End,
+                modifier = Modifier.width(56.dp),
             )
         }
     }
@@ -351,3 +361,71 @@ internal fun formatHotScore(score: Int): String =
     } else {
         score.toString()
     }
+
+/** 搜索框下方快捷入口（对标官方：歌手 / 曲风）。 */
+enum class SearchQuickEntry { ARTIST, GENRE }
+
+/** 快捷入口行：两项图标 + 文字，等宽横排（官方搜索框下方）。 */
+@Composable
+private fun QuickEntryRow(
+    onEntryClick: (SearchQuickEntry) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .padding(horizontal = Layout.contentInset, vertical = 12.dp),
+    ) {
+        QuickEntryItem(
+            icon = Icons.Filled.Person,
+            label = stringResource(R.string.search_quick_artist),
+            onClick = { onEntryClick(SearchQuickEntry.ARTIST) },
+            modifier = Modifier.weight(1f),
+        )
+        QuickEntryItem(
+            icon = Icons.Filled.Category,
+            label = stringResource(R.string.search_quick_genre),
+            onClick = { onEntryClick(SearchQuickEntry.GENRE) },
+            modifier = Modifier.weight(1f),
+        )
+    }
+}
+
+/** 快捷入口单项：圆形图标底 + 文字（官方风格）。 */
+@Composable
+private fun QuickEntryItem(
+    icon: ImageVector,
+    label: String,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    Column(
+        modifier = modifier
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(onClick = onClick)
+            .padding(vertical = 8.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .clip(CircleShape)
+                .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(22.dp),
+            )
+        }
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = label,
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1,
+        )
+    }
+}

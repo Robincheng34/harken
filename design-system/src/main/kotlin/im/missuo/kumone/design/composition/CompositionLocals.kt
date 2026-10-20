@@ -19,8 +19,10 @@ import im.missuo.kumone.design.component.ToastState
 import im.missuo.kumone.net.api.NeteaseApi
 import im.missuo.kumone.player.MusicController
 import im.missuo.kumone.player.PlaybackCommands
+import im.missuo.kumone.storage.download.DownloadRepository
 import im.missuo.kumone.storage.search.SearchHistoryRepository
 import im.missuo.kumone.storage.settings.SettingsRepository
+import im.missuo.kumone.storage.update.UpdateRepository
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 
@@ -33,6 +35,9 @@ val LocalNeteaseApi: ProvidableCompositionLocal<NeteaseApi?> = compositionLocalO
 /** Settings repository (audio quality, appearance, lyric preferences, …). */
 val LocalSettingsRepository: ProvidableCompositionLocal<SettingsRepository?> = compositionLocalOf { null }
 
+/** 在线检测更新仓储（拉取 version.json、下载/安装 APK、待更新持久化）。 */
+val LocalUpdateRepository: ProvidableCompositionLocal<UpdateRepository?> = compositionLocalOf { null }
+
 /** 搜索历史仓库（官方搜索页「搜索历史」）。 */
 val LocalSearchHistoryRepository: ProvidableCompositionLocal<SearchHistoryRepository?> =
     compositionLocalOf { null }
@@ -42,6 +47,13 @@ val LocalSearchHistoryRepository: ProvidableCompositionLocal<SearchHistoryReposi
  * feature UI 收敛到 :core:player，经 :app 装配后由此下发。
  */
 val LocalPlaybackCommands: ProvidableCompositionLocal<PlaybackCommands?> =
+    compositionLocalOf { null }
+
+/**
+ * 下载仓储（离线播放闭环）：由 `:app` 提供 [im.missuo.kumone.storage.download.DownloadRepository]，
+ * 各 feature 屏幕据此发起下载 / 读取已下载清单，无需反向依赖 `:app`。
+ */
+val LocalDownloadRepository: ProvidableCompositionLocal<DownloadRepository?> =
     compositionLocalOf { null }
 
 /**

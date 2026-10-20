@@ -43,7 +43,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.foundation.layout.offset
+import androidx.compose.ui.platform.LocalDensity
+import kotlin.math.roundToInt
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.navigation.NavHostController
 import androidx.compose.animation.core.LinearEasing
@@ -104,6 +108,14 @@ fun HomeScreen(
     DisposableEffect(Unit) { onDispose { viewModel.cancel() } }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val ptrState = rememberPullToRefreshState()
+    // 下拉刷新：整页内容随拖拽进度向下位移，顶部留出空隙；刷新图标只出现在
+    // 这段空隙内（而非覆盖在内容顶部）。刷新期 material3 维持 distanceFraction≈1，
+    // 内容自动停在空隙位、完成后回弹。
+    val density = LocalDensity.current
+    val pullGapDp = 96.dp
+    val contentOffsetPx = with(density) {
+        (ptrState.distanceFraction.coerceIn(0f, 1f) * pullGapDp.toPx()).roundToInt()
+    }
 
     LaunchedEffect(isLoggedIn) { viewModel.load(isLoggedIn) }
 
@@ -143,17 +155,27 @@ fun HomeScreen(
                         isRefreshing = uiState.isRefreshing,
                         modifier = Modifier
                             .align(Alignment.TopCenter)
-                            .padding(top = 8.dp),
+                            .offset { IntOffset(0, contentOffsetPx / 2) },
                     )
                 },
                 content = {
                     LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(vertical = Layout.contentInset - 8.dp),
-                        // 分区间距：12dp（LazyColumn）+ SectionHeader 上内边距 12dp = 视觉
-                        // 间隔 24dp。原 34dp 叠加 header 内边距后视觉间隔 46dp，用户反馈
-                        // 「推荐歌单底部与排行榜顶部上下间隔太大」。
-                        verticalArrangement = Arrangement.spacedBy(12.dp),
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .offset { IntOffset(0, contentOffsetPx) },
+                        contentPadding = PaddingValues(vertical = Layout.sectionSpacing),
+                        // 分区间距统一（原 bug：LazyColumn 的 12dp 会与各 shelf 自带的上下
+                        // 内边距叠加，而各 shelf 内部留白并不一致——HomeShelf 系底部 6dp、
+                        // PlaylistShelf / ToplistShelf 底部 0dp——导致实际视觉间隔出现
+                        // 30 / 24 / 18 混排，用户反馈「首页每一块的间距需要统一」）。
+                        //
+                        // 现约定：各 shelf 内部不再自带上下 padding（见 HomeShelf、
+                        // NewAlbumShelf、FunctionCards），分区之间的间隔统一由这里提供：
+                        //   SECTION_SPACING(16) + SectionHeader 上内边距(12) = 28dp，
+                        // 任意两个相邻分区均一致；分区头与其自身内容行的间距则统一为
+                        // SectionHeader 的下内边距 12dp。首 item 只叠加 contentPadding
+                        // （不含分区间距），末 item 为纯净空 Spacer，均不会出现双倍间距。
+                        verticalArrangement = Arrangement.spacedBy(Layout.sectionSpacing),
                     ) {
                         // 功能卡（仅登录态；iOS `if account.isLoggedIn`）。
                         if (isLoggedIn) {
@@ -163,7 +185,10 @@ fun HomeScreen(
                                     onFM = { commands?.startFM() },
                                     onHeartbeat = { toast.show(comingSoon) }, // P1（T30）开放
                                     dailyCover = uiState.dailyFirstCover,
-                                    modifier = Modifier.padding(top = 8.dp),
+                                    // 三张功能卡（每日推荐 / 私人漫游 / 心动漫游）整体下移：
+                                    // 原 8dp 贴顶；配合下方去掉行自带 6dp 竖直内边距，
+                                    // 卡片顶部距列表顶部净增 10dp。
+                                    modifier = Modifier.padding(top = 24.dp),
                                 )
                             }
                         }

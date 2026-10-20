@@ -27,6 +27,7 @@ class KumoneApplication : Application() {
         createPlaybackNotificationChannel()
         val graph = AppGraph.get(this)
         scope.launch { graph.bootstrap() }
+        scope.launch { graph.checkForUpdateIfDue() }
     }
 
     /** Media3 播放通知使用的低重要性渠道（对应 iOS NowPlayingManager 的播放信息）。 */

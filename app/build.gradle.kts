@@ -2,6 +2,7 @@ plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose.compiler)
+    alias(libs.plugins.kotlin.serialization)
 }
 
 android {
@@ -79,4 +80,8 @@ dependencies {
     implementation(libs.compose.material3)
     implementation(libs.compose.material.icons.extended)
     debugImplementation(libs.compose.ui.tooling.preview)
+
+    // 在线检测更新单元测试（纯逻辑，不依赖 Robolectric）。
+    testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.serialization.json)
 }

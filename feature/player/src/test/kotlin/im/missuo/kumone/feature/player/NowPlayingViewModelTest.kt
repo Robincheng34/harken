@@ -76,4 +76,104 @@ class NowPlayingViewModelTest {
         viewModel.setLyricsScrubbing(false)
         assertFalse(viewModel.uiState.first().isLyricsScrubbing)
     }
+
+    // ---- 沉浸式歌词（isLyricsImmersive）状态机 ----
+    // 契约：沉浸只在「歌词面板已开」时才有意义；任何其他面板动作都要清掉它，
+    // 否则会残留出「chrome 已隐藏但计时器不再跑」的卡死态。
+
+    @Test
+    fun `panels start non-immersive`() = runTest {
+        val viewModel = NowPlayingViewModel()
+
+        assertFalse(viewModel.uiState.first().isLyricsImmersive)
+    }
+
+    @Test
+    fun `immersive mode can be entered and exited`() = runTest {
+        val viewModel = NowPlayingViewModel()
+        viewModel.toggleLyricsPanel()
+
+        viewModel.enterLyricsImmersive()
+        assertTrue(viewModel.uiState.first().isLyricsImmersive)
+
+        viewModel.exitLyricsImmersive()
+        assertFalse(viewModel.uiState.first().isLyricsImmersive)
+    }
+
+    @Test
+    fun `entering immersive twice is idempotent`() = runTest {
+        val viewModel = NowPlayingViewModel()
+        viewModel.toggleLyricsPanel()
+
+        viewModel.enterLyricsImmersive()
+        viewModel.enterLyricsImmersive()
+
+        assertTrue(viewModel.uiState.first().isLyricsImmersive)
+    }
+
+    @Test
+    fun `exiting immersive twice is idempotent`() = runTest {
+        val viewModel = NowPlayingViewModel()
+
+        // 未进入时退出应保持 false，不得意外置真。
+        viewModel.exitLyricsImmersive()
+        assertFalse(viewModel.uiState.first().isLyricsImmersive)
+    }
+
+    @Test
+    fun `toggling lyrics panel leaves immersive mode`() = runTest {
+        val viewModel = NowPlayingViewModel()
+        viewModel.toggleLyricsPanel()
+        viewModel.enterLyricsImmersive()
+
+        // 沉浸中切回封面：必须同时退出沉浸，否则封面页会保持 chrome 隐藏。
+        viewModel.toggleLyricsPanel()
+
+        val state = viewModel.uiState.first()
+        assertFalse(state.showLyricsPanel)
+        assertFalse(state.isLyricsImmersive)
+    }
+
+    @Test
+    fun `opening queue panel leaves immersive mode`() = runTest {
+        val viewModel = NowPlayingViewModel()
+        viewModel.toggleLyricsPanel()
+        viewModel.enterLyricsImmersive()
+
+        // 回归用例：曾经这里不重置 isLyricsImmersive，导致关闭队列后播放页
+        // 卡在沉浸态（chrome 隐藏）且「5 秒无操作自动沉浸」的计时不再生效。
+        viewModel.toggleQueuePanel()
+        assertFalse(viewModel.uiState.first().isLyricsImmersive)
+
+        viewModel.toggleQueuePanel()
+        val state = viewModel.uiState.first()
+        assertFalse(state.showQueuePanel)
+        assertFalse(state.isLyricsImmersive)
+    }
+
+    @Test
+    fun `closing queue panel does not resurrect immersive mode`() = runTest {
+        val viewModel = NowPlayingViewModel()
+        viewModel.toggleLyricsPanel()
+        viewModel.enterLyricsImmersive()
+        viewModel.toggleQueuePanel() // 开队列（退出沉浸）
+        viewModel.toggleQueuePanel() // 关队列
+
+        val state = viewModel.uiState.first()
+        assertFalse(state.showQueuePanel)
+        assertFalse(state.showLyricsPanel)
+        assertFalse(state.isLyricsImmersive)
+    }
+
+    @Test
+    fun `markInteraction advances the idle timestamp`() = runTest {
+        val viewModel = NowPlayingViewModel()
+        val before = viewModel.lastInteractionMs
+
+        // 即使同一毫秒内连点，时间戳也不应倒退。
+        viewModel.markInteraction()
+        viewModel.markInteraction()
+
+        assertTrue(viewModel.lastInteractionMs >= before)
+    }
 }

@@ -60,6 +60,13 @@ dependencies {
     implementation(libs.coil.compose)
     implementation(libs.androidx.palette.ktx)
 
+    // 扫一扫：CameraX 取景（core/camera2/lifecycle/view）+ zxing 解码。
+    implementation(libs.androidx.camera.core)
+    implementation(libs.androidx.camera.camera2)
+    implementation(libs.androidx.camera.lifecycle)
+    implementation(libs.androidx.camera.view)
+    implementation(libs.zxing.core)
+
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)
 }

@@ -87,4 +87,7 @@ data class AppSettings(
     val verbatimLyrics: Boolean = true,
     val lyricsAnnotation: LyricsAnnotation = LyricsAnnotation.OFF,
     val tabOrder: List<String> = emptyList(),
+    // 主题 / 主图挂件：存稳定 id，null = 未配置（取各自默认套件）。
+    val activeThemePackId: String? = null,
+    val activeMainImagePackId: String? = null,
 )

@@ -15,8 +15,15 @@
 package im.missuo.kumone.feature.player
 
 import android.content.Intent
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -31,7 +38,6 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.ChatBubbleOutline
@@ -44,7 +50,6 @@ import androidx.compose.material.icons.filled.KeyboardArrowDown
 import androidx.compose.material.icons.filled.MoreHoriz
 import androidx.compose.material.icons.filled.MusicNote
 import androidx.compose.material.icons.filled.Share
-import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
 import androidx.compose.material3.ExperimentalMaterial3Api
@@ -52,16 +57,18 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalClipboardManager
@@ -72,16 +79,17 @@ import androidx.compose.ui.text.AnnotatedString
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import coil.compose.AsyncImage
+import kotlinx.coroutines.delay
 import im.missuo.kumone.design.composition.LocalIsLoggedIn
 import im.missuo.kumone.design.composition.LocalMusicController
 import im.missuo.kumone.design.composition.LocalNeteaseApi
+import im.missuo.kumone.design.composition.LocalDownloadRepository
 import im.missuo.kumone.design.composition.LocalSettingsRepository
 import im.missuo.kumone.design.composition.LocalToastState
-import im.missuo.kumone.design.theme.GlassChip
-import im.missuo.kumone.design.theme.bright
-import im.missuo.kumone.design.theme.glassTokens
 import im.missuo.kumone.feature.player.components.ArtworkBlurBackground
 import im.missuo.kumone.feature.player.components.LyricsPanel
 import im.missuo.kumone.feature.player.components.NowPlayingControls
@@ -89,8 +97,13 @@ import im.missuo.kumone.feature.player.components.QueuePanel
 import im.missuo.kumone.feature.player.components.VinylRecordView
 import im.missuo.kumone.net.model.Formatters
 import im.missuo.kumone.net.model.Track
+import im.missuo.kumone.playback.AudioQuality
 import im.missuo.kumone.playback.RepeatMode
+import im.missuo.kumone.storage.download.DownloadStatus
+import im.missuo.kumone.storage.settings.NowPlayingMode
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.collect
+import kotlinx.coroutines.launch
 
 /** 全屏播放页覆盖层路由（与 `:app` `Routes.NOW_PLAYING` 的字符串契约）。 */
 const val NOW_PLAYING_ROUTE = "now_playing"
@@ -107,6 +120,7 @@ private val LikeRed = Color(0xFFE8434F)
 @Composable
 fun NowPlayingScreen(
     onBack: () -> Unit,
+    onOpenSongInfo: (Long) -> Unit = {},
     modifier: Modifier = Modifier,
 ) {
     val controller = LocalMusicController.current
@@ -117,6 +131,8 @@ fun NowPlayingScreen(
     val context = LocalContext.current
     val clipboard = LocalClipboardManager.current
     val scope = rememberCoroutineScope()
+    val downloadRepo = LocalDownloadRepository.current
+    var showQualitySheet by remember { mutableStateOf(false) }
 
     val isLoggedIn by LocalIsLoggedIn.current.collectAsStateWithLifecycle()
     val state by controller.state.collectAsStateWithLifecycle()
@@ -124,9 +140,8 @@ fun NowPlayingScreen(
     val viewModel = remember { NowPlayingViewModel() }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
-    // 社交状态（红心 / 关注）：进程级存储，种子一次、失败 toast。
+    // 社交状态（红心）：进程级存储，种子一次、失败 toast。
     val likedTrackIDs by NowPlayingSocialStore.likedTrackIDs.collectAsStateWithLifecycle()
-    val followingArtistIDs by NowPlayingSocialStore.followingArtistIDs.collectAsStateWithLifecycle()
     LaunchedEffect(api, isLoggedIn) {
         // seed 使用 Store 内部进程级 scope（原 bug：挂组合级 scope，中途离开
         // 播放页协程被取消且 seeded 已置 true，社交状态本进程内永不加载）。
@@ -134,6 +149,45 @@ fun NowPlayingScreen(
     }
     LaunchedEffect(Unit) {
         NowPlayingSocialStore.errors.collect { toast.show(it) }
+    }
+    // 下载事件 → toast：下载本身跑在 repo 进程级 scope，离开播放页也不中断；
+    // 这里只订阅事件总线做 UI 反馈，与点击/页面生命周期完全解耦。
+    LaunchedEffect(Unit) {
+        downloadRepo?.bus?.collect { status ->
+            when (status) {
+                is DownloadStatus.Started -> toast.show("正在下载：${status.title}")
+                is DownloadStatus.Completed -> toast.show("已下载：${status.title}")
+                is DownloadStatus.AlreadyExists -> toast.show("${status.title}：该音质已下载")
+                is DownloadStatus.Failed -> toast.show("下载失败：${status.reason}")
+                is DownloadStatus.Progress -> {} // 进度不刷 toast，避免刷屏
+            }
+        }
+    }
+
+    // 歌词显示且未沉浸时，用户 5 秒无操作则自动进入全屏沉浸歌词模式。
+    // 任意触摸都会经指针屏障 [markInteraction] 重置计时；进入沉浸后本计时停止。
+    LaunchedEffect(uiState.showLyricsPanel, uiState.isLyricsImmersive) {
+        if (!uiState.showLyricsPanel || uiState.isLyricsImmersive) return@LaunchedEffect
+        while (true) {
+            delay(250)
+            if (System.currentTimeMillis() - viewModel.lastInteractionMs >= 5000) {
+                viewModel.enterLyricsImmersive()
+                break
+            }
+        }
+    }
+
+    // 播放页返回语义（系统返回 + 顶部收起箭头一致）：
+    //  - 沉浸歌词态：首次返回先唤出被隐藏的播放控件（退出沉浸），不退出播放页；
+    //  - 控件已显示（非沉浸）：再返回才出栈，回到进入播放页之前的上级页面。
+    // 必须 enabled = true 常驻：否则非沉浸态本 Handler 关闭时，后方 Tab（如搜索页
+    // 的常驻 BackHandler）会抢走返回事件，导致无法出栈/返回错页面。
+    BackHandler(enabled = true) {
+        if (uiState.isLyricsImmersive) {
+            viewModel.exitLyricsImmersive()
+        } else {
+            onBack()
+        }
     }
 
     val settings by (settingsRepo?.settings
@@ -200,6 +254,8 @@ fun NowPlayingScreen(
                     awaitPointerEventScope {
                         while (true) {
                             val event = awaitPointerEvent(PointerEventPass.Main)
+                            // 任何触摸 / 滑动 / 点击都计入「用户操作」，重置无操作计时。
+                            viewModel.markInteraction()
                             if (event.changes.none { it.isConsumed }) {
                                 event.changes.forEach { it.consume() }
                             }
@@ -221,29 +277,82 @@ fun NowPlayingScreen(
                         .padding(horizontal = 12.dp, vertical = 8.dp),
                     verticalAlignment = Alignment.CenterVertically,
                 ) {
-                    GlassChip(
-                        onClick = onBack,
-                        modifier = Modifier.size(36.dp),
-                        tokens = glassTokens().bright(),
+                    // 收起：纯图标，去掉圆环 / 背景（仅保留中间图标）。
+                    // 沉浸态首次点它先唤出播放控件（同系统返回语义）；控件已显示才真正返回。
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clickable(
+                                indication = null,
+                                interactionSource = remember { MutableInteractionSource() },
+                                onClick = {
+                                    if (uiState.isLyricsImmersive) {
+                                        viewModel.exitLyricsImmersive()
+                                    } else {
+                                        onBack()
+                                    }
+                                },
+                            ),
+                        contentAlignment = Alignment.Center,
                     ) {
                         Icon(
                             imageVector = Icons.Filled.KeyboardArrowDown,
                             contentDescription = "收起",
-                            tint = Color.White.copy(alpha = 0.85f),
-                            modifier = Modifier.size(22.dp),
+                            tint = Color.White.copy(alpha = 0.9f),
+                            modifier = Modifier.size(24.dp),
                         )
                     }
-                    Text(
-                        text = state.context?.name ?: stringResource(R.string.player_playing),
-                        fontSize = 14.sp,
-                        fontWeight = FontWeight.SemiBold,
-                        color = Color.White.copy(alpha = 0.9f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
+                    // 顶栏中部：歌词模式显示「歌名 / 歌手 ›」（点击进百科），
+                    // 否则显示播放来源名（官方歌词页顶栏对照）。
+                    Box(
                         modifier = Modifier
                             .padding(start = 12.dp)
                             .weight(1f),
-                    )
+                    ) {
+                        if (uiState.showLyricsPanel && track != null) {
+                            Column(
+                                modifier = Modifier.clickable(
+                                    indication = null,
+                                    interactionSource = remember { MutableInteractionSource() },
+                                    onClick = { onOpenSongInfo(track.id) },
+                                ),
+                            ) {
+                                Text(
+                                    text = track.name,
+                                    fontSize = 14.sp,
+                                    fontWeight = FontWeight.SemiBold,
+                                    color = Color.White.copy(alpha = 0.9f),
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                Row(verticalAlignment = Alignment.CenterVertically) {
+                                    Text(
+                                        text = track.artistNames.ifEmpty { "Kumone" },
+                                        fontSize = 11.sp,
+                                        color = Color.White.copy(alpha = 0.6f),
+                                        maxLines = 1,
+                                        overflow = TextOverflow.Ellipsis,
+                                        modifier = Modifier.weight(1f, fill = false),
+                                    )
+                                    Text(
+                                        text = "  ›",
+                                        fontSize = 11.sp,
+                                        color = Color.White.copy(alpha = 0.6f),
+                                    )
+                                }
+                            }
+                        } else {
+                            Text(
+                                text = state.context?.name
+                                    ?: stringResource(R.string.player_playing),
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.SemiBold,
+                                color = Color.White.copy(alpha = 0.9f),
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis,
+                            )
+                        }
+                    }
                     if (state.isTrial) {
                         Text(
                             text = stringResource(R.string.player_trial),
@@ -252,16 +361,22 @@ fun NowPlayingScreen(
                             modifier = Modifier.padding(end = 8.dp),
                         )
                     }
-                    GlassChip(
-                        onClick = { shareCurrentTrack() },
-                        modifier = Modifier.size(36.dp),
-                        tokens = glassTokens().bright(),
+                    // 分享：纯图标，去掉圆环 / 背景（仅保留中间图标）。
+                    Box(
+                        modifier = Modifier
+                            .size(40.dp)
+                            .clickable(
+                                indication = null,
+                                interactionSource = remember { MutableInteractionSource() },
+                                onClick = { shareCurrentTrack() },
+                            ),
+                        contentAlignment = Alignment.Center,
                     ) {
                         Icon(
                             imageVector = Icons.Filled.Share,
                             contentDescription = stringResource(R.string.player_share),
-                            tint = Color.White.copy(alpha = 0.85f),
-                            modifier = Modifier.size(17.dp),
+                            tint = Color.White.copy(alpha = 0.9f),
+                            modifier = Modifier.size(20.dp),
                         )
                     }
                 }
@@ -274,14 +389,19 @@ fun NowPlayingScreen(
                         .clickable(
                             interactionSource = remember { MutableInteractionSource() },
                             indication = null,
-                            onClick = viewModel::toggleLyricsPanel,
+                            onClick = {
+                                // 沉浸态点空白处退出沉浸；否则在封面 ⇄ 歌词间切换。
+                                if (uiState.isLyricsImmersive) {
+                                    viewModel.exitLyricsImmersive()
+                                } else {
+                                    viewModel.toggleLyricsPanel()
+                                }
+                            },
                         ),
                     contentAlignment = Alignment.Center,
                 ) {
                     if (uiState.showLyricsPanel) {
                         LyricsPanel(
-                            trackName = track?.name ?: "",
-                            artistName = track?.artistNames ?: "",
                             lyrics = state.lyrics,
                             positionSeconds = state.positionMs / 1000.0,
                             showTranslation = settings.showTranslation,
@@ -289,8 +409,14 @@ fun NowPlayingScreen(
                             isScrubbing = uiState.isLyricsScrubbing,
                             onSeekTo = { seconds -> controller.seekTo((seconds * 1000).toLong()) },
                             onScrubbingChange = viewModel::setLyricsScrubbing,
-                            onCollapse = viewModel::toggleLyricsPanel,
-                            modifier = Modifier.fillMaxWidth(),
+                            onSongInfo = { track?.id?.let { onOpenSongInfo(it) } },
+                            modifier = Modifier.fillMaxSize(),
+                        )
+                    } else if (settings.nowPlayingMode == NowPlayingMode.IMMERSIVE) {
+                        // 沉浸模式（播放页样式 IMMERSIVE）：大封面、无黑胶唱片。
+                        ImmersiveCover(
+                            coverURL = track?.album?.picUrl,
+                            screenHeight = screenHeight,
                         )
                     } else {
                         VinylRecordView(
@@ -301,20 +427,19 @@ fun NowPlayingScreen(
                     }
                 }
 
-                // 3. 社交行：曲名 + 歌手 + 关注 + 红心 + 评论
+                // 3-5. 社交行 / 控制条 / 五图标行：沉浸歌词模式下整体收起，
+                // 中间歌词区（weight 1f）随之占满整屏；退出沉浸时平滑回归。
+                AnimatedVisibility(
+                    visible = !uiState.isLyricsImmersive,
+                    enter = fadeIn(animationSpec = tween(220)) + expandVertically(animationSpec = tween(260)),
+                    exit = fadeOut(animationSpec = tween(180)) + shrinkVertically(animationSpec = tween(260)),
+                ) {
+                Column {
+                // 3. 社交行：曲名 + 歌手 + 红心 + 评论
                 if (track != null) {
                     TrackSocialRow(
                         track = track,
                         isLiked = likedTrackIDs?.contains(track.id) == true,
-                        isFollowing = track.artists.firstOrNull()?.id
-                            ?.let { followingArtistIDs?.contains(it) == true } == true,
-                        onFollow = { artistId ->
-                            if (isLoggedIn) {
-                                NowPlayingSocialStore.toggleFollow(api, scope, artistId)
-                            } else {
-                                toast.show(context.getString(R.string.player_login_required))
-                            }
-                        },
                         onLike = {
                             if (isLoggedIn) {
                                 NowPlayingSocialStore.toggleLike(api, scope, track.id)
@@ -360,10 +485,8 @@ fun NowPlayingScreen(
                         toast.show(context.getString(R.string.player_sound_effect_unsupported))
                     },
                     onLyrics = viewModel::toggleLyricsPanel,
-                    onSongInfo = viewModel::toggleSongInfo,
-                    onDownload = {
-                        toast.show(context.getString(R.string.player_download_unsupported))
-                    },
+                    onSongInfo = { track?.id?.let { onOpenSongInfo(it) } },
+                    onDownload = { track?.let { showQualitySheet = true } },
                     onMore = viewModel::toggleMoreMenu,
                     moreMenu = {
                         // 更多菜单（锚定「更多」项，空间不足时自动上翻）
@@ -410,15 +533,8 @@ fun NowPlayingScreen(
                         .padding(horizontal = 16.dp, vertical = 4.dp),
                 )
                 Spacer(modifier = Modifier.height(8.dp))
-            }
-
-            // 歌曲信息弹窗
-            if (uiState.showSongInfo && track != null) {
-                TrackInfoDialog(
-                    track = track,
-                    qualityLabel = qualityLabel,
-                    onDismiss = viewModel::toggleSongInfo,
-                )
+                }
+                }
             }
 
             // 队列二级页面（从底部上拉；点击遮罩任意位置或下滑取消）
@@ -440,6 +556,48 @@ fun NowPlayingScreen(
                     )
                 }
             }
+
+            // 下载音质选择（弹出 BottomSheet，让用户改默认下载音质）。
+            if (showQualitySheet) {
+                ModalBottomSheet(
+                    onDismissRequest = { showQualitySheet = false },
+                    containerColor = Color(0xFF1C1C1E).copy(alpha = 0.92f),
+                    contentColor = Color.White,
+                ) {
+                    Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
+                        Text(
+                            text = stringResource(R.string.player_download_quality),
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.SemiBold,
+                            color = Color.White,
+                            modifier = Modifier.padding(bottom = 8.dp),
+                        )
+                        listOf(
+                            AudioQuality.STANDARD to "标准",
+                            AudioQuality.HIGHER to "较高",
+                            AudioQuality.EXHIGH to "极高",
+                            AudioQuality.LOSSLESS to "无损",
+                            AudioQuality.HIRES to "Hi-Res",
+                        ).forEach { (q, label) ->
+                            Row(
+                                modifier = Modifier
+                                    .fillMaxWidth()
+                                    .clickable {
+                                        showQualitySheet = false
+                                        // fire-and-forget：下载跑在 repo 进程级 scope，
+                                        // 离开播放页也不会中断；toast 由上方 bus 订阅统一处理。
+                                        track?.let { t -> downloadRepo?.download(t, q.apiLevel) }
+                                    }
+                                    .padding(vertical = 14.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(text = label, fontSize = 15.sp, color = Color.White)
+                            }
+                        }
+                        Spacer(modifier = Modifier.height(8.dp))
+                    }
+                }
+            }
         }
     }
 }
@@ -451,8 +609,6 @@ fun NowPlayingScreen(
 private fun TrackSocialRow(
     track: Track,
     isLiked: Boolean,
-    isFollowing: Boolean,
-    onFollow: (Long) -> Unit,
     onLike: () -> Unit,
     onComment: () -> Unit,
     modifier: Modifier = Modifier,
@@ -472,6 +628,7 @@ private fun TrackSocialRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
+            // 关注按钮已移除：无法像官方客户端那样真实关注，不做只改本地状态的壳。
             Text(
                 text = track.artistNames.ifEmpty { "Kumone" },
                 fontSize = 13.sp,
@@ -479,28 +636,6 @@ private fun TrackSocialRow(
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-        }
-
-        // 关注 pill（无歌手信息时不展示）
-        val artistId = track.artists.firstOrNull()?.id ?: 0L
-        if (artistId > 0) {
-            GlassChip(
-                onClick = { onFollow(artistId) },
-                shape = RoundedCornerShape(14.dp),
-                tokens = glassTokens().bright().let {
-                    if (isFollowing) it.copy(fill = Color.White.copy(alpha = 0.08f)) else it
-                },
-                modifier = Modifier.padding(end = 4.dp),
-            ) {
-                Text(
-                    text = stringResource(
-                        if (isFollowing) R.string.player_following else R.string.player_follow,
-                    ),
-                    fontSize = 11.sp,
-                    color = Color.White.copy(alpha = if (isFollowing) 0.55f else 0.9f),
-                    modifier = Modifier.padding(horizontal = 12.dp, vertical = 5.dp),
-                )
-            }
         }
 
         // 红心（点赞 / 取消点赞）
@@ -530,6 +665,27 @@ private fun TrackSocialRow(
  *
  * @param moreMenu 「更多」项的下拉菜单内容（由调用方提供，锚定在「更多」项上）。
  */
+/**
+ * 沉浸模式大封面（播放页样式 `IMMERSIVE`）：居中大图、圆角，无黑胶唱片与旋转。
+ * 与 VINYL 的 [VinylRecordView] 二选一，由设置页「播放页样式」驱动。
+ */
+@Composable
+private fun ImmersiveCover(
+    coverURL: String?,
+    screenHeight: Dp,
+    modifier: Modifier = Modifier,
+) {
+    val size = (screenHeight * 0.54f).coerceIn(280.dp, 440.dp)
+    AsyncImage(
+        model = Formatters.resizedImageURL(coverURL, 640),
+        contentDescription = stringResource(R.string.player_cover),
+        contentScale = ContentScale.Crop,
+        modifier = modifier
+            .size(size)
+            .clip(RoundedCornerShape(24.dp)),
+    )
+}
+
 @Composable
 private fun PlayerSecondaryBar(
     lyricsActive: Boolean,
@@ -605,59 +761,6 @@ private fun SecondaryItem(
             text = label,
             fontSize = 10.sp,
             color = if (active) Color.White else Color.White.copy(alpha = 0.7f),
-        )
-    }
-}
-
-/** 歌曲信息弹窗（本地元数据，无网络依赖）。 */
-@Composable
-private fun TrackInfoDialog(
-    track: Track,
-    qualityLabel: String,
-    onDismiss: () -> Unit,
-) {
-    AlertDialog(
-        onDismissRequest = onDismiss,
-        containerColor = Color(0xFF1C1C1E).copy(alpha = 0.92f),
-        titleContentColor = Color.White,
-        textContentColor = Color.White.copy(alpha = 0.85f),
-        title = { Text(text = stringResource(R.string.player_info_title)) },
-        text = {
-            Column(verticalArrangement = Arrangement.spacedBy(6.dp)) {
-                InfoRow(stringResource(R.string.player_info_song), track.name)
-                InfoRow(stringResource(R.string.player_info_artist), track.artistNames)
-                InfoRow(stringResource(R.string.player_info_album), track.album.name)
-                InfoRow(
-                    stringResource(R.string.player_info_duration),
-                    Formatters.duration(track.durationSeconds),
-                )
-                InfoRow(stringResource(R.string.player_info_quality), qualityLabel)
-                InfoRow(stringResource(R.string.player_info_id), track.id.toString())
-            }
-        },
-        confirmButton = {
-            TextButton(onClick = onDismiss) {
-                Text(text = "OK", color = Color.White)
-            }
-        },
-    )
-}
-
-@Composable
-private fun InfoRow(label: String, value: String) {
-    Row(modifier = Modifier.fillMaxWidth()) {
-        Text(
-            text = label,
-            fontSize = 12.sp,
-            color = Color.White.copy(alpha = 0.5f),
-            modifier = Modifier.width(64.dp),
-        )
-        Text(
-            text = value,
-            fontSize = 12.sp,
-            color = Color.White.copy(alpha = 0.85f),
-            maxLines = 2,
-            overflow = TextOverflow.Ellipsis,
         )
     }
 }

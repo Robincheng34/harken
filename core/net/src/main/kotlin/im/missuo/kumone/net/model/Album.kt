@@ -21,6 +21,9 @@ data class AlbumSummary(
     val name: String = "",
     @JsonNames("picUrl", "cover")
     val picUrl: String? = null,
+    val blurPicUrl: String? = null,
+    @JsonNames("coverImgUrl", "coverImg")
+    val coverImgUrl: String? = null,
     val artist: AlbumArtistName? = null,
     val artists: List<AlbumArtistName>? = null,
     @Serializable(with = LenientLongSerializer::class)
@@ -38,6 +41,10 @@ data class AlbumSummary(
             artists != null -> artists.mapNotNull { it.name }.joinToString(" / ")
             else -> ""
         }
+
+    /** 封面优先 `picUrl`，回退 `blurPicUrl` / `coverImgUrl`（部分接口只回后两者）。 */
+    val coverUrl: String?
+        get() = picUrl ?: blurPicUrl ?: coverImgUrl
 
     val publishYear: String
         get() {

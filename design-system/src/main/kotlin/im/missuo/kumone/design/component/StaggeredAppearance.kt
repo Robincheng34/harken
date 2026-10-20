@@ -39,7 +39,10 @@ fun Modifier.staggeredAppearance(
 ): Modifier {
     var appeared by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) { appeared = true }
-    val target = if (appeared && enabled) 1f else 0f
+    // enabled=false 的文档语义是「直接以终态显示」→ 恒为可见（不播动效）。
+    // 原实现 target=0f：关闭动效的卡片反而 alpha=0 永久隐形——搜索结果
+    // 「歌单」分区整片空白的根因（全应用只有它走了默认 staggered=false）。
+    val target = if (!enabled || appeared) 1f else 0f
     val progress by animateFloatAsState(
         targetValue = target,
         animationSpec = tween(

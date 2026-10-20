@@ -83,8 +83,10 @@ import im.missuo.kumone.design.composition.LocalOnLoggedOut
 import im.missuo.kumone.design.composition.LocalSearchHistoryRepository
 import im.missuo.kumone.design.composition.LocalOpenNowPlaying
 import im.missuo.kumone.design.composition.LocalPlaybackCommands
+import im.missuo.kumone.design.composition.LocalDownloadRepository
 import im.missuo.kumone.design.composition.LocalSettingsRepository
 import im.missuo.kumone.design.composition.LocalToastState
+import im.missuo.kumone.design.composition.LocalUpdateRepository
 import im.missuo.kumone.design.navigation.Destinations
 import im.missuo.kumone.design.theme.Layout
 import im.missuo.kumone.design.theme.KumoneTheme
@@ -111,6 +113,8 @@ import im.missuo.kumone.feature.search.searchGraph
 import im.missuo.kumone.feature.settings.settingsGraph
 import im.missuo.kumone.storage.settings.AppAppearance
 import im.missuo.kumone.storage.settings.AppSettings
+import im.missuo.kumone.storage.settings.resolveThemePackPrimaryColor
+import androidx.compose.ui.graphics.Color
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
 
@@ -161,14 +165,18 @@ fun KumoneApp(graph: AppGraph) {
         AppAppearance.DARK -> true
         else -> isSystemInDarkTheme()
     }
+    // 主题挂件：按 activeThemePackId 解析主色（null / 官方红 → BrandRed，保持默认外观）。
+    val themePrimaryColor = Color(resolveThemePackPrimaryColor(settings?.activeThemePackId))
 
-    KumoneTheme(darkTheme = darkTheme) {
+    KumoneTheme(darkTheme = darkTheme, primaryColor = themePrimaryColor) {
         CompositionLocalProvider(
             LocalMusicController provides graph.musicController,
             LocalNeteaseApi provides graph.neteaseApi,
             LocalSettingsRepository provides graph.settings,
+            LocalUpdateRepository provides graph.updateRepository,
             LocalSearchHistoryRepository provides graph.searchHistory,
             LocalPlaybackCommands provides graph.playbackCommands,
+            LocalDownloadRepository provides graph.downloadRepository,
             LocalIsLoggedIn provides graph.isLoggedIn,
             LocalToastState provides toastState,
             LocalOnLoginConfirmed provides {
@@ -299,14 +307,19 @@ private fun TabsScreen(
     // 扣掉这段，否则镜片裁剪会整体错位一个手势栏高度。
     val navInsetPx = WindowInsets.navigationBars.getBottom(LocalDensity.current)
 
-    // 迷你播放条是否占位：无曲目时底部只悬浮 TabBar，页面尾部净空应为
-    // tabBarClearance（82dp）而非 fullChromeClearance（142dp）——否则首页滚到底后
-    // 「推荐歌手」下方还要白扛 60dp 空闲（用户反馈「底部空白太大」）。
+    // 列表尾部净空：用户反馈「首页推荐歌手下方空间太大」，故不再叠加 extraPadding(12dp)。
+    // - 有曲目（迷你条占位）：迷你条 52 + 间距 8 + TabBar 占位 70 = 130dp（原 142dp）
+    // - 无曲目：只留 TabBar 占位 64 + 6 = 70dp（原 82dp）
+    // 这样滚到底时最后一行正好贴在悬浮 chrome 上沿，不再空出一大片。
     val controller = LocalMusicController.current
     val playerState = controller?.state?.collectAsStateWithLifecycle()
     val currentTrackId = playerState?.value?.currentTrack?.id
     val bottomClearance =
-        if (currentTrackId != null) Layout.fullChromeClearance else Layout.tabBarClearance
+        if (currentTrackId != null) {
+            Layout.miniPlayerHeight + Layout.barSpacing + Layout.tabBarHeight + Layout.bottomMargin
+        } else {
+            Layout.tabBarHeight + Layout.bottomMargin
+        }
 
     // 折射源条带高度（px）：必须在可组合作用域内解析 Density——
     // LaunchedEffect 的协程体内不能读取 CompositionLocal。
@@ -408,11 +421,15 @@ private fun TabsScreen(
                 AppTab.SEARCH -> SearchScreen(
                     navController = overlayNav,
                     bottomClearance = bottomClearance,
+                    // 搜索页系统返回：切回首页而非退出（经 onSelectTab 回调，避免直接
+                    // 赋值被 when 分支智能转换的 selectedTab 参数）。
+                    onRequestHome = { onSelectTab(AppTab.HOME) },
                 )
                 AppTab.FM -> FmScreen(onOpenLogin = { overlayNav.navigate(Destinations.LOGIN) })
                 AppTab.LIBRARY -> LibraryScreen(
                     onNavigate = { overlayNav.navigate(it) },
                     onOpenLogin = { overlayNav.navigate(Destinations.LOGIN) },
+                    onRequestSearch = { onSelectTab(AppTab.SEARCH) },
                 )
             }
         }

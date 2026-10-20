@@ -40,6 +40,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.Search
+import androidx.compose.material.icons.filled.QrCodeScanner
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
@@ -80,6 +81,7 @@ import im.missuo.kumone.design.composition.LocalSearchHistoryRepository
 import im.missuo.kumone.design.navigation.Destinations
 import im.missuo.kumone.design.theme.Layout
 import im.missuo.kumone.feature.search.components.SearchLandingPage
+import im.missuo.kumone.feature.search.components.SearchQuickEntry
 import im.missuo.kumone.feature.search.components.SearchResultSections
 import im.missuo.kumone.feature.search.components.SearchSegmented
 import im.missuo.kumone.net.model.SearchSuggestBody
@@ -99,6 +101,7 @@ import kotlinx.coroutines.launch
 fun SearchScreen(
     navController: NavHostController,
     bottomClearance: Dp = Layout.fullChromeClearance,
+    onRequestHome: () -> Unit,
 ) {
     val api = LocalNeteaseApi.current
         ?: error("LocalNeteaseApi 必须在 KumoneApp 提供")
@@ -117,20 +120,26 @@ fun SearchScreen(
         .collectAsStateWithLifecycle()
     val currentTrackId: Long? = playerState.currentTrack?.id
 
-    // 焦点与键盘（官方：进入搜索页即聚焦并弹出键盘；「取消」失焦收起）。
+    // 焦点与键盘：进入搜索页**不**自动聚焦、不弹键盘，仅用户主动点击输入框时才调起。
+    // 原实现在 LaunchedEffect 里 requestFocus()，一进页面键盘就弹出并遮挡落地页内容；
+    // 现只保留落地数据加载，聚焦完全交给用户点击（BasicTextField 点击即聚焦）。
     val focusRequester = remember { FocusRequester() }
     val keyboardController = LocalSoftwareKeyboardController.current
     var searchFocused by rememberSaveable { mutableStateOf(false) }
     LaunchedEffect(Unit) {
         viewModel.loadHotSearches()
-        focusRequester.requestFocus()
     }
 
-    // 官方返回键语义：有查询/已搜索时先清空回落地页，不直接退出。
-    BackHandler(enabled = uiState.query.isNotEmpty() || uiState.hasSearched) {
-        viewModel.setQuery("")
-        searchFocused = false
-        keyboardController?.hide()
+    // 返回键语义（照搬官方）：有查询/已搜索时先清空回落地页；落地态再按返回
+    // 则切回首页而非退出应用（在首页再按返回才交还系统回桌面）。
+    BackHandler(enabled = true) {
+        if (uiState.query.isNotEmpty() || uiState.hasSearched) {
+            viewModel.setQuery("")
+            searchFocused = false
+            keyboardController?.hide()
+        } else {
+            onRequestHome()
+        }
     }
 
     Column(
@@ -150,6 +159,7 @@ fun SearchScreen(
                 keyboardController?.hide()
             },
             onClear = { viewModel.setQuery("") },
+            onScan = { navController.navigate(Destinations.SCAN) },
             onCancel = {
                 viewModel.setQuery("")
                 searchFocused = false
@@ -169,6 +179,12 @@ fun SearchScreen(
                     uiState = uiState,
                     currentTrackId = currentTrackId,
                     bottomClearance = bottomClearance,
+                    // 关键修复：结果区取「剩余高度」而非 fillMaxSize。外层是**不可滚动**的
+                    // Column，fillMaxSize 会让本区高度等于整屏，Column 总高 =
+                    // 搜索栏+分段条+整屏 > 屏幕，于是排在最末的「歌单」分区被顶到屏幕之外，
+                    // 而外层又无法滚动 → 歌单永远看不到。改用 weight(1f) 后本区高度 =
+                    // 剩余空间，LazyColumn / LazyVerticalGrid 自身滚动即可滚到末尾。
+                    modifier = Modifier.weight(1f),
                     onPlayTrack = { track ->
                         scope.launch {
                             commands?.playFrom(
@@ -192,8 +208,15 @@ fun SearchScreen(
                 onHotItemClick = viewModel::submit,
                 onHistoryItemClick = viewModel::submit,
                 onClearHistory = viewModel::clearHistory,
+                onQuickEntryClick = { entry ->
+                    when (entry) {
+                        // 已落地：跳覆盖层二级页（均在 `:feature:search` 的 searchGraph 注册）。
+                        SearchQuickEntry.ARTIST -> navController.navigate(Destinations.ARTISTS)
+                        SearchQuickEntry.GENRE -> navController.navigate(Destinations.GENRE)
+                    }
+                },
                 bottomClearance = bottomClearance,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.weight(1f),
             )
 
             // 输入中（未提交）→ 官方联想下拉。
@@ -211,7 +234,7 @@ fun SearchScreen(
                     }
                 },
                 onSubmitKeyword = viewModel::submit,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.weight(1f),
             )
         }
     }
@@ -295,6 +318,7 @@ private fun SearchTopBar(
     onQueryChange: (String) -> Unit,
     onSubmit: () -> Unit,
     onClear: () -> Unit,
+    onScan: () -> Unit,
     onCancel: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
@@ -370,6 +394,20 @@ private fun SearchTopBar(
                         contentDescription = stringResource(R.string.search_clear),
                         tint = MaterialTheme.colorScheme.onSurfaceVariant,
                         modifier = Modifier.size(18.dp),
+                    )
+                }
+            } else {
+                // 搜索框尾部集成「扫一扫」（官方：搜索框右端扫码入口）。
+                Spacer(modifier = Modifier.width(4.dp))
+                IconButton(
+                    onClick = onScan,
+                    modifier = Modifier.size(32.dp),
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.QrCodeScanner,
+                        contentDescription = stringResource(R.string.scan_open),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                        modifier = Modifier.size(20.dp),
                     )
                 }
             }

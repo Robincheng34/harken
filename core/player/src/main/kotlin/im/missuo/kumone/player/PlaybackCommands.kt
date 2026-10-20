@@ -74,13 +74,14 @@ class PlaybackCommands(
         startTrackId: Long,
         source: PlaySource,
         context: PlayContext?,
+        openPlayer: Boolean = true,
     ) {
         if (tracks.isEmpty()) return
         val index = tracks.indexOfFirst { it.id == startTrackId }
         // 原 bug：indexOfFirst 返回 -1 时被 coerceAtLeast(0) 钳到 0，找不到目标
         // 曲目会静默改播第 0 首。这里直接不播放，交由调用方决定如何提示。
         if (index < 0) return
-        play(tracks, source, context, index)
+        play(tracks, source, context, index, openPlayer)
     }
 
     /** 播放每日推荐（iOS `Destination.daily`）。 */
@@ -103,12 +104,18 @@ class PlaybackCommands(
         return true
     }
 
-    /** 原样播放一个列表。 */
+    /**
+     * 原样播放一个列表。
+     *
+     * @param openPlayer 起播后是否自动跳转全屏播放页（默认 true，官方客户端行为）。
+     *   false 时仅后台起播、迷你播放条浮现，停留在当前页（如「我的」页近期点歌）。
+     */
     fun play(
         tracks: List<Track>,
         source: PlaySource,
         context: PlayContext?,
         startIndex: Int = 0,
+        openPlayer: Boolean = true,
     ) {
         if (tracks.isEmpty()) {
             // 空列表语义 = 清空队列并停止（PlaybackQueue.load 文档）；不触发跳转，
@@ -117,7 +124,7 @@ class PlaybackCommands(
             return
         }
         controller.play(tracks, startIndex, context, source)
-        onPlayStarted?.invoke()
+        if (openPlayer) onPlayStarted?.invoke()
     }
 
     // MARK: - 透传命令

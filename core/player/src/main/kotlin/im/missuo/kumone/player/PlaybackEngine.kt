@@ -20,6 +20,7 @@ import im.missuo.kumone.playback.PlayContext
 import im.missuo.kumone.playback.PlaySource
 import im.missuo.kumone.playback.PlaybackQueue
 import im.missuo.kumone.playback.RepeatMode
+import im.missuo.kumone.storage.download.LocalSongSource
 import im.missuo.kumone.storage.settings.SettingsRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -49,12 +50,13 @@ class PlaybackEngine(
     private val api: NeteaseApi,
     private val settings: SettingsRepository,
     private val scope: CoroutineScope,
+    private val localSourceProvider: LocalSongSource? = null,
 ) {
 
     /** ExoPlayer 实例；PlayerService 用它挂载 MediaSession。 */
     internal val exoPlayer: ExoPlayer = ExoPlayer.Builder(context).build()
 
-    private val resolver = SongUrlResolver(api, settings)
+    private val resolver = SongUrlResolver(api, settings, localSourceProvider = localSourceProvider)
     private val scrobbler = Scrobbler(api)
     private val queue = PlaybackQueue()
 
@@ -650,6 +652,7 @@ class PlaybackEngine(
                     api = dependencies.requireApi(),
                     settings = dependencies.requireSettings(),
                     scope = dependencies.requireScope(),
+                    localSourceProvider = dependencies.localSource,
                 ).also { instance = it }
             }
         }

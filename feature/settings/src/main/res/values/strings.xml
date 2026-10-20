@@ -8,6 +8,11 @@
     <string name="settings_theme_light">浅色</string>
     <string name="settings_theme_dark">深色</string>
     <string name="settings_theme_auto">跟随系统</string>
+    <string name="settings_widgets">主题与挂件</string>
+    <string name="settings_theme_pack">主题挂件</string>
+    <string name="settings_theme_pack_hint">更换应用主题色</string>
+    <string name="settings_main_image_pack">主图挂件</string>
+    <string name="settings_main_image_pack_hint">更换「我的」页头部背景</string>
     <string name="settings_lyrics">歌词</string>
     <string name="settings_show_translation">显示翻译</string>
     <string name="settings_verbatim">逐字歌词</string>

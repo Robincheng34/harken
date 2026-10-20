@@ -30,6 +30,7 @@
     <string name="search_history_title">搜索历史</string>
     <string name="search_history_clear">清空搜索历史</string>
     <string name="search_cancel">取消</string>
+    <string name="scan_open">扫一扫</string>
     <string name="search_hot_loading">热搜榜加载中…</string>
     <string name="search_hot_empty">热搜榜暂不可用</string>
     <string name="search_history_empty">暂无搜索历史</string>
@@ -39,4 +40,18 @@
     <string name="search_hot_badge_new">新</string>
     <string name="search_hot_badge_boil">沸</string>
     <string name="search_hot_badge_boom">爆</string>
+
+    <!-- 搜索框下方快捷入口（对标官方：歌手 / 曲风） -->
+    <string name="search_quick_artist">歌手</string>
+    <string name="search_quick_genre">曲风</string>
+    <string name="search_quick_artist_toast">歌手分类（建设中）</string>
+    <string name="search_quick_genre_toast">曲风分类（建设中）</string>
+
+    <!-- 快捷入口二级页：歌手榜 / 曲风 -->
+    <string name="search_artists_title">热门歌手</string>
+    <string name="search_artists_empty">暂无歌手</string>
+    <string name="search_genre_title">曲风</string>
+    <string name="search_genre_empty">该分类下暂无歌单</string>
+    <string name="search_back">返回</string>
+    <string name="search_retry">重试</string>
 </resources>

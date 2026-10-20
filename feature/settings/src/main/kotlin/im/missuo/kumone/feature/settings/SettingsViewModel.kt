@@ -8,6 +8,7 @@
 package im.missuo.kumone.feature.settings
 
 import im.missuo.kumone.net.api.NeteaseApi
+import im.missuo.kumone.storage.update.UpdateRepository
 import im.missuo.kumone.playback.AudioQuality
 import im.missuo.kumone.storage.settings.AppAppearance
 import im.missuo.kumone.storage.settings.LyricsAnnotation
@@ -27,6 +28,7 @@ import kotlinx.coroutines.launch
 class SettingsViewModel(
     private val repository: SettingsRepository,
     private val api: NeteaseApi,
+    private val updateRepository: UpdateRepository,
     private val isLoggedIn: () -> Boolean,
     private val nickname: () -> String,
     /** 登出成功后的回调（由宿主传入，用于刷新全局登录态 `AppGraph.onLoggedOut()`）。 */
@@ -46,6 +48,13 @@ class SettingsViewModel(
                         nickname = nickname(),
                     )
                 }
+            }
+        }
+        // 进入页面时读取上次遗留的待更新信息，若已保存则直接反映在状态上
+        // （例如用户上次点了「稍后」），无需重新请求即可提示安装。
+        scope.launch {
+            runCatching { updateRepository.getPendingUpdate() }.getOrNull()?.let { pending ->
+                _uiState.update { it.copy(updateCheck = UpdateCheckUi.Available(pending)) }
             }
         }
     }
@@ -135,5 +144,43 @@ class SettingsViewModel(
     /** 取消内部协程（页面销毁时由 UI 调用，避免 DataStore 收集器常驻泄漏）。 */
     fun cancel() {
         scope.cancel()
+    }
+
+    // ── 在线检测更新 ──────────────────────────────────────────────
+
+    /** 检查更新：拉取清单，比对已安装 versionCode，决定提示新版本或已是最新。 */
+    fun checkUpdate() {
+        scope.launch {
+            _uiState.update { it.copy(updateCheck = UpdateCheckUi.Checking) }
+            runCatching { updateRepository.fetchManifest() }
+                .onSuccess { manifest ->
+                    val installed = updateRepository.getInstalledVersion()
+                    if (manifest.versionCode > installed.versionCode) {
+                        updateRepository.savePendingUpdate(manifest)
+                        _uiState.update { it.copy(updateCheck = UpdateCheckUi.Available(manifest)) }
+                    } else {
+                        updateRepository.clearPendingUpdate()
+                        _uiState.update { it.copy(updateCheck = UpdateCheckUi.Latest(installed.versionName)) }
+                    }
+                }
+                .onFailure { e ->
+                    _uiState.update { it.copy(updateCheck = UpdateCheckUi.Error(e.message ?: "检查更新失败")) }
+                }
+        }
+    }
+
+    /** 收起更新提示（关弹窗 / 清除错误态），回到空闲。 */
+    fun dismissUpdate() {
+        _uiState.update { it.copy(updateCheck = UpdateCheckUi.Idle) }
+    }
+
+    /** 回写下载进度（fraction ∈ [0,1]），保持状态单一来源在 ViewModel。 */
+    fun setDownloading(fraction: Float) {
+        _uiState.update { it.copy(updateCheck = UpdateCheckUi.Downloading(fraction)) }
+    }
+
+    /** 回写下载 / 安装失败信息。 */
+    fun setUpdateError(message: String) {
+        _uiState.update { it.copy(updateCheck = UpdateCheckUi.Error(message)) }
     }
 }

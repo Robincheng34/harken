@@ -77,15 +77,20 @@ fun FunctionCards(
     dailyCover: String? = null,
     modifier: Modifier = Modifier,
 ) {
+    // 行本身不自带竖直内边距：分区上下留白统一由列表的 SECTION_SPACING 与
+    // SectionHeader 的内边距提供，避免与其余分区出现节奏差；卡片整体下移由调用方
+    // 传入的 `padding(top = 24.dp)` 负责。
+    //
+    // 卡间距用显式 Spacer，不用 Arrangement.spacedBy：spacedBy 会在「行首 Spacer」
+    // 与「第一张卡」之间也插一份 16dp，首卡左缘就变成 16+16=32dp（真机实测 112px，
+    // 比 shelf 的 56px 多出一截）。显式 Spacer 才能精确控制首卡左缘 = 16dp。
     Row(
         modifier = modifier
             .horizontalScroll(rememberScrollState())
-            .fillMaxWidth()
-            .padding(vertical = 6.dp),
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
+            .fillMaxWidth(),
     ) {
-        // iOS 边缘留白：max(0, contentInset - spacing)。
-        Spacer(Modifier.width(Layout.contentInset - 16.dp))
+        // 左缘与各 shelf 的分区标题文字/首张卡对齐（16dp 一条竖线）。
+        Spacer(Modifier.width(16.dp))
         FeatureCard(
             title = stringResource(R.string.home_feature_daily),
             subtitle = stringResource(R.string.home_feature_daily_subtitle),
@@ -94,6 +99,7 @@ fun FunctionCards(
             showsDate = true,
             onClick = onDaily,
         )
+        Spacer(Modifier.width(16.dp))
         FeatureCard(
             title = stringResource(R.string.home_feature_fm),
             subtitle = stringResource(R.string.home_feature_fm_subtitle),
@@ -104,6 +110,7 @@ fun FunctionCards(
             ),
             onClick = onFM,
         )
+        Spacer(Modifier.width(16.dp))
         FeatureCard(
             title = stringResource(R.string.home_feature_heartbeat),
             subtitle = stringResource(R.string.home_feature_heartbeat_subtitle),

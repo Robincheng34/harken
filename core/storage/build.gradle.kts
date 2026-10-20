@@ -37,7 +37,9 @@ ksp {
 dependencies {
     implementation(libs.androidx.core.ktx)
     implementation(libs.kotlinx.coroutines.android)
-    implementation(libs.androidx.datastore.preferences)
+    // api：UpdateRepository 的公开能力围绕 DataStore 持久化（待更新状态），
+    // 上游 feature 模块（如 :feature:settings）调用其方法时需在编译期可见 Preferences/DataStore。
+    api(libs.androidx.datastore.preferences)
 
     // :core:net exposes kotlinx-serialization / coroutines as `api`.
     implementation(project(":core:net"))
@@ -45,8 +47,11 @@ dependencies {
     // :core:playback — the interface signature implies this edge.
     implementation(project(":core:playback"))
 
-    // Room cache (P1): play history + liked songs.
+    // Room cache (P1): play history + liked songs + downloaded songs.
     implementation(libs.room.runtime)
     implementation(libs.room.ktx)
     ksp(libs.room.compiler)
+
+    // 下载直连落盘（OkHttp）；net 已 api 暴露，此处显式声明更稳。
+    implementation(libs.okhttp)
 }

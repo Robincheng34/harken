@@ -44,6 +44,17 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
     suspend fun setTabOrder(keys: List<String>) =
         editString(Keys.TAB_ORDER, keys.joinToString(","))
 
+    // 套件（主题挂件 / 主图挂件）：DataStore 只存稳定 id，空串表示未配置。
+    suspend fun setActiveThemePack(id: String?) = editString(Keys.THEME_PACK, id ?: "")
+
+    suspend fun setActiveMainImagePack(id: String?) = editString(Keys.MAIN_IMAGE_PACK, id ?: "")
+
+    /** 当前主题挂件 id（null = 未配置）。供主题应用层读取。 */
+    val activeThemePackId: Flow<String?> = settings.map { it.activeThemePackId }
+
+    /** 当前主图挂件 id（null = 未配置）。供「我的」页覆盖头部背景时读取。 */
+    val activeMainImagePackId: Flow<String?> = settings.map { it.activeMainImagePackId }
+
     private suspend fun editString(key: Preferences.Key<String>, value: String) {
         dataStore.edit { it[key] = value }
     }
@@ -68,6 +79,8 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
                 ?.split(",")
                 ?.mapNotNull { raw -> NavTabOption.fromKey(raw.trim())?.key }
                 .orEmpty(),
+            activeThemePackId = this[Keys.THEME_PACK].takeIf { !it.isNullOrEmpty() },
+            activeMainImagePackId = this[Keys.MAIN_IMAGE_PACK].takeIf { !it.isNullOrEmpty() },
         )
     }
 
@@ -80,5 +93,7 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
         val LYRICS_ANNOTATION = stringPreferencesKey("settings.lyricsAnnotation")
         val UNBLOCK = booleanPreferencesKey("settings.enableUnblock")
         val TAB_ORDER = stringPreferencesKey("settings.tabOrder")
+        val THEME_PACK = stringPreferencesKey("settings.themePack")
+        val MAIN_IMAGE_PACK = stringPreferencesKey("settings.mainImagePack")
     }
 }

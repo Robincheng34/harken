@@ -19,6 +19,7 @@ room = "2.6.1"
 datastore = "1.1.1"
 palette = "1.0.0"
 zxing = "3.5.3"
+cameraX = "1.4.1"
 junit = "4.13.2"
 
 [libraries]
@@ -59,6 +60,12 @@ media3-session = { group = "androidx.media3", name = "media3-session", version.r
 coil-compose = { group = "io.coil-kt", name = "coil-compose", version.ref = "coil" }
 androidx-palette-ktx = { group = "androidx.palette", name = "palette-ktx", version.ref = "palette" }
 zxing-core = { group = "com.google.zxing", name = "core", version.ref = "zxing" }
+
+# --- 相机（扫一扫：CameraX 取景 + zxing 解码）---
+androidx-camera-core = { group = "androidx.camera", name = "camera-core", version.ref = "cameraX" }
+androidx-camera-camera2 = { group = "androidx.camera", name = "camera-camera2", version.ref = "cameraX" }
+androidx-camera-lifecycle = { group = "androidx.camera", name = "camera-lifecycle", version.ref = "cameraX" }
+androidx-camera-view = { group = "androidx.camera", name = "camera-view", version.ref = "cameraX" }
 
 # --- 存储 ---
 room-runtime = { group = "androidx.room", name = "room-runtime", version.ref = "room" }

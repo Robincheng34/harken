@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  NetEase 歌曲直链（songURL 返回的 m*.music.126.net CDN）是 HTTP 明文，而本应用
+  targetSdk=35，平台默认禁止明文流量。仅对音乐 CDN 放开明文；API 域名 music.163.com
+  本就走 HTTPS，不在此列。不做全局 usesCleartextTraffic，避免扩大明文攻击面。
+-->
+<network-security-config>
+    <domain-config cleartextTrafficPermitted="true">
+        <domain includeSubdomains="true">music.126.net</domain>
+    </domain-config>
+</network-security-config>

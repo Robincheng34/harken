@@ -9,6 +9,7 @@
     <string name="library_recent_plays">最近播放</string>
     <string name="library_favorites">我的收藏</string>
     <string name="library_cloud">音乐云盘</string>
+    <string name="library_downloaded">已下载</string>
     <string name="library_my_playlists">创建的歌单</string>
     <string name="library_settings">设置</string>
     <string name="library_coming_soon">敬请期待</string>

@@ -33,7 +33,7 @@ class TrialToastTest {
     @Test
     fun `trial track without previous memory shows toast`() {
         val (lastID, shouldShow) = shouldShowOneShotToast(
-            lastTrialTrackID = null,
+            lastTrackID = null,
             trackID = 100L,
             isActive = true,
         )
@@ -46,7 +46,7 @@ class TrialToastTest {
     @Test
     fun `same trial track does not repeat the toast`() {
         val (lastID, shouldShow) = shouldShowOneShotToast(
-            lastTrialTrackID = 100L,
+            lastTrackID = 100L,
             trackID = 100L,
             isActive = true,
         )
@@ -59,7 +59,7 @@ class TrialToastTest {
     @Test
     fun `switching to another trial track shows toast again`() {
         val (lastID, shouldShow) = shouldShowOneShotToast(
-            lastTrialTrackID = 100L,
+            lastTrackID = 100L,
             trackID = 200L,
             isActive = true,
         )
@@ -72,7 +72,7 @@ class TrialToastTest {
     @Test
     fun `non trial track clears the memory and stays silent`() {
         val (lastID, shouldShow) = shouldShowOneShotToast(
-            lastTrialTrackID = 100L,
+            lastTrackID = 100L,
             trackID = 200L,
             isActive = false,
         )
@@ -98,7 +98,7 @@ class TrialToastTest {
     @Test
     fun `trial flag without a track id stays silent`() {
         val (lastID, shouldShow) = shouldShowOneShotToast(
-            lastTrialTrackID = null,
+            lastTrackID = null,
             trackID = null,
             isActive = true,
         )

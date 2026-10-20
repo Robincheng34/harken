@@ -37,6 +37,22 @@ object Destinations {
     const val FAVORITES = "favorites"
     const val CLOUD = "cloud"
 
+    /** 已下载（离线播放闭环的已下载管理页，覆盖层）。 */
+    const val DOWNLOADED = "downloaded"
+
+    /** 扫一扫（我的页快捷入口，纯本地相机能力，覆盖层）。 */
+    const val SCAN = "scan"
+
+    /** 歌曲信息页（播放页「歌曲信息」入口的全屏覆盖层，带 {id} 参数）。 */
+    const val SONG_INFO = "song_info/{id}"
+
+    /** 我的页左侧抽屉（红底新样式，左上汉堡键 / 「更多」入口，覆盖层）。 */
+    const val LIBRARY_DRAWER = "library_drawer"
+
+    // 搜索落地页快捷入口（覆盖层）。
+    const val ARTISTS = "artists"
+    const val GENRE = "genre"
+
     /** 详情路由参数名（与 NavBackStackEntry.arguments 键一致）。 */
     const val ARG_ID = "id"
 
@@ -48,4 +64,7 @@ object Destinations {
 
     /** 歌手详情路由构造器。 */
     fun artistDetail(id: Long): String = "artist/$id"
+
+    /** 歌曲信息页路由构造器。 */
+    fun songInfo(id: Long): String = "song_info/$id"
 }

@@ -26,6 +26,7 @@
     <string name="player_sound_effect">音效</string>
     <string name="player_song_info">歌曲信息</string>
     <string name="player_download">下载</string>
+    <string name="player_download_quality">下载音质</string>
     <string name="player_more">更多</string>
     <string name="player_sound_effect_unsupported">音效调节暂未支持</string>
     <string name="player_download_unsupported">下载功能暂未支持</string>
@@ -47,4 +48,15 @@
     <string name="player_info_quality">音质</string>
     <string name="player_info_id">歌曲 ID</string>
     <string name="player_share_chooser">分享歌曲</string>
+
+    <!-- 歌曲信息页（播放页「歌曲信息」入口全屏页）。 -->
+    <string name="song_info_album_section">专辑信息</string>
+    <string name="song_info_release">发行</string>
+    <string name="song_info_company">厂牌</string>
+    <string name="song_info_track_count">曲目数</string>
+    <string name="song_info_bio">艺人简介</string>
+    <string name="song_info_works">%1$d 张专辑 · %2$d 首歌</string>
+    <string name="song_info_albums_section">艺人的其他专辑</string>
+    <string name="song_info_load_failed">加载失败</string>
+    <string name="song_info_follow_failed">操作失败，请稍后重试</string>
 </resources>

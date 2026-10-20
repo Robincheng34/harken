@@ -268,7 +268,7 @@ private fun AlbumGrid(
     ) {
         itemsIndexed(albums, key = { _, item -> item.id }) { _, album ->
             CoverCard(
-                imageUrl = im.missuo.kumone.net.model.Formatters.resizedImageURL(album.picUrl, 384),
+                imageUrl = im.missuo.kumone.net.model.Formatters.resizedImageURL(album.coverUrl, 384),
                 contentDescription = album.name,
                 title = album.name,
                 subtitle = album.artistName,
@@ -340,7 +340,7 @@ private fun AlbumRow(
     ) {
         lazyItemsIndexed(albums, key = { _, item -> item.id }) { _, album ->
             CoverCard(
-                imageUrl = im.missuo.kumone.net.model.Formatters.resizedImageURL(album.picUrl, 384),
+                imageUrl = im.missuo.kumone.net.model.Formatters.resizedImageURL(album.coverUrl, 384),
                 contentDescription = album.name,
                 title = album.name,
                 subtitle = album.artistName,
@@ -351,7 +351,7 @@ private fun AlbumRow(
     }
 }
 
-/** 歌单横滑（方形封面 + 播放量）。 */
+/** 歌单横滑（方形封面 + 播放量）。与其余分区一致开启官方逐个入场动效。 */
 @Composable
 private fun PlaylistRow(
     playlists: List<PlaylistSummary>,
@@ -361,6 +361,7 @@ private fun PlaylistRow(
         title = "",
         items = playlists,
         onOpen = onOpenPlaylist,
+        staggered = true,
     )
 }
 

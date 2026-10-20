@@ -12,7 +12,6 @@ import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.fillMaxWidth
-import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.runtime.Composable
@@ -41,14 +40,15 @@ fun NewAlbumShelf(
     onPlay: ((Long) -> Unit)? = null,
     modifier: Modifier = Modifier,
 ) {
+    // 与 HomeShelf 保持一致：分区头与内容行之间不再叠加额外间距（原 Column 14dp +
+    // LazyRow 6dp），统一由 SectionHeader 自带的 12dp 下内边距提供。
     Column(
         modifier = modifier.fillMaxWidth(),
-        verticalArrangement = Arrangement.spacedBy(14.dp),
     ) {
-        SectionHeader(
-            title = stringResource(R.string.home_new_albums),
-            modifier = Modifier.padding(horizontal = Layout.contentInset),
-        )
+        // 左缘与 HomeShelf 统一：不再给 SectionHeader 额外叠 contentInset（那会让
+        // 标题文字落在 40dp、与其他分区的 16dp 分成两档），标题沿用 SectionHeader
+        // 自带的 16dp 水平内边距，与首张卡左缘对齐到同一条竖线。
+        SectionHeader(title = stringResource(R.string.home_new_albums))
         BoxWithConstraints(
             modifier = Modifier.fillMaxWidth(),
         ) {
@@ -59,11 +59,11 @@ fun NewAlbumShelf(
             // ~46dp 空档，叠加分区间距后就是用户看到的「上下间隔太大」。让 LazyRow
             // 按内容自撑高度，卡片顶对齐，底部不再有多余空隙。
             LazyRow(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(vertical = 6.dp),
+                modifier = Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
-                contentPadding = PaddingValues(horizontal = 8.dp),
+                // 同 HomeShelf：左缘 16dp 与分区标题文字对齐，右侧 8dp 透视。
+                // 卡宽由 fittedShelfCardSize 另算，不受此影响。
+                contentPadding = PaddingValues(start = 16.dp, end = 8.dp),
             ) {
                 itemsIndexed(items, key = { _, album -> album.id }) { _, album ->
                     CoverCard(

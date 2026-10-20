@@ -13,11 +13,11 @@ import androidx.compose.ui.graphics.Color
 /**
  * 品牌色（iOS `Theme.swift` 1:1 移植）。
  *
- * 网易云红略调暖：#EC4949 / 深色 #C92929；渐变起色 #F85B5B。
+ * 用户指定主题默认红为 exp_red.png 的纯红色：#FF0000；渐变深色 #CC0000 / 亮色 #FF3333。
  */
-val BrandRed: Color = Color(0xFFEC4949)
-val BrandRedDeep: Color = Color(0xFFC92929)
-val BrandRedBright: Color = Color(0xFFF85B5B)
+val BrandRed: Color = Color(0xFFFF0000)
+val BrandRedDeep: Color = Color(0xFFCC0000)
+val BrandRedBright: Color = Color(0xFFFF3333)
 
 /** 主色渐变（左上 → 右下），用于主按钮/播放键/FM 卡片。 */
 val BrandGradient: Brush =
@@ -62,14 +62,31 @@ private val DarkColors = darkColorScheme(
  *
  * @param darkTheme 覆盖 [im.missuo.kumone.storage.settings.AppAppearance] 的
  *   解析结果（AUTO → 系统、LIGHT/DARK → 强制）。
+ * @param primaryColor 主题挂件主色（默认官方红 [BrandRed]）。非默认值时覆盖
+ *   配色方案的强调色（primary/secondary/primaryContainer/onPrimaryContainer），
+ *   中性色（背景/表面/文字）保持不变，浅/深色逻辑不受影响。
  */
 @Composable
 fun KumoneTheme(
     darkTheme: Boolean = isSystemInDarkTheme(),
+    primaryColor: Color = BrandRed,
     content: @Composable () -> Unit,
 ) {
+    val scheme = (if (darkTheme) DarkColors else LightColors).let { base ->
+        if (primaryColor == BrandRed) {
+            base
+        } else {
+            base.copy(
+                primary = primaryColor,
+                onPrimary = Color.White,
+                secondary = primaryColor,
+                primaryContainer = primaryColor.copy(alpha = if (darkTheme) 0.28f else 0.12f),
+                onPrimaryContainer = if (darkTheme) Color.White else primaryColor,
+            )
+        }
+    }
     MaterialTheme(
-        colorScheme = if (darkTheme) DarkColors else LightColors,
+        colorScheme = scheme,
         typography = KumoneTypography,
         shapes = KumoneShapes,
         content = content,

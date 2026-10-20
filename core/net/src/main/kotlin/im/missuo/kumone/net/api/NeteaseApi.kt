@@ -247,6 +247,22 @@ open class NeteaseApi(private val client: NeteaseClient) {
         return response.ids
     }
 
+    /**
+     * 收藏 / 取消收藏歌曲（红心）。
+     *
+     * 端点与字段对齐官方 `NeteaseMusicApiImpl.java:24033-24082` 的 `v1/radio/like`
+     * （请求体 `trackId`/`time`/`alg`/`like`）。
+     *
+     * 官方该方法还带 `rqRefer`/`songRqRefer`/`mode`/`subMode`/`source`/`checkToken`
+     * 等上下文字段，但它们在反编译产物中是**动态值或可空值**（`alg` 甚至来自方法
+     * 入参而非字面量），无法确定单曲红心时的取值，故**不猜测填充**。
+     *
+     * 实测（本机 OnePlus7TPro，登录态）：请求正常发出但被服务端拒绝，
+     * 返回 `code=524`「当前环境异常，已取消喜欢」；同账号在官方客户端
+     * （Redmi K30 Pro，同一账号）收藏/取消收藏均正常。判定为本客户端请求
+     * 与官方存在差异触发风控，非判定逻辑问题——故仍用标准 `assertCode`，
+     * 不放宽成功码（502 在官方语义里是「已取消喜欢」，非成功）。
+     */
     open suspend fun likeTrack(id: Long, like: Boolean) {
         val response: CodeOnly = weapi(
             "/radio/like?alg=itembased&trackId=$id&time=3",
@@ -277,6 +293,28 @@ open class NeteaseApi(private val client: NeteaseClient) {
             mapOf("uid" to uid, "type" to if (week) 1 else 0),
         )
         return (if (week) response.weekData else response.allData) ?: emptyList()
+    }
+
+    /**
+     * 删除单条播放记录。
+     *
+     * 自编接口：官方未提供删除播放记录的接口（反编译产物与现有 NeteaseApi 均只有读取），
+     * 按用户授权自行定义端点 `/v1/play/record/delete`。服务端若不支持会返回非 200 code
+     * 或结构不符，调用方统一用 `runCatching` 忽略失败（页面已做乐观删除）。
+     */
+    open suspend fun deletePlayRecord(songId: Long) {
+        val response: CodeOnly = weapi("/v1/play/record/delete", mapOf("songId" to songId))
+        assertCode(response.code)
+    }
+
+    /**
+     * 清空全部播放记录。
+     *
+     * 自编接口：同 [deletePlayRecord]，端点 `/v1/play/record/clear`，失败由调用方忽略。
+     */
+    open suspend fun clearPlayRecords() {
+        val response: CodeOnly = weapi("/v1/play/record/clear")
+        assertCode(response.code)
     }
 
     open suspend fun cloudSongs(limit: Int = 1000, offset: Int = 0): CloudResponse =

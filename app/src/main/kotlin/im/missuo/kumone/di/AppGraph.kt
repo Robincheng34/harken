@@ -17,12 +17,16 @@ import im.missuo.kumone.net.api.NeteaseApiError
 import im.missuo.kumone.net.client.CookieStore
 import im.missuo.kumone.net.client.NeteaseClient
 import im.missuo.kumone.net.model.UserProfile
+import im.missuo.kumone.net.update.UpdateChecker
 import im.missuo.kumone.player.MusicController
 import im.missuo.kumone.player.PlaybackCommands
 import im.missuo.kumone.player.PlayerDependencies
 import im.missuo.kumone.storage.cookies.DataStoreCookieStore
+import im.missuo.kumone.storage.db.KumoneDatabase
+import im.missuo.kumone.storage.download.DownloadRepository
 import im.missuo.kumone.storage.search.SearchHistoryRepository
 import im.missuo.kumone.storage.settings.SettingsRepository
+import im.missuo.kumone.storage.update.UpdateRepository
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -53,6 +57,15 @@ class AppGraph private constructor(context: Context) {
     val neteaseClient: NeteaseClient = NeteaseClient(cookieStore)
     val neteaseApi: NeteaseApi = NeteaseApi(neteaseClient)
 
+    // 下载仓储（离线播放闭环）：本地 Room 清单 + 落盘文件，并作为 LocalSongSource
+    // 注入播放器解析链。须在 PlayerDependencies.provide 之前实例化（provide 引用它）。
+    val database: KumoneDatabase = KumoneDatabase.build(appContext)
+    val downloadRepository: DownloadRepository = DownloadRepository(appContext, neteaseApi, database)
+
+    // 在线检测更新：清单拉取器 + 仓储（下载/安装/待更新持久化）。
+    val updateChecker: UpdateChecker = UpdateChecker()
+    val updateRepository: UpdateRepository = UpdateRepository(appContext, updateChecker, dataStore)
+
     // `:core:player` 不能依赖 `:app`，故播放引擎的依赖经进程级 holder 注入
     // （PlayerService.kt 的 `PlayerDependencies`）。必须在构造 MusicController
     // 之前完成：MusicController.<init> → PlaybackEngine.acquire() 会 check
@@ -62,6 +75,7 @@ class AppGraph private constructor(context: Context) {
             api = neteaseApi,
             settings = settings,
             scope = scope,
+            localSource = downloadRepository,
         )
     }
 
@@ -99,6 +113,24 @@ class AppGraph private constructor(context: Context) {
                 // 保持 cookie 侧 isLoggedIn=true 的语义，并安排一次延迟补偿重试。
                 _isLoggedIn.value = true
                 scheduleLoginStateRetry()
+            }
+        }
+    }
+
+    /**
+     * 在线检测更新（best-effort）：距上次检查满 24h 才拉取 version.json，
+     * 若远端版本号更高则持久化为「待更新」。异常一律吞掉，不影响启动。
+     */
+    suspend fun checkForUpdateIfDue() {
+        runCatching {
+            val last = updateRepository.getLastCheckMillis()
+            val now = System.currentTimeMillis()
+            if (now - last < 24L * 60 * 60 * 1000) return@runCatching
+            updateRepository.setLastCheckMillis(now)
+            val manifest = updateRepository.fetchManifest()
+            val installed = updateRepository.getInstalledVersion()
+            if (manifest.versionCode > installed.versionCode) {
+                updateRepository.savePendingUpdate(manifest)
             }
         }
     }

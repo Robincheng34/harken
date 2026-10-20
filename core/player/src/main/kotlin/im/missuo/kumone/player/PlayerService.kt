@@ -12,6 +12,7 @@ import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.session.DefaultMediaNotificationProvider
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
+import im.missuo.kumone.storage.download.LocalSongSource
 
 /**
  * 播放前台服务：MediaSession 外壳 + 通知栏媒体控制。
@@ -132,6 +133,10 @@ object PlayerDependencies {
     var scope: kotlinx.coroutines.CoroutineScope? = null
         private set
 
+    /** 离线音源（下载仓储），供 [SongUrlResolver] 优先返回本地 URI。 */
+    var localSource: im.missuo.kumone.storage.download.LocalSongSource? = null
+        private set
+
     val isProvided: Boolean
         get() = api != null && settings != null && scope != null
 
@@ -139,10 +144,12 @@ object PlayerDependencies {
         api: im.missuo.kumone.net.api.NeteaseApi,
         settings: im.missuo.kumone.storage.settings.SettingsRepository,
         scope: kotlinx.coroutines.CoroutineScope,
+        localSource: im.missuo.kumone.storage.download.LocalSongSource? = null,
     ) {
         this.api = api
         this.settings = settings
         this.scope = scope
+        this.localSource = localSource
     }
 
     fun requireApi(): im.missuo.kumone.net.api.NeteaseApi =

@@ -7,6 +7,7 @@ import im.missuo.kumone.net.api.NeteaseApiError
 import im.missuo.kumone.net.model.SongURLData
 import im.missuo.kumone.net.model.Track
 import im.missuo.kumone.playback.AudioQuality
+import im.missuo.kumone.storage.download.LocalSongSource
 import im.missuo.kumone.storage.settings.SettingsRepository
 import kotlinx.coroutines.CancellationException
 
@@ -55,6 +56,7 @@ class SongUrlResolver(
     private val api: SongUrlApi,
     private val unblockPreference: UnblockPreference,
     private val unblock: UnblockSource? = null,
+    private val localSourceProvider: LocalSongSource? = null,
 ) {
 
     /** 由真实依赖构造（引擎侧使用）。 */
@@ -62,10 +64,23 @@ class SongUrlResolver(
         api: NeteaseApi,
         settings: SettingsRepository,
         unblock: UnblockSource? = null,
-    ) : this(api.asSongUrlApi(), settings.asUnblockPreference(), unblock)
+        localSourceProvider: LocalSongSource? = null,
+    ) : this(api.asSongUrlApi(), settings.asUnblockPreference(), unblock, localSourceProvider)
 
     suspend fun resolve(track: Track, preferred: AudioQuality): ResolvedSongUrl {
         val preferredLevel = preferred.apiLevel
+
+        // 离线优先：命中本地文件直接返回 file:// URI，零改 ExoPlayer 即可离线播放。
+        val local = localSourceProvider?.localUri(track.id, preferredLevel)
+            ?: localSourceProvider?.localUriAny(track.id)
+        if (!local.isNullOrBlank()) {
+            return ResolvedSongUrl(
+                url = local,
+                level = preferredLevel,
+                downgraded = false,
+                isTrial = false,
+            )
+        }
 
         // 1) 首选档。
         var data = fetch(track.id, preferredLevel)

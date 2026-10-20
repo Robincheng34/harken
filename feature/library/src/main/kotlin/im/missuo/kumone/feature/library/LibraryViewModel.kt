@@ -56,16 +56,38 @@ class LibraryViewModel(
                 it.creator?.userId == uid && it.specialType != LIKED_SONGS_SPECIAL_TYPE
             }
             val subscribed = playlists.filter { it.creator?.userId != uid }
+            val likedSongs = playlists.firstOrNull { it.specialType == LIKED_SONGS_SPECIAL_TYPE }
 
+            // 第一阶段先落地资料 + 歌单，让红底头部立即可见（避免被后续两个请求拖慢首屏）。
             _uiState.update {
                 it.copy(
                     isLoggedIn = true,
                     isLoading = false,
                     nickname = profile.nickname,
                     avatarUrl = profile.avatarUrl,
+                    backgroundUrl = profile.backgroundUrl,
+                    vipType = profile.vipType,
+                    signature = profile.signature.orEmpty(),
+                    level = profile.level,
+                    follows = profile.follows,
+                    followeds = profile.followeds,
+                    listenSongs = profile.listenSongs,
+                    likedSongs = likedSongs,
                     createdPlaylists = created,
                     subscribedPlaylists = subscribed,
                 )
+            }
+
+            // 第二阶段补「收藏的专辑 / 最近播放」：各自独立兜底，任一失败只影响自己。
+            val likedAlbums = runCatching { api.likedAlbums() }.getOrNull().orEmpty()
+            val recentTracks = runCatching { api.playRecords(uid, week = false) }
+                .getOrNull()
+                .orEmpty()
+                .take(RECENT_TRACKS_LIMIT)
+                .map { it.song }
+
+            _uiState.update {
+                it.copy(likedAlbums = likedAlbums, recentTracks = recentTracks)
             }
         }
     }
@@ -87,5 +109,7 @@ class LibraryViewModel(
         const val ERROR_LOAD = "加载失败"
         /** iOS: `Playlist.specialType == 5` 即「我喜欢的音乐」。 */
         const val LIKED_SONGS_SPECIAL_TYPE = 5
+        /** 「近期」页签最多展示的最近播放曲目数。 */
+        const val RECENT_TRACKS_LIMIT = 20
     }
 }

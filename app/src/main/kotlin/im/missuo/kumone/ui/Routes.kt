@@ -39,6 +39,9 @@ object Routes {
     const val FAVORITES: String = Destinations.FAVORITES
     const val CLOUD: String = Destinations.CLOUD
 
+    /** 已下载（离线播放闭环的已下载管理页）。 */
+    const val DOWNLOADED: String = Destinations.DOWNLOADED
+
     /** 详情路由构造器。 */
     fun playlistDetail(id: Long): String = Destinations.playlistDetail(id)
     fun albumDetail(id: Long): String = Destinations.albumDetail(id)
