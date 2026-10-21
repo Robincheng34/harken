@@ -29,11 +29,13 @@ import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 
 /**
- * 灰色解锁真实现：B 站 + iOS 三源（pyncmd / 酷我 / 酷狗）。
+ * 灰色解锁真实现：B 站 + 咪咕免费曲 + iOS 三源（pyncmd / 酷我 / 酷狗）。
  *
  * **2026-10-21 真机实测结论**：
  * - B 站（**免登录、免 VIP**）能拿到完整音轨：《晴天》《我不难过》实测 2.8~3.9MB、
  *   时长与曲目一致，故置首选（见 [bilibili]）。
+ * - 咪咕（免登录）只能拿**免费曲**完整 MP3；VIP 曲接口返回 JSON，探测后拒绝，
+ *   用于 B 站找不到时兜底，**不解锁 VIP**（见 [migu]）。
  * - iOS 原三源已全部失效（上游收紧）：
  * 1. 酷我——搜索/匹配链路可用，但 `anti.s` 与 `mobi.s` 对**所有**曲目只返回
  *    ~11s 的试听样本（`duration:11`），故必须经 [isLikelyFullAudio] 大小校验拒绝。
@@ -95,6 +97,11 @@ class NeteaseUnblockSource(
         val biliResult = runCatching { bilibili(track) }.getOrNull()
         if (biliResult != null && isLikelyFullAudio(biliResult.url, track.durationMS)) {
             return biliResult
+        }
+        // ① 咪咕免费曲：B 站没有、但咪咕免费时兜底（不解锁 VIP）。
+        val miguResult = runCatching { migu(track) }.getOrNull()
+        if (miguResult != null && isLikelyFullAudio(miguResult.url, track.durationMS)) {
+            return miguResult
         }
         val kuwoResult = runCatching { kuwo(track) }.getOrNull()
         if (kuwoResult != null && isLikelyFullAudio(kuwoResult.url, track.durationMS)) {
@@ -351,6 +358,112 @@ class NeteaseUnblockSource(
         }
     }
 
+    // MARK: - 咪咕免费曲（免登录；VIP 曲会返回 JSON，探测后拒绝）
+
+    /**
+     * 咪咕音乐（免登录），只能拿到**免费曲**的完整 MP3。
+     *
+     * 搜索走官方 app 接口 `search_all.do`；播放走 `listenSong.do`——它本身就是一个
+     * 302 到 CDN 的**音频流地址**（不是 JSON），ExoPlayer 直接播即可。
+     * 对 VIP 曲该接口返回 `{"code":"200000","info":"暂不提供试听地址"}`，
+     * 所以先用 `Range: bytes=0-0` 探测 Content-Type，非 audio 一律拒绝。
+     *
+     * 定位：B 站找不到、但咪咕有免费版时兜底；**不解锁 VIP**。
+     */
+    private suspend fun migu(track: Track): UnblockCandidate? = withContext(Dispatchers.IO) {
+        val keyword = "${track.name} ${track.artists.firstOrNull()?.name.orEmpty()}".trim()
+        val searchUrl = "https://app.c.nf.migu.cn/MIGUM2.0/v1.0/content/search_all.do"
+            .toHttpUrl().newBuilder()
+            .addQueryParameter("ua", "Android_migu")
+            .addQueryParameter("version", "5.0")
+            .addQueryParameter("text", keyword)
+            .addQueryParameter("pageNo", "1")
+            .addQueryParameter("pageSize", "20")
+            .addQueryParameter("searchSwitch", """{"song":1}""")
+            .build()
+        val body = runCatching {
+            client.newCall(
+                Request.Builder().url(searchUrl).header("User-Agent", MIGU_UA).build(),
+            ).execute().use { it.body?.string() }
+        }.getOrNull() ?: return@withContext null
+        val root = runCatching { json.parseToJsonElement(body) }.getOrNull() as? JsonObject
+            ?: return@withContext null
+        val results = (root["songResultData"] as? JsonObject)?.get("result") as? JsonArray
+            ?: return@withContext null
+
+        val match = results.asSequence()
+            .mapNotNull { it as? JsonObject }
+            .firstOrNull { item ->
+                val songArtists = (item["singers"] as? JsonArray)
+                    ?.mapNotNull { (it as? JsonObject)?.get("name").stringOrNull() }
+                    .orEmpty()
+                matchesMigu(track, item["name"].stringOrNull().orEmpty(), songArtists)
+            } ?: return@withContext null
+
+        val copyrightId = match["copyrightId"].stringOrNull() ?: return@withContext null
+        val contentId = match["contentId"].stringOrNull() ?: return@withContext null
+        val playUrl = "https://app.c.nf.migu.cn/MIGUM2.0/v1.0/content/sub/listenSong.do"
+            .toHttpUrl().newBuilder()
+            .addQueryParameter("toneFlag", "PQ")
+            .addQueryParameter("netType", "00")
+            .addQueryParameter("userId", MIGU_USER_ID)
+            .addQueryParameter("ua", "Android_migu")
+            .addQueryParameter("version", "5.0")
+            .addQueryParameter("channel", "0146921")
+            .addQueryParameter("copyrightId", copyrightId)
+            .addQueryParameter("contentId", contentId)
+            .addQueryParameter("resourceType", "2")
+            .build()
+            .toString()
+        if (!miguPlayable(playUrl)) return@withContext null
+
+        val songArtists = (match["singers"] as? JsonArray)
+            ?.mapNotNull { (it as? JsonObject)?.get("name").stringOrNull() }
+            .orEmpty()
+        UnblockCandidate(
+            url = playUrl,
+            title = match["name"].stringOrNull().orEmpty(),
+            artist = songArtists.joinToString(" / "),
+            // 搜索接口不返回时长；用曲目时长，供外层 isPlausibleDuration 校验通过。
+            durationMS = track.durationMS,
+            sourceName = "咪咕音乐",
+        )
+    }
+
+    /** 探测 listenSong.do 最终返回的是音频流（免费曲）还是 JSON（VIP 无地址）。 */
+    private suspend fun miguPlayable(url: String): Boolean = withContext(Dispatchers.IO) {
+        runCatching {
+            client.newCall(
+                Request.Builder()
+                    .url(url)
+                    .header("User-Agent", MIGU_UA)
+                    .header("Range", "bytes=0-0")
+                    .build(),
+            ).execute().use { response ->
+                val type = response.body?.contentType()?.toString().orEmpty()
+                response.isSuccessful && (type.startsWith("audio") || type.contains("octet-stream"))
+            }
+        }.getOrDefault(false)
+    }
+
+    /** 咪咕匹配：歌名归一化相等、歌手命中、版本标记一致（搜索无时长）。 */
+    private fun matchesMigu(track: Track, name: String, artists: List<String>): Boolean {
+        if (normalize(name) != normalize(track.name)) return false
+        if (versionTags(track.name) != versionTags(name)) return false
+        val expected = normalize(track.artists.firstOrNull()?.name.orEmpty())
+        if (expected.isEmpty()) return false
+        val candidates = artists.map { normalize(it) }
+        if (candidates.none { it == expected || it.contains(expected) || expected.contains(it) }) {
+            return false
+        }
+        if (BILI_JUNK.any { normalize(name).contains(it) } &&
+            BILI_JUNK.none { normalize(track.name).contains(it) }
+        ) {
+            return false
+        }
+        return true
+    }
+
     // MARK: - ① 酷我（首选）
 
     private suspend fun kuwo(track: Track): UnblockCandidate? = withContext(Dispatchers.IO) {
@@ -555,6 +668,10 @@ class NeteaseUnblockSource(
         private val BILI_JUNK = listOf(
             "钢琴", "鼓谱", "琴谱", "音高", "教程", "纯音乐", "伴奏", "翻唱", "cover",
         )
+
+        /** 咪咕官方 app 接口要求的 UA 与固定访客 id。 */
+        private const val MIGU_UA = "Mozilla/5.0"
+        private const val MIGU_USER_ID = "1554861458870011"
 
         /** 每个源只匹配前 N 条候选（iOS `prefix(5)`）。 */
         private const val CANDIDATE_LIMIT = 5
