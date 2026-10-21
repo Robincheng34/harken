@@ -7,6 +7,7 @@ import im.missuo.kumone.player.DURATION_TOLERANCE_MS
 import im.missuo.kumone.player.UnblockCandidate
 import im.missuo.kumone.player.UnblockSource
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.withContext
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
@@ -14,20 +15,26 @@ import kotlinx.serialization.json.JsonElement
 import kotlinx.serialization.json.JsonNull
 import kotlinx.serialization.json.JsonObject
 import kotlinx.serialization.json.JsonPrimitive
+import okhttp3.Cookie
+import okhttp3.CookieJar
+import okhttp3.HttpUrl
+import okhttp3.HttpUrl.Companion.toHttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.net.URLEncoder
 import java.security.MessageDigest
 import java.util.Locale
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 import kotlin.math.abs
 
 /**
- * 灰色解锁真实现（iOS `AudioSourceProvider` 的三源：pyncmd / 酷我 / 酷狗）。
+ * 灰色解锁真实现：B 站 + iOS 三源（pyncmd / 酷我 / 酷狗）。
  *
- * 与 iOS 一致：三源全接、默认开（见 [im.missuo.kumone.storage.settings.AppSettings.unblockEnabled]）。
- *
- * **2026-10-21 真机实测：三者当前均已不可用（上游收紧）**：
+ * **2026-10-21 真机实测结论**：
+ * - B 站（**免登录、免 VIP**）能拿到完整音轨：《晴天》《我不难过》实测 2.8~3.9MB、
+ *   时长与曲目一致，故置首选（见 [bilibili]）。
+ * - iOS 原三源已全部失效（上游收紧）：
  * 1. 酷我——搜索/匹配链路可用，但 `anti.s` 与 `mobi.s` 对**所有**曲目只返回
  *    ~11s 的试听样本（`duration:11`），故必须经 [isLikelyFullAudio] 大小校验拒绝。
  * 2. pyncmd——`music-api.gdstudio.xyz`（含 http / 其他子域）全部被 Cloudflare
@@ -35,11 +42,10 @@ import kotlin.math.abs
  * 3. 酷狗——`/i/v2/` 对全部曲目返回 `status=2`（无 url，key 已失效），
  *    换 `kgcloud` / `kgcloud2` 等密钥亦无 url。
  *
- * 因此当前**无法真正解锁 VIP 曲目**：管线会在大小校验失败后返回 null，上层回落到
- * 官方试听片段（至少时长与提示是诚实的）。保留三源与匹配逻辑，便于上游恢复或
- * 改用可用音源时零改动接入。
+ * 三源保留作兜底（上游恢复时零改动接入）；其候选仍需经 [isLikelyFullAudio] 大小校验，
+ * 避免酷我 11s 残片被当整首播放。
  *
- * `resolve` / `resolveCandidate` 共用同一条三源链路：依次尝试、首个通过匹配守卫
+ * `resolve` / `resolveCandidate` 共用同一条四源链路：依次尝试、首个通过匹配守卫
  * 的直链即被采纳；任一源失败（网络异常 / JSON 解析失败 / 歌名不匹配）一律跳下一源，
  * 绝不向外抛异常（外层 `runCatching` 兜底）。直链 `http://` 一律升 `https://`
  * （外层 [im.missuo.kumone.player.SongUrlResolver] 也会再升一次，这里保持幂等）。
@@ -55,6 +61,16 @@ class NeteaseUnblockSource(
 
     /** 容忍未知字段 / 宽松格式（第三方源 JSON 字段不齐，按 iOS 的宽容 Codable 处理）。 */
     private val json = Json { ignoreUnknownKeys = true; isLenient = true }
+
+    // ── 哔哩哔哩（免登录，2026-10 实测唯一可用的免费整首源）──────────────────
+    // 流程：SPI 取匿名 buvid → search/type 搜投稿 → view 取 cid → playurl(fnval=16)
+    //       → dash.audio 最高码率音轨。实测《晴天》《我不难过》都能拿到完整 2.8~3.9MB 音轨。
+    // 必须带 CookieJar：search 会下发 b_nut 等 cookie，playurl 依赖同一会话。
+    private val biliJar = MemoryCookieJar()
+    private val biliClient: OkHttpClient = client.newBuilder().cookieJar(biliJar).build()
+
+    @Volatile
+    private var biliCookiesReady = false
 
     /**
      * 带元数据的候选：经匹配守卫后返回，供 [im.missuo.kumone.player.SongUrlResolver.rescue]
@@ -75,6 +91,11 @@ class NeteaseUnblockSource(
      * 由上层回落到官方的试听片段（至少时长与提示是诚实的）。
      */
     private suspend fun resolveInternal(track: Track): UnblockCandidate? {
+        // ⓪ B 站：免登录、实测唯一能出完整音轨的源，置首。
+        val biliResult = runCatching { bilibili(track) }.getOrNull()
+        if (biliResult != null && isLikelyFullAudio(biliResult.url, track.durationMS)) {
+            return biliResult
+        }
         val kuwoResult = runCatching { kuwo(track) }.getOrNull()
         if (kuwoResult != null && isLikelyFullAudio(kuwoResult.url, track.durationMS)) {
             return kuwoResult
@@ -109,6 +130,226 @@ class NeteaseUnblockSource(
                 }
             }.getOrDefault(true)
         }
+
+    // MARK: - ⓪ 哔哩哔哩（免登录，实测唯一可用的免费整首源）
+
+    /**
+     * 从 B 站投稿里取原曲音轨（对齐 MusicFree `bilibili` 插件，2026-10 真机实测可用）。
+     *
+     * 1. `/x/frontend/finger/spi` 取匿名 `buvid3/buvid4`（**无需登录 / 无需 VIP**）；
+     * 2. `/x/web-interface/search/type`（`search_type=video`）搜「歌名 + 首位歌手」；
+     * 3. 标题/时长匹配后 `/x/web-interface/view` 取 `cid`；
+     * 4. `/x/player/playurl?fnval=16` 取 `dash.audio` 中码率最高的一条。
+     *
+     * 音轨是签名的 HTTPS CDN 地址，实测**不需要 Referer**，ExoPlayer 可直接播放。
+     */
+    private suspend fun bilibili(track: Track): UnblockCandidate? = withContext(Dispatchers.IO) {
+        val results = biliSearch(track) ?: return@withContext null
+        val best = results.asSequence()
+            .mapNotNull { it as? JsonObject }
+            .filter { it["type"].stringOrNull() == "video" }
+            .mapNotNull { item ->
+                val bvid = item["bvid"].stringOrNull()?.takeIf { it.isNotBlank() }
+                    ?: return@mapNotNull null
+                val title = stripHtml(item["title"].stringOrNull().orEmpty())
+                val durationMs = parseBiliDuration(item["duration"].stringOrNull())
+                if (!matchesBilibili(track, title, durationMs)) return@mapNotNull null
+                BiliVideo(bvid, title, item["author"].stringOrNull().orEmpty(), durationMs)
+            }
+            // 标题/歌手都对上时，时长最接近的通常是原曲而不是串烧/合集。
+            .minByOrNull { abs(it.durationMs - track.durationMS) }
+            ?: return@withContext null
+
+        val cid = biliCid(best.bvid) ?: return@withContext null
+        val audioUrl = biliAudioUrl(best.bvid, cid) ?: return@withContext null
+        UnblockCandidate(
+            url = audioUrl,
+            title = best.title,
+            artist = best.author,
+            durationMS = best.durationMs,
+            sourceName = "哔哩哔哩",
+        )
+    }
+
+    private data class BiliVideo(
+        val bvid: String,
+        val title: String,
+        val author: String,
+        val durationMs: Long,
+    )
+
+    /** 匿名 buvid（进程内缓存；搜索返回非 JSON 时重建一次）。 */
+    private fun ensureBiliCookies(): Boolean {
+        if (biliCookiesReady) return true
+        return runCatching {
+            val request = Request.Builder()
+                .url("https://api.bilibili.com/x/frontend/finger/spi")
+                .header("User-Agent", BILI_UA)
+                .build()
+            biliClient.newCall(request).execute().use { response ->
+                val body = response.body?.string() ?: return@use false
+                val data = (json.parseToJsonElement(body) as? JsonObject)?.get("data") as? JsonObject
+                    ?: return@use false
+                val b3 = data["b_3"].stringOrNull() ?: return@use false
+                val b4 = data["b_4"].stringOrNull() ?: return@use false
+                val spi = "https://api.bilibili.com/x/frontend/finger/spi".toHttpUrl()
+                biliJar.saveFromResponse(
+                    spi,
+                    listOf(
+                        Cookie.Builder().domain("bilibili.com").path("/").name("buvid3").value(b3).build(),
+                        Cookie.Builder().domain("bilibili.com").path("/").name("buvid4").value(b4).build(),
+                    ),
+                )
+                biliCookiesReady = true
+                true
+            }
+        }.getOrDefault(false)
+    }
+
+    private suspend fun biliSearch(track: Track): JsonArray? = withContext(Dispatchers.IO) {
+        if (!ensureBiliCookies()) return@withContext null
+        val keyword = "${track.name} ${track.artists.firstOrNull()?.name.orEmpty()}".trim()
+        val url = "https://api.bilibili.com/x/web-interface/search/type".toHttpUrl().newBuilder()
+            .addQueryParameter("context", "")
+            .addQueryParameter("page", "1")
+            .addQueryParameter("order", "")
+            .addQueryParameter("page_size", "20")
+            .addQueryParameter("keyword", keyword)
+            .addQueryParameter("duration", "")
+            .addQueryParameter("tids_1", "")
+            .addQueryParameter("tids_2", "")
+            .addQueryParameter("__refresh__", "true")
+            .addQueryParameter("_extra", "")
+            .addQueryParameter("highlight", "1")
+            .addQueryParameter("single_column", "0")
+            .addQueryParameter("platform", "pc")
+            .addQueryParameter("from_source", "")
+            .addQueryParameter("search_type", "video")
+            .addQueryParameter("dynamic_offset", "0")
+            .build()
+
+        repeat(2) { attempt ->
+            val body = runCatching {
+                biliClient.newCall(
+                    Request.Builder()
+                        .url(url)
+                        .header("User-Agent", BILI_UA)
+                        .header("Referer", "https://search.bilibili.com")
+                        .build(),
+                ).execute().use { it.body?.string() }
+            }.getOrNull()
+            val result = (body
+                ?.let { runCatching { json.parseToJsonElement(it) }.getOrNull() }
+                ?.let { (it as? JsonObject)?.get("data") as? JsonObject }
+                ?.get("result")) as? JsonArray
+            if (result != null) return@withContext result
+            if (attempt == 0) {
+                // 412 / 风控时重建 buvid 再试一次。
+                biliCookiesReady = false
+                ensureBiliCookies()
+                delay(700)
+            }
+        }
+        null
+    }
+
+    private suspend fun biliCid(bvid: String): Long? = withContext(Dispatchers.IO) {
+        runCatching {
+            biliClient.newCall(
+                Request.Builder()
+                    .url("https://api.bilibili.com/x/web-interface/view?bvid=$bvid")
+                    .header("User-Agent", BILI_UA)
+                    .build(),
+            ).execute().use { response ->
+                val body = response.body?.string() ?: return@use null
+                val data = (json.parseToJsonElement(body) as? JsonObject)?.get("data") as? JsonObject
+                data?.get("cid").stringOrNull()?.toLongOrNull()
+            }
+        }.getOrNull()
+    }
+
+    private suspend fun biliAudioUrl(bvid: String, cid: Long): String? = withContext(Dispatchers.IO) {
+        runCatching {
+            biliClient.newCall(
+                Request.Builder()
+                    .url("https://api.bilibili.com/x/player/playurl?bvid=$bvid&cid=$cid&fnval=16")
+                    .header("User-Agent", BILI_UA)
+                    .build(),
+            ).execute().use { response ->
+                val body = response.body?.string() ?: return@use null
+                val data = (json.parseToJsonElement(body) as? JsonObject)?.get("data") as? JsonObject
+                val audios = (data?.get("dash") as? JsonObject)?.get("audio") as? JsonArray
+                    ?: return@use null
+                audios.asSequence()
+                    .mapNotNull { it as? JsonObject }
+                    .maxByOrNull { it["bandwidth"].stringOrNull()?.toLongOrNull() ?: 0L }
+                    ?.let { it["baseUrl"].stringOrNull() ?: it["base_url"].stringOrNull() }
+            }
+        }.getOrNull()
+    }
+
+    /** B 站标题匹配：标题需同时包含歌名与首位歌手，时长差 ≤5s，版本标记一致。 */
+    private fun matchesBilibili(track: Track, title: String, durationMs: Long): Boolean {
+        if (track.durationMS > 0 && durationMs > 0) {
+            if (abs(track.durationMS - durationMs) > DURATION_TOLERANCE_MS) return false
+        }
+        val normalizedTitle = normalize(title)
+        val name = normalize(track.name)
+        if (name.isEmpty() || !normalizedTitle.contains(name)) return false
+        val artist = normalize(track.artists.firstOrNull()?.name.orEmpty())
+        if (artist.isNotEmpty() && !normalizedTitle.contains(artist)) return false
+        if (versionTags(track.name) != versionTags(title)) return false
+        // 原曲不应命中演唱会/现场版；曲目本身是 Live 时放行。
+        if (!versionTags(track.name).contains("live") &&
+            (normalizedTitle.contains("演唱会") || normalizedTitle.contains("现场"))
+        ) {
+            return false
+        }
+        // 教程/谱/翻唱等投稿不是原曲；除非曲目本身就叫这个。
+        if (BILI_JUNK.any { normalizedTitle.contains(it) } && BILI_JUNK.none { name.contains(it) }) {
+            return false
+        }
+        return true
+    }
+
+    /** `"4:30"` → 270000ms。 */
+    private fun parseBiliDuration(value: String?): Long {
+        val match = Regex("(\\d+):(\\d+)").find(value ?: return 0L) ?: return 0L
+        return (match.groupValues[1].toLong() * 60 + match.groupValues[2].toLong()) * 1000
+    }
+
+    /** 去掉 `<em class="keyword">` 等高亮标签与 HTML 实体。 */
+    private fun stripHtml(value: String): String = value
+        .replace(Regex("<[^>]+>"), "")
+        .replace("&amp;", "&")
+        .replace("&lt;", "<")
+        .replace("&gt;", ">")
+        .replace("&quot;", "\"")
+        .replace("&#39;", "'")
+
+    /** 极简内存 CookieJar（B 站 playurl 依赖 search 同会话持有的 cookie）。 */
+    private class MemoryCookieJar : CookieJar {
+        private val store = ConcurrentHashMap<String, MutableList<Cookie>>()
+
+        override fun saveFromResponse(url: HttpUrl, cookies: List<Cookie>) {
+            if (cookies.isEmpty()) return
+            for (cookie in cookies) {
+                val list = store.getOrPut(cookie.domain) { mutableListOf() }
+                synchronized(list) {
+                    list.removeAll { it.name == cookie.name && it.path == cookie.path }
+                    list.add(cookie)
+                }
+            }
+        }
+
+        override fun loadForRequest(url: HttpUrl): List<Cookie> {
+            val out = mutableListOf<Cookie>()
+            for (list in store.values) {
+                synchronized(list) { out.addAll(list.filter { it.matches(url) }) }
+            }
+            return out
+        }
+    }
 
     // MARK: - ① 酷我（首选）
 
@@ -304,6 +545,16 @@ class NeteaseUnblockSource(
     companion object {
         /** 酷我搜索必须带此 UA，否则返回空结果。 */
         private const val KUWO_UA = "okhttp/3.10.0"
+
+        /** B 站接口要求浏览器 UA（OkHttp 默认 UA 易被风控）。 */
+        private const val BILI_UA =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+                "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
+        /** B 站投稿里不属于原曲的关键词（教程/谱/伴奏等）。 */
+        private val BILI_JUNK = listOf(
+            "钢琴", "鼓谱", "琴谱", "音高", "教程", "纯音乐", "伴奏", "翻唱", "cover",
+        )
 
         /** 每个源只匹配前 N 条候选（iOS `prefix(5)`）。 */
         private const val CANDIDATE_LIMIT = 5
