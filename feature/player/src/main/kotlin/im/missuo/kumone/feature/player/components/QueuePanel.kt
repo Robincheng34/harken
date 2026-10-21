@@ -67,6 +67,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.hapticfeedback.HapticFeedback
@@ -142,8 +143,9 @@ fun QueuePanel(
     // animateItem 让其余行平滑补位；被拖行用 translationY 保持视觉连续）。
     var dragFromIndex by remember { mutableStateOf<Int?>(null) }
     var dragOffsetY by remember { mutableFloatStateOf(0f) }
-    // 各行实测高度（拖拽跨行阈值用被拖行自己的高度）。
-    val rowHeights = remember { mutableMapOf<Int, Int>() }
+    // 各行实测高度（拖拽跨行阈值用被拖行自己的高度；按 rowKey 索引——用 index
+    // 会在删除行后张冠李戴，且只增不减）。
+    val rowHeights = remember { mutableMapOf<String, Int>() }
     // 左滑展开的唯一行 key。
     var openRowKey by remember { mutableStateOf<String?>(null) }
 
@@ -237,7 +239,7 @@ fun QueuePanel(
                     val isCurrent = index == currentIndex
                     val rowKey = rowKeys[index]
                     val isDragging = dragFromIndex == index
-                    val rowHeightPx = rowHeights[index]
+                    val rowHeightPx = rowHeights[rowKey]
                         ?: with(density) { 64.dp.toPx() }.toInt()
                     Box(
                         modifier = Modifier
@@ -251,13 +253,15 @@ fun QueuePanel(
                                     m
                                 }
                             }
-                            .onSizeChanged { rowHeights[index] = it.height },
+                            .onSizeChanged { rowHeights[rowKey] = it.height },
                     ) {
                         OfficialQueueRow(
                             track = track,
                             isCurrent = isCurrent,
                             isDragging = isDragging,
-                            swipeEnabled = !isCurrent && openRowKey == null,
+                            // 展开中的行仍保留左滑手势（右滑收回，官方 SwipeMenuLayout
+                            // 语义）；其他行在别行展开时禁滑（同时最多一行展开）。
+                            swipeEnabled = !isCurrent && (openRowKey == null || openRowKey == rowKey),
                             open = openRowKey == rowKey,
                             onOpenChange = { open -> openRowKey = if (open) rowKey else null },
                             haptics = haptics,
@@ -380,13 +384,23 @@ private fun OfficialQueueRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .offset { IntOffset(offsetX.value.roundToInt(), 0) }
+                // 拖拽中的行浮起（阴影），松手后消失——官方 ItemTouchHelper 视觉。
+                .shadow(elevation = if (isDragging) 8.dp else 0.dp)
                 .background(RowBackground)
                 .pointerInput(isCurrent, swipeEnabled) {
                     if (!isCurrent && swipeEnabled) {
                         detectHorizontalDragGestures(
                             onDragEnd = {
                                 scope.launch {
-                                    if (abs(offsetX.value) >= openThresholdPx) {
+                                    if (open) {
+                                        // 已展开：右滑过阈值收回，否则回弹到展开位。
+                                        if (offsetX.value > -menuPx * 0.6f) {
+                                            offsetX.animateTo(0f, tween(200))
+                                            currentOnOpenChange(false)
+                                        } else {
+                                            offsetX.animateTo(-menuPx, tween(200))
+                                        }
+                                    } else if (abs(offsetX.value) >= openThresholdPx) {
                                         offsetX.animateTo(-menuPx, tween(200))
                                         currentOnOpenChange(true)
                                     } else {
@@ -531,5 +545,10 @@ private fun PlayingBars(modifier: Modifier = Modifier) {
 private fun formatDuration(durationMs: Long): String {
     if (durationMs <= 0) return ""
     val totalSeconds = durationMs / 1000
-    return "%d:%02d".format(totalSeconds / 60, totalSeconds % 60)
+    return if (totalSeconds >= 3600) {
+        // 长音频（播客/电台）用 h:mm:ss，避免 61:23 这种歧义显示。
+        "%d:%02d:%02d".format(totalSeconds / 3600, (totalSeconds % 3600) / 60, totalSeconds % 60)
+    } else {
+        "%d:%02d".format(totalSeconds / 60, totalSeconds % 60)
+    }
 }

@@ -24,6 +24,7 @@ import im.missuo.kumone.playback.PlayContext
 import im.missuo.kumone.playback.PlaySource
 import im.missuo.kumone.playback.PlaybackQueue
 import im.missuo.kumone.playback.RepeatMode
+import im.missuo.kumone.playback.isStablePlayback
 import im.missuo.kumone.player.unblock.NeteaseUnblockSource
 import im.missuo.kumone.storage.download.LocalSongSource
 import im.missuo.kumone.storage.settings.SettingsRepository
@@ -251,24 +252,6 @@ class PlaybackEngine(
      */
     fun removeFromQueue(index: Int) {
         queue.removeAt(index)
-        publish()
-    }
-
-    /** 撤销删除：把曲目按原位置插回队列。 */
-    fun insertIntoQueue(index: Int, track: Track) {
-        queue.insertAt(index, track)
-        publish()
-    }
-
-    /** 撤销删除（稳健版）：把曲目插回**当前播放曲之后**。
-     *
-     * 撤销时队列可能已因自动切歌 / 连续删除而变化，UI 侧缓存的绝对下标会
-     * 过期（实测插到错误位置）；引擎在调用瞬间读 [PlaybackQueue.currentIndex]
-     * 拿到的一定是实时位置。删的都是 upcoming（当前曲之后），插回当前曲之后
-     * 语义等价且永远有效。
-     */
-    fun insertAfterCurrent(track: Track) {
-        queue.insertAt(queue.currentIndex + 1, track)
         publish()
     }
 
@@ -550,11 +533,14 @@ class PlaybackEngine(
             }
             return
         }
-        // 熔断计数：上一曲稳定播放过（≥ [STABLE_PLAY_MS]）才算正常播完并重置
-        // 计数；几乎没播就「自然结束」视为一次失败。原实现此路径完全没有失败
-        // 计数——秒结束的坏音源会一路 advance 把整个队列刷穿并无限循环
+        // 熔断计数：上一曲「稳定播放过」才算正常播完并重置计数；几乎没播就
+        // 「自然结束」视为一次失败。原实现此路径完全没有失败计数——秒结束的
+        // 坏音源会一路 advance 把整个队列刷穿并无限循环
         // （实测 137 首队列几分钟内被刷完，播放列表乱跳的根因之一）。
-        if (deckLoaded && exoPlayer.currentPosition >= STABLE_PLAY_MS) {
+        // 稳定判定见 [isStablePlayback]：短曲完整播完也算成功，否则含 intro/
+        // skit 的专辑播到短曲处会被误判停摆。
+        val endedDuration = queue.current()?.durationMS ?: 0L
+        if (deckLoaded && isStablePlayback(exoPlayer.currentPosition, endedDuration, STABLE_PLAY_MS)) {
             consecutiveFailures = 0
         } else {
             consecutiveFailures += 1
@@ -604,11 +590,13 @@ class PlaybackEngine(
             publish()
             return
         }
-        // 上一曲稳定播放过（≥ [STABLE_PLAY_MS]）则视为一次「成功」重置计数：
-        // 失败熔断只针对「连续秒挂」的坏源段，不该被长播放后的偶发一次报错连带。
+        // 上一曲稳定播放过（判定同 onTrackEnded，见 [isStablePlayback]）则视为
+        // 一次「成功」重置计数：失败熔断只针对「连续秒挂」的坏源段，不该被长
+        // 播放后的偶发一次报错连带。
         // （playCurrent 解析成功处不再清零——否则「解析成功即挂」的坏源会
         // 每首都重置计数，熔断永远触发不了。）
-        if (deckLoaded && exoPlayer.currentPosition >= STABLE_PLAY_MS) {
+        val currentDuration = queue.current()?.durationMS ?: 0L
+        if (deckLoaded && isStablePlayback(exoPlayer.currentPosition, currentDuration, STABLE_PLAY_MS)) {
             consecutiveFailures = 0
         }
         consecutiveFailures += 1
