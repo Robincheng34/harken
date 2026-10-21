@@ -165,6 +165,9 @@ class MusicController(private val context: Context) {
     /** 撤销删除（稳健版）：把曲目插回当前播放曲之后（引擎实时定位，无索引陈旧）。 */
     fun insertAfterCurrent(track: Track) = engine.insertAfterCurrent(track)
 
+    /** 队列面板长按拖拽排序。 */
+    fun moveInQueue(from: Int, to: Int) = engine.moveInQueue(from, to)
+
     fun next() = engine.next()
 
     fun previous() = engine.previous()

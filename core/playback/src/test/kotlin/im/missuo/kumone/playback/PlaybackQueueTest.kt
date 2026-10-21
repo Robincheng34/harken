@@ -308,4 +308,76 @@ class PlaybackQueueTest {
         assertEquals("lossless", AudioQuality.LOSSLESS.apiLevel)
         assertEquals("hires", AudioQuality.HIRES.apiLevel)
     }
+
+    // MARK: - move (队列拖拽排序)
+
+    @Test
+    fun `move keeps current index when current track is the one moved`() {
+        val queue = queue()
+        val list = tracks(4)
+        queue.load(list, startIndex = 1, context = null, source = PlaySource.NONE)
+
+        queue.move(from = 1, to = 3)
+
+        assertEquals(listOf(list[0], list[2], list[3], list[1]), queue.queue)
+        assertEquals(3, queue.currentIndex)
+        assertEquals(list[1], queue.current())
+    }
+
+    @Test
+    fun `move decrements current index when a track before current crosses it`() {
+        val queue = queue()
+        val list = tracks(4)
+        queue.load(list, startIndex = 2, context = null, source = PlaySource.NONE)
+
+        queue.move(from = 1, to = 3)
+
+        assertEquals(listOf(list[0], list[2], list[3], list[1]), queue.queue)
+        assertEquals(1, queue.currentIndex)
+        assertEquals(list[2], queue.current())
+    }
+
+    @Test
+    fun `move increments current index when a track after current crosses it`() {
+        val queue = queue()
+        val list = tracks(4)
+        queue.load(list, startIndex = 1, context = null, source = PlaySource.NONE)
+
+        queue.move(from = 3, to = 0)
+
+        assertEquals(listOf(list[3], list[0], list[1], list[2]), queue.queue)
+        assertEquals(2, queue.currentIndex)
+        assertEquals(list[1], queue.current())
+    }
+
+    @Test
+    fun `move ignores out of range and no op moves`() {
+        val queue = queue()
+        val list = tracks(3)
+        queue.load(list, startIndex = 1, context = null, source = PlaySource.NONE)
+        val before = queue.queue
+
+        queue.move(from = 0, to = 0)
+        queue.move(from = -1, to = 1)
+        queue.move(from = 1, to = 3)
+        queue.move(from = 3, to = 0)
+
+        assertEquals(before, queue.queue)
+        assertEquals(1, queue.currentIndex)
+    }
+
+    @Test
+    fun `move keeps listed order in sync for shuffle restore`() {
+        val queue = queue()
+        val list = tracks(4)
+        queue.load(list, startIndex = 1, context = null, source = PlaySource.NONE)
+
+        queue.move(from = 1, to = 3)
+        // 关闭随机恢复原始顺序：move 同步改动了 listedOrder，恢复后仍是 move 后的顺序。
+        queue.shuffleEnabled = true
+        queue.shuffleEnabled = false
+
+        assertEquals(listOf(list[0], list[2], list[3], list[1]), queue.queue)
+        assertEquals(3, queue.currentIndex)
+    }
 }

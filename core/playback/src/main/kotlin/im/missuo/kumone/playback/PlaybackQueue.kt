@@ -213,6 +213,39 @@ class PlaybackQueue {
         if (index <= currentIndex) currentIndex += 1
     }
 
+    /**
+     * Moves the track at [from] to [to] (队列面板长按拖拽排序).
+     *
+     * Both the active order and [listedOrder] move the same entry (官方语义：拖动
+     * 提交的是整表重排，两份顺序保持一致，随机切回原始顺序时不串位). [currentIndex]
+     * follows the current track when it is the one being moved; tracks crossing
+     * over the current position compensate the index by one.
+     */
+    fun move(from: Int, to: Int) {
+        if (from == to) return
+        if (from !in queue.indices || to !in queue.indices) return
+        val moved = queue[from]
+        val active = ArrayList(queue)
+        active.removeAt(from)
+        active.add(to, moved)
+        queue = active
+        // listedOrder 同步移动同一条目（按实例定位，语义同 removeAt）。
+        val listedIndex = listedOrder.indexOfFirst { it === moved }
+        if (listedIndex >= 0) {
+            val listed = ArrayList(listedOrder)
+            listed.removeAt(listedIndex)
+            val listedTarget = (listedIndex + (to - from)).coerceIn(0, listed.size)
+            listed.add(listedTarget, moved)
+            listedOrder = listed
+        }
+        currentIndex = when {
+            currentIndex == from -> to
+            from < currentIndex && to >= currentIndex -> currentIndex - 1
+            from > currentIndex && to <= currentIndex -> currentIndex + 1
+            else -> currentIndex
+        }
+    }
+
     /** The next [limit] tracks: play-next insertions, then the queue rest. */
     fun upcoming(limit: Int): List<Track> {
         if (limit <= 0) return emptyList()

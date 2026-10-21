@@ -260,8 +260,7 @@ class PlaybackEngine(
         publish()
     }
 
-    /**
-     * 撤销删除（稳健版）：把曲目插回**当前播放曲之后**。
+    /** 撤销删除（稳健版）：把曲目插回**当前播放曲之后**。
      *
      * 撤销时队列可能已因自动切歌 / 连续删除而变化，UI 侧缓存的绝对下标会
      * 过期（实测插到错误位置）；引擎在调用瞬间读 [PlaybackQueue.currentIndex]
@@ -270,6 +269,12 @@ class PlaybackEngine(
      */
     fun insertAfterCurrent(track: Track) {
         queue.insertAt(queue.currentIndex + 1, track)
+        publish()
+    }
+
+    /** 队列面板长按拖拽排序：把曲目从 from 移到 to（官方 ItemTouchHelper 语义）。 */
+    fun moveInQueue(from: Int, to: Int) {
+        queue.move(from, to)
         publish()
     }
 

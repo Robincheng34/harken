@@ -547,24 +547,30 @@ fun NowPlayingScreen(
             }
 
             // 队列二级页面（从底部上拉；点击遮罩任意位置或下滑取消）
+            // 官方做法：完整队列在原位展示（当前曲高亮），左滑出菜单点删、
+            // 长按拖拽排序、随机模式下可「回到原始顺序」。
             if (uiState.showQueuePanel) {
-                val source = playSourceOf(state.context)
                 ModalBottomSheet(
                     onDismissRequest = viewModel::toggleQueuePanel,
                     containerColor = Color(0xFF1C1C1E).copy(alpha = 0.92f),
                     contentColor = Color.White,
                 ) {
                     QueuePanel(
-                        tracks = upcoming(state),
-                        totalCount = state.queue.size,
-                        currentOffset = (state.currentIndex + 1).coerceAtLeast(0),
+                        tracks = state.queue,
+                        currentIndex = state.currentIndex,
                         onPlayAt = { index ->
-                            val offset = state.currentIndex + 1 + index
-                            controller.play(state.queue, offset, state.context, source)
+                            controller.play(
+                                state.queue,
+                                index,
+                                state.context,
+                                playSourceOf(state.context),
+                            )
                         },
-                        onRemoveAt = { globalIndex -> controller.removeFromQueue(globalIndex) },
-                        onInsertAt = { track -> controller.insertAfterCurrent(track) },
+                        onRemoveAt = { index -> controller.removeFromQueue(index) },
+                        onMove = { from, to -> controller.moveInQueue(from, to) },
                         onClearQueue = { controller.clearQueue() },
+                        onRestoreOrder = { controller.setShuffle(false) },
+                        shuffleEnabled = state.shuffleEnabled,
                     )
                 }
             }
@@ -776,14 +782,6 @@ private fun SecondaryItem(
         )
     }
 }
-
-/** 即将播放（当前曲之后）。 */
-private fun upcoming(state: im.missuo.kumone.player.PlayerState) =
-    if (state.currentIndex < 0) {
-        state.queue
-    } else {
-        state.queue.drop(state.currentIndex + 1)
-    }
 
 /** 由 `PlayContext.Kind` 反推 `PlaySource`（队列重放时保持来源一致）。 */
 private fun playSourceOf(context: im.missuo.kumone.playback.PlayContext?):
