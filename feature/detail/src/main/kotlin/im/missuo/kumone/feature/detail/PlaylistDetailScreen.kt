@@ -6,10 +6,15 @@
 
 package im.missuo.kumone.feature.detail
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Icon
+import androidx.compose.material3.IconButton
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Scaffold
@@ -46,12 +51,16 @@ import kotlinx.coroutines.launch
 @Composable
 fun PlaylistDetailScreen(
     playlistID: Long,
+    onBack: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     val api = LocalNeteaseApi.current ?: error("LocalNeteaseApi 必须在 KumoneApp 提供")
     val commands = LocalPlaybackCommands.current
     val toast = LocalToastState.current
     val scope = rememberCoroutineScope()
+
+    // 系统返回：本页显式接管，避免被外层 Tab 的常驻 BackHandler 抢走。
+    BackHandler(enabled = true) { onBack() }
 
     val viewModel = remember(api) { DetailViewModel(api) }
     // 页面销毁时取消 ViewModel 内部协程（原 bug：自建 scope 永不取消，收集器常驻泄漏）。
@@ -76,6 +85,14 @@ fun PlaylistDetailScreen(
                             stringResource(R.string.detail_playlist)
                         },
                     )
+                },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(
+                            imageVector = Icons.AutoMirrored.Filled.ArrowBack,
+                            contentDescription = stringResource(R.string.detail_back),
+                        )
+                    }
                 },
             )
         },

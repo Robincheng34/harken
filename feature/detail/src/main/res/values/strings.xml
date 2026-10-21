@@ -4,6 +4,7 @@
     <string name="detail_playlist">歌单详情</string>
     <string name="detail_album">专辑详情</string>
     <string name="detail_artist">歌手详情</string>
+    <string name="detail_back">返回</string>
     <string name="detail_load_failed">加载失败</string>
     <string name="detail_play_all">播放全部</string>
     <string name="detail_subscribe">收藏</string>

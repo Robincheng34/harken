@@ -23,14 +23,20 @@ fun NavGraphBuilder.detailGraph(navController: NavHostController) {
         route = Destinations.PLAYLIST_DETAIL,
         arguments = listOf(navArgument(Destinations.ARG_ID) { type = NavType.LongType }),
     ) { entry ->
-        PlaylistDetailScreen(playlistID = entry.longId())
+        PlaylistDetailScreen(
+            playlistID = entry.longId(),
+            onBack = { navController.popBackStack() },
+        )
     }
 
     composable(
         route = Destinations.ALBUM_DETAIL,
         arguments = listOf(navArgument(Destinations.ARG_ID) { type = NavType.LongType }),
     ) { entry ->
-        AlbumDetailScreen(albumID = entry.longId())
+        AlbumDetailScreen(
+            albumID = entry.longId(),
+            onBack = { navController.popBackStack() },
+        )
     }
 
     composable(
@@ -39,6 +45,7 @@ fun NavGraphBuilder.detailGraph(navController: NavHostController) {
     ) { entry ->
         ArtistDetailScreen(
             artistID = entry.longId(),
+            onBack = { navController.popBackStack() },
             onOpenAlbum = { navController.navigate(Destinations.albumDetail(it)) },
         )
     }
