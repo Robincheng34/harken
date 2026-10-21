@@ -55,7 +55,11 @@ import im.missuo.kumone.design.composition.LocalSettingsRepository
 import im.missuo.kumone.design.composition.LocalUpdateRepository
 import im.missuo.kumone.design.theme.Layout
 import im.missuo.kumone.storage.settings.NavTabOption
-import im.missuo.kumone.storage.settings.OFFICIAL_THEME_COLORS
+import im.missuo.kumone.storage.settings.CURATED_THEME_PACKS
+import im.missuo.kumone.storage.settings.THEME_CATEGORY_SOLID
+import im.missuo.kumone.storage.settings.THEME_CATEGORY_GRADIENT
+import im.missuo.kumone.storage.settings.THEME_CATEGORY_DARK
+import im.missuo.kumone.storage.settings.ThemeColorPack
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import android.content.Intent
@@ -141,10 +145,10 @@ fun SettingsScreen(
     var mainImageExpanded by remember { mutableStateOf(false) }
     var showCustomColorDialog by remember { mutableStateOf(false) }
     val currentThemePackName = remember(settings.activeThemePackId) {
+        val id = settings.activeThemePackId
         when {
-            settings.activeThemePackId.isNullOrEmpty() -> "默认（品牌红）"
-            OFFICIAL_THEME_COLORS.any { it.id == settings.activeThemePackId } -> "官方预设"
-            else -> "自定义"
+            id.isNullOrEmpty() -> "默认（品牌红）"
+            else -> CURATED_THEME_PACKS.firstOrNull { it.id == id }?.label ?: "自定义"
         }
     }
     val currentMainImageName = remember(settings.activeMainImagePackId) {
@@ -286,7 +290,7 @@ fun SettingsScreen(
                     onToggle = { themePackExpanded = !themePackExpanded },
                 )
                 if (themePackExpanded) {
-                    ThemePackPicker(
+                    ThemeGallery(
                         selectedId = settings.activeThemePackId,
                         onSelect = { id -> settingsScope.launch { repository.setActiveThemePack(id) } },
                         onCustom = { showCustomColorDialog = true },
@@ -790,95 +794,164 @@ private fun ClickableSubtitleRow(
     }
 }
 
-/** 主题挂件选择（官方 15 预设色卡 + 自定义取色入口，选中打勾+描边）。 */
+/**
+ * 主题馆画廊（本地精选，分组按系展示：纯色系 / 渐变系 / 暗色系）。
+ * 官方预设与自研精选同处一馆，逐卡标注「官方」/「本地精选」来源；末尾附免责声明。
+ */
 @Composable
-private fun ThemePackPicker(
+private fun ThemeGallery(
     selectedId: String?,
     onSelect: (String) -> Unit,
     onCustom: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
-    LazyRow(
-        modifier = modifier.fillMaxWidth(),
-        contentPadding = PaddingValues(horizontal = 24.dp),
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
-    ) {
-        items(OFFICIAL_THEME_COLORS, key = { it.id }) { pack ->
-            val selected = pack.id == selectedId
-            Column(
-                modifier = Modifier.clickable { onSelect(pack.id) },
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clip(CircleShape)
-                        .background(Color(pack.color))
-                        .border(
-                            width = if (selected) 3.dp else 1.dp,
-                            color = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outline,
-                            shape = CircleShape,
-                        ),
-                    contentAlignment = Alignment.Center,
+    val groups = listOf(
+        THEME_CATEGORY_SOLID to stringResource(R.string.settings_theme_gallery_solid),
+        THEME_CATEGORY_GRADIENT to stringResource(R.string.settings_theme_gallery_gradient),
+        THEME_CATEGORY_DARK to stringResource(R.string.settings_theme_gallery_dark),
+    )
+    Column(modifier = modifier.fillMaxWidth()) {
+        groups.forEach { (cat, title) ->
+            val items = CURATED_THEME_PACKS.filter { it.category == cat }
+            if (items.isNotEmpty()) {
+                Text(
+                    text = title,
+                    style = MaterialTheme.typography.labelLarge,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+                )
+                LazyRow(
+                    contentPadding = PaddingValues(horizontal = 24.dp),
+                    horizontalArrangement = Arrangement.spacedBy(16.dp),
                 ) {
-                    if (selected) {
-                        Icon(
-                            imageVector = Icons.Filled.Check,
-                            contentDescription = null,
-                            tint = Color.White,
-                            modifier = Modifier.size(22.dp),
-                        )
+                    items(items, key = { it.id }) { pack ->
+                        ThemeGalleryCard(pack, pack.id == selectedId, onSelect)
+                    }
+                    // 自定义取色入口（官方 ThemeColorDetailActivity 第 0 项：点击打开 HSV 取色器），置于纯色系末位。
+                    if (cat == THEME_CATEGORY_SOLID) {
+                        item(key = "custom") { CustomThemeCard(selectedId, onCustom) }
                     }
                 }
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = if (selected) "已选" else "",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
+                Spacer(modifier = Modifier.height(4.dp))
+            }
+        }
+        Text(
+            text = stringResource(R.string.settings_theme_gallery_disclaimer),
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp),
+        )
+    }
+}
+
+/** 主题馆单卡：圆形预览（渐变系显示 color→color2 渐变），选中打勾+描边，下方标注名称与来源。 */
+@Composable
+private fun ThemeGalleryCard(
+    pack: ThemeColorPack,
+    selected: Boolean,
+    onSelect: (String) -> Unit,
+) {
+    Column(
+        modifier = Modifier.clickable { onSelect(pack.id) },
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(52.dp)
+                .clip(CircleShape)
+                .background(
+                    pack.color2?.let { c2 ->
+                        Brush.linearGradient(listOf(Color(pack.color), Color(c2)))
+                    } ?: Brush.linearGradient(listOf(Color(pack.color))),
+                )
+                .border(
+                    width = if (selected) 3.dp else 1.dp,
+                    color = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outline,
+                    shape = CircleShape,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            if (selected) {
+                Icon(
+                    imageVector = Icons.Filled.Check,
+                    contentDescription = null,
+                    tint = Color.White,
+                    modifier = Modifier.size(22.dp),
                 )
             }
         }
-        // 自定义取色入口（官方 ThemeColorDetailActivity 第 0 项：点击打开 HSV 取色器）。
-        item(key = "custom") {
-            val selected = selectedId != null && OFFICIAL_THEME_COLORS.none { it.id == selectedId }
-            Column(
-                modifier = Modifier.clickable { onCustom() },
-                horizontalAlignment = Alignment.CenterHorizontally,
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(48.dp)
-                        .clip(CircleShape)
-                        .background(
-                            Brush.sweepGradient(
-                                listOf(
-                                    Color.Red, Color.Yellow, Color.Green,
-                                    Color.Cyan, Color.Blue, Color.Magenta, Color.Red,
-                                ),
-                            ),
-                        )
-                        .border(
-                            width = if (selected) 3.dp else 1.dp,
-                            color = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outline,
-                            shape = CircleShape,
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = pack.label ?: pack.id,
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+        )
+        Text(
+            text = if (pack.official) {
+                stringResource(R.string.settings_theme_official)
+            } else {
+                stringResource(R.string.settings_theme_local)
+            },
+            style = MaterialTheme.typography.labelSmall,
+            color = if (pack.official) {
+                MaterialTheme.colorScheme.primary
+            } else {
+                MaterialTheme.colorScheme.tertiary
+            },
+        )
+    }
+}
+
+/** 自定义取色入口卡（彩虹渐变 + 加号），选中态表示当前为自定义色。 */
+@Composable
+private fun CustomThemeCard(
+    selectedId: String?,
+    onCustom: () -> Unit,
+) {
+    val selected = selectedId != null && CURATED_THEME_PACKS.none { it.id == selectedId }
+    Column(
+        modifier = Modifier.clickable { onCustom() },
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        Box(
+            modifier = Modifier
+                .size(52.dp)
+                .clip(CircleShape)
+                .background(
+                    Brush.sweepGradient(
+                        listOf(
+                            Color.Red, Color.Yellow, Color.Green,
+                            Color.Cyan, Color.Blue, Color.Magenta, Color.Red,
                         ),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        imageVector = Icons.Filled.Add,
-                        contentDescription = null,
-                        tint = Color.White,
-                        modifier = Modifier.size(22.dp),
-                    )
-                }
-                Spacer(modifier = Modifier.height(6.dp))
-                Text(
-                    text = if (selected) "已选" else "",
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.primary,
+                    ),
                 )
-            }
+                .border(
+                    width = if (selected) 3.dp else 1.dp,
+                    color = if (selected) MaterialTheme.colorScheme.onSurface else MaterialTheme.colorScheme.outline,
+                    shape = CircleShape,
+                ),
+            contentAlignment = Alignment.Center,
+        ) {
+            Icon(
+                imageVector = Icons.Filled.Add,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(22.dp),
+            )
         }
+        Spacer(modifier = Modifier.height(6.dp))
+        Text(
+            text = "自定义",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            maxLines = 1,
+        )
+        Text(
+            text = "",
+            style = MaterialTheme.typography.labelSmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+        )
     }
 }
 

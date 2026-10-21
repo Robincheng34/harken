@@ -14,6 +14,12 @@
     <string name="settings_widgets">主题与挂件</string>
     <string name="settings_theme_pack">主题挂件</string>
     <string name="settings_theme_pack_hint">更换应用主题色</string>
+    <string name="settings_theme_gallery_solid">纯色系</string>
+    <string name="settings_theme_gallery_gradient">渐变系</string>
+    <string name="settings_theme_gallery_dark">暗色系</string>
+    <string name="settings_theme_official">官方</string>
+    <string name="settings_theme_local">本地精选</string>
+    <string name="settings_theme_gallery_disclaimer">本地精选主题，非官方在线装扮中心</string>
     <string name="settings_main_image_pack">主图挂件</string>
     <string name="settings_main_image_pack_hint">更换「我的」页头部背景</string>
     <string name="settings_lyrics">歌词</string>
