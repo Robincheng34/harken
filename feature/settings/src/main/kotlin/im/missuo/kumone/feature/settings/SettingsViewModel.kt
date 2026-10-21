@@ -93,6 +93,16 @@ class SettingsViewModel(
         repository.setUnblockEnabled(enabled)
     }
 
+    /** 迷你播放条下滑收起开关。 */
+    fun setSwipeCollapseEnabled(enabled: Boolean) = scope.launch {
+        repository.setSwipeCollapseEnabled(enabled)
+    }
+
+    /** 实验性：收起后显示把手重新唤起。 */
+    fun setCollapseHandleEnabled(enabled: Boolean) = scope.launch {
+        repository.setCollapseHandleEnabled(enabled)
+    }
+
     /** 保存底部导航栏配置（可见 Tab 及顺序，见 [NavTabOption]）。 */
     fun setTabOrder(keys: List<String>) = scope.launch {
         repository.setTabOrder(keys)

@@ -66,6 +66,7 @@ import im.missuo.kumone.net.model.Formatters
 fun MiniPlayerBar(
     onOpenNowPlaying: () -> Unit,
     onCollapse: () -> Unit = {},
+    enableCollapse: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
     val controller = LocalMusicController.current
@@ -86,7 +87,9 @@ fun MiniPlayerBar(
             .height(Layout.miniPlayerHeight)
             .padding(horizontal = 20.dp)
             // 下滑收起：向下拖动超过阈值即收起播放条（不暂停音乐，iOS 一致的下拉收起手势）。
-            .pointerInput(Unit) {
+            // 该手势受「下滑收起」设置开关控制；关闭时整段手势不挂载，避免无谓吞掉纵向拖动。
+            .pointerInput(enableCollapse) {
+                if (!enableCollapse) return@pointerInput
                 var accumulated = 0f
                 var triggered = false
                 detectVerticalDragGestures(

@@ -29,6 +29,7 @@ import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.runtime.Composable
@@ -63,6 +64,8 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
@@ -116,6 +119,13 @@ import im.missuo.kumone.feature.settings.settingsGraph
 import im.missuo.kumone.storage.settings.AppAppearance
 import im.missuo.kumone.storage.settings.AppSettings
 import im.missuo.kumone.storage.settings.resolveThemePackPrimaryColor
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.filled.KeyboardArrowUp
+import im.missuo.kumone.design.theme.GlassBox
+import im.missuo.kumone.design.theme.glassTokens
 import androidx.compose.ui.graphics.Color
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.launch
@@ -126,6 +136,50 @@ import kotlinx.coroutines.launch
  * 与 GPU 回读开销（见 [TabsScreen]）。
  */
 private const val LIVE_CAPTURE_INTERVAL_NANOS = 66_000_000L
+
+/**
+ * 收起后的「把手」（实验性，仅当「收起后显示把手」开关开启时渲染）。
+ *
+ * 迷你播放条下滑收起后，在底部显示一个很小的玻璃胶囊：点击或上滑即可重新唤起播放条，
+ * 解决「收起后无法唤起、只能换歌才出现」的问题。把手本身不占满宽度，居中显示，
+ * 收起态下仍保留一个清晰且可发现的重新唤起入口，同时不破坏「腾空间」的初衷。
+ */
+@Composable
+private fun CollapsedHandle(onResume: () -> Unit) {
+    val density = LocalDensity.current
+    val swipeUpThresholdPx = with(density) { 24.dp.toPx() }
+    GlassBox(
+        shape = RoundedCornerShape(50),
+        tokens = glassTokens(strong = true),
+        contentAlignment = Alignment.Center,
+        modifier = Modifier
+            .height(28.dp)
+            .width(64.dp)
+            .clip(RoundedCornerShape(50))
+            .clickable(onClick = onResume)
+            // 上滑也可唤起：向上拖动超过阈值即展开（与迷你条下滑收起形成对称手势）。
+            .pointerInput(Unit) {
+                var accumulated = 0f
+                var triggered = false
+                detectVerticalDragGestures(
+                    onDragStart = { accumulated = 0f; triggered = false },
+                    onDragEnd = {
+                        if (!triggered && accumulated <= -swipeUpThresholdPx) {
+                            triggered = true
+                            onResume()
+                        }
+                    },
+                ) { _, dragAmount -> if (dragAmount < 0f) accumulated += dragAmount }
+            },
+    ) {
+        Icon(
+            imageVector = Icons.Filled.KeyboardArrowUp,
+            contentDescription = "展开播放条",
+            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.size(18.dp),
+        )
+    }
+}
 
 /**
  * 是否启用「镜片实时折射」的整屏 GPU→CPU 回读。
@@ -254,6 +308,7 @@ private fun AppContent(graph: AppGraph) {
             TabsScreen(
                 overlayNav = overlayNav,
                 tabs = visibleTabs,
+                settings = storedSettings,
             )
 
             // 覆盖层：详情 / 登录 / 全屏播放 / 设置 / P1。
@@ -289,6 +344,7 @@ private fun AppContent(graph: AppGraph) {
 private fun TabsScreen(
     overlayNav: NavHostController,
     tabs: List<AppTab>,
+    settings: AppSettings? = null,
 ) {
     // 选中 Tab 状态（rememberSaveable：旋转/进程重建后保留；enum 可序列化）。
     var selectedTab by rememberSaveable { mutableStateOf(AppTab.HOME) }
@@ -473,8 +529,15 @@ private fun TabsScreen(
         ) {
             if (controller != null) {
                 var miniPlayerCollapsed by remember { mutableStateOf(false) }
+                // 设置：下滑收起开关（默认开，保留现有行为）+ 实验性「收起后显示把手」。
+                val swipeCollapseEnabled = settings?.swipeCollapseEnabled ?: true
+                val collapseHandleEnabled = settings?.collapseHandleEnabled ?: false
                 // 切换到新曲目时自动重新弹出（用户下滑收起后，换歌会再次出现）。
                 LaunchedEffect(currentTrackId) { miniPlayerCollapsed = false }
+                // 关闭「下滑收起」时立即还原播放条（避免停在已收起态、又无把手可唤起）。
+                LaunchedEffect(swipeCollapseEnabled) {
+                    if (!swipeCollapseEnabled) miniPlayerCollapsed = false
+                }
                 // 打开播放页统一走 AppContent 注入的带守卫入口（原 bug：直接
                 // navigate 无 currentDestination 守卫，双击重复入栈播放页）。
                 val openNowPlaying = LocalOpenNowPlaying.current
@@ -500,7 +563,31 @@ private fun TabsScreen(
                         // navigate 无守卫，双击重复入栈播放页）。
                         onOpenNowPlaying = { openNowPlaying?.invoke() },
                         onCollapse = { miniPlayerCollapsed = true },
+                        enableCollapse = swipeCollapseEnabled,
                     )
+                }
+                // 实验性：收起后底部显示小把手，点击 / 上滑重新唤起（仅实验开关开启时）。
+                // 居中包裹，保证把手在底部居中而非贴左。
+                Box(modifier = Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
+                    AnimatedVisibility(
+                        visible = currentTrackId != null && miniPlayerCollapsed && collapseHandleEnabled,
+                        enter = slideInVertically(
+                            initialOffsetY = { it },
+                            animationSpec = tween(
+                                durationMillis = SMOOTH_MILLIS,
+                                easing = FastOutSlowInEasing,
+                            ),
+                        ) + fadeIn(animationSpec = tween(durationMillis = STANDARD_MILLIS)),
+                        exit = slideOutVertically(
+                            targetOffsetY = { it },
+                            animationSpec = tween(
+                                durationMillis = SMOOTH_MILLIS,
+                                easing = FastOutSlowInEasing,
+                            ),
+                        ) + fadeOut(animationSpec = tween(durationMillis = QUICK_MILLIS)),
+                    ) {
+                        CollapsedHandle(onResume = { miniPlayerCollapsed = false })
+                    }
                 }
             }
         }

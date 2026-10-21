@@ -49,6 +49,12 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
 
     suspend fun setActiveMainImagePack(id: String?) = editString(Keys.MAIN_IMAGE_PACK, id ?: "")
 
+    /** 迷你播放条下滑收起开关。 */
+    suspend fun setSwipeCollapseEnabled(enabled: Boolean) = editBoolean(Keys.SWIPE_COLLAPSE, enabled)
+
+    /** 实验性：收起后显示把手，点击 / 上滑重新唤起。 */
+    suspend fun setCollapseHandleEnabled(enabled: Boolean) = editBoolean(Keys.COLLAPSE_HANDLE, enabled)
+
     /** 当前主题挂件 id（null = 未配置）。供主题应用层读取。 */
     val activeThemePackId: Flow<String?> = settings.map { it.activeThemePackId }
 
@@ -75,6 +81,8 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
             showTranslation = this[Keys.SHOW_TRANSLATION] ?: defaults.showTranslation,
             verbatimLyrics = this[Keys.VERBATIM_LYRICS] ?: defaults.verbatimLyrics,
             lyricsAnnotation = LyricsAnnotation.fromKey(this[Keys.LYRICS_ANNOTATION]),
+            swipeCollapseEnabled = this[Keys.SWIPE_COLLAPSE] ?: defaults.swipeCollapseEnabled,
+            collapseHandleEnabled = this[Keys.COLLAPSE_HANDLE] ?: defaults.collapseHandleEnabled,
             tabOrder = this[Keys.TAB_ORDER]
                 ?.split(",")
                 ?.mapNotNull { raw -> NavTabOption.fromKey(raw.trim())?.key }
@@ -95,5 +103,7 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
         val TAB_ORDER = stringPreferencesKey("settings.tabOrder")
         val THEME_PACK = stringPreferencesKey("settings.themePack")
         val MAIN_IMAGE_PACK = stringPreferencesKey("settings.mainImagePack")
+        val SWIPE_COLLAPSE = booleanPreferencesKey("settings.swipeCollapse")
+        val COLLAPSE_HANDLE = booleanPreferencesKey("settings.collapseHandle")
     }
 }

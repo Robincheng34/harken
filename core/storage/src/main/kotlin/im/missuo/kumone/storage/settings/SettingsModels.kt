@@ -86,6 +86,9 @@ data class AppSettings(
     val showTranslation: Boolean = true,
     val verbatimLyrics: Boolean = true,
     val lyricsAnnotation: LyricsAnnotation = LyricsAnnotation.OFF,
+    // 迷你播放条：下滑收起开关（默认开，保留现有行为）+ 实验性「收起后显示把手」重新唤起入口。
+    val swipeCollapseEnabled: Boolean = true,
+    val collapseHandleEnabled: Boolean = false,
     val tabOrder: List<String> = emptyList(),
     // 主题 / 主图挂件：存稳定 id，null = 未配置（取各自默认套件）。
     val activeThemePackId: String? = null,

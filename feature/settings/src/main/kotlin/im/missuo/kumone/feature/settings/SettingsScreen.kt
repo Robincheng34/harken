@@ -2,8 +2,8 @@
 //
 // 设置页（T28 `SettingsScreen.kt`，iOS `SettingsView` 1:1 移植）。
 //
-// 分组：播放（音质 / 播放页样式）/ 外观（主题）/ 歌词（翻译 / 逐字 / 注音）/
-// 高级（灰色解锁，默认关）/ 账号（退出登录）。
+// 二级菜单：所有设置分区收进可展开大类（播放 / 迷你播放条 / 外观 / 主题与挂件 /
+// 歌词 / 高级 / 导航栏 / 账号 / 关于），同一时间只展开一组，点击标题展开、再点收起。
 
 package im.missuo.kumone.feature.settings
 
@@ -16,6 +16,13 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -189,169 +196,230 @@ fun SettingsScreen(
                 .fillMaxSize()
                 .verticalScroll(rememberScrollState()),
         ) {
-            // 播放
-            SectionTitle(stringResource(R.string.settings_playback))
-            ChoiceRow(
-                title = stringResource(R.string.settings_audio_quality),
-                options = AudioQualityOptions,
-                selected = settings.audioQuality,
-                label = { "${it.displayName} · ${it.params}" },
-                onSelect = viewModel::setAudioQuality,
-            )
-            ChoiceRow(
-                title = stringResource(R.string.settings_now_playing_mode),
-                options = NowPlayingModeOptions,
-                selected = settings.nowPlayingMode,
-                label = { it.displayName },
-                onSelect = viewModel::setNowPlayingMode,
-            )
+            // 二级菜单：所有设置分区收进可展开大类，同一时间只展开一组（默认展开「播放」）。
+            var expandedGroup by remember { mutableStateOf<String?>("播放") }
+            val onGroupToggle: (String) -> Unit = { key ->
+                expandedGroup = if (expandedGroup == key) null else key
+            }
+            val sPlayback = stringResource(R.string.settings_playback)
+            val sMini = stringResource(R.string.settings_miniplayer)
+            val sAppearance = stringResource(R.string.settings_appearance)
+            val sWidgets = stringResource(R.string.settings_widgets)
+            val sLyrics = stringResource(R.string.settings_lyrics)
+            val sAdvanced = stringResource(R.string.settings_advanced)
+            val sNavbar = stringResource(R.string.settings_navbar)
+            val sAccount = stringResource(R.string.settings_account)
+            val sAbout = stringResource(R.string.settings_about)
 
-            Divider(modifier = Modifier.padding(vertical = 8.dp))
-
-            // 外观
-            SectionTitle(stringResource(R.string.settings_appearance))
-            ChoiceRow(
-                title = stringResource(R.string.settings_appearance),
-                options = AppearanceOptions,
-                selected = settings.appearance,
-                label = { it.displayName },
-                onSelect = viewModel::setAppearance,
-            )
-
-            Divider(modifier = Modifier.padding(vertical = 8.dp))
-
-            // 主题与挂件（主题挂件改主色 / 主图挂件改「我的」页头部背景，官方风格套件）
-            SectionTitle(stringResource(R.string.settings_widgets))
-            SettingsExpandRow(
-                title = stringResource(R.string.settings_theme_pack),
-                subtitle = currentThemePackName,
-                expanded = themePackExpanded,
-                onToggle = { themePackExpanded = !themePackExpanded },
-            )
-            if (themePackExpanded) {
-                ThemePackPicker(
-                    selectedId = settings.activeThemePackId,
-                    onSelect = { id -> settingsScope.launch { repository.setActiveThemePack(id) } },
-                    onCustom = { showCustomColorDialog = true },
+            SettingsGroup(
+                title = sPlayback,
+                expanded = expandedGroup == sPlayback,
+                onToggle = { onGroupToggle(sPlayback) },
+            ) {
+                ChoiceRow(
+                    title = stringResource(R.string.settings_audio_quality),
+                    options = AudioQualityOptions,
+                    selected = settings.audioQuality,
+                    label = { "${it.displayName} · ${it.params}" },
+                    onSelect = viewModel::setAudioQuality,
+                    trailing = { q -> QualityBadge(requiresLogin = q.requiresLogin) },
+                )
+                Text(
+                    text = stringResource(R.string.settings_quality_hint),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier
+                        .padding(start = 24.dp, end = 24.dp, bottom = 4.dp),
+                )
+                ChoiceRow(
+                    title = stringResource(R.string.settings_now_playing_mode),
+                    options = NowPlayingModeOptions,
+                    selected = settings.nowPlayingMode,
+                    label = { it.displayName },
+                    onSelect = viewModel::setNowPlayingMode,
                 )
             }
-            if (showCustomColorDialog) {
-                CustomColorDialog(
-                    onDismiss = { showCustomColorDialog = false },
-                    onConfirm = { hex ->
-                        settingsScope.launch { repository.setActiveThemePack(hex) }
-                        showCustomColorDialog = false
+
+            SettingsGroup(
+                title = sMini,
+                expanded = expandedGroup == sMini,
+                onToggle = { onGroupToggle(sMini) },
+            ) {
+                SwitchRow(
+                    title = stringResource(R.string.settings_swipe_collapse),
+                    subtitle = stringResource(R.string.settings_swipe_collapse_summary),
+                    checked = settings.swipeCollapseEnabled,
+                    onCheckedChange = viewModel::setSwipeCollapseEnabled,
+                )
+                SwitchRow(
+                    title = stringResource(R.string.settings_collapse_handle),
+                    subtitle = stringResource(R.string.settings_collapse_handle_summary),
+                    checked = settings.collapseHandleEnabled,
+                    enabled = settings.swipeCollapseEnabled,
+                    onCheckedChange = viewModel::setCollapseHandleEnabled,
+                )
+            }
+
+            SettingsGroup(
+                title = sAppearance,
+                expanded = expandedGroup == sAppearance,
+                onToggle = { onGroupToggle(sAppearance) },
+            ) {
+                ChoiceRow(
+                    title = stringResource(R.string.settings_appearance),
+                    options = AppearanceOptions,
+                    selected = settings.appearance,
+                    label = { it.displayName },
+                    onSelect = viewModel::setAppearance,
+                )
+            }
+
+            SettingsGroup(
+                title = sWidgets,
+                expanded = expandedGroup == sWidgets,
+                onToggle = { onGroupToggle(sWidgets) },
+            ) {
+                SettingsExpandRow(
+                    title = stringResource(R.string.settings_theme_pack),
+                    subtitle = currentThemePackName,
+                    expanded = themePackExpanded,
+                    onToggle = { themePackExpanded = !themePackExpanded },
+                )
+                if (themePackExpanded) {
+                    ThemePackPicker(
+                        selectedId = settings.activeThemePackId,
+                        onSelect = { id -> settingsScope.launch { repository.setActiveThemePack(id) } },
+                        onCustom = { showCustomColorDialog = true },
+                    )
+                }
+                if (showCustomColorDialog) {
+                    CustomColorDialog(
+                        onDismiss = { showCustomColorDialog = false },
+                        onConfirm = { hex ->
+                            settingsScope.launch { repository.setActiveThemePack(hex) }
+                            showCustomColorDialog = false
+                        },
+                    )
+                }
+                SettingsExpandRow(
+                    title = stringResource(R.string.settings_main_image_pack),
+                    subtitle = currentMainImageName,
+                    expanded = mainImageExpanded,
+                    onToggle = { mainImageExpanded = !mainImageExpanded },
+                )
+                if (mainImageExpanded) {
+                    MainImagePicker(
+                        selectedUri = settings.activeMainImagePackId,
+                        onPick = { uri -> settingsScope.launch { repository.setActiveMainImagePack(uri) } },
+                        onClear = { settingsScope.launch { repository.setActiveMainImagePack(null) } },
+                    )
+                }
+            }
+
+            SettingsGroup(
+                title = sLyrics,
+                expanded = expandedGroup == sLyrics,
+                onToggle = { onGroupToggle(sLyrics) },
+            ) {
+                SwitchRow(
+                    title = stringResource(R.string.settings_show_translation),
+                    checked = settings.showTranslation,
+                    onCheckedChange = viewModel::setShowTranslation,
+                )
+                SwitchRow(
+                    title = stringResource(R.string.settings_verbatim),
+                    checked = settings.verbatimLyrics,
+                    onCheckedChange = viewModel::setVerbatimLyrics,
+                )
+                ChoiceRow(
+                    title = stringResource(R.string.settings_lyrics_annotation),
+                    options = LyricsAnnotationOptions,
+                    selected = settings.lyricsAnnotation,
+                    label = { it.displayName },
+                    onSelect = viewModel::setLyricsAnnotation,
+                )
+            }
+
+            SettingsGroup(
+                title = sAdvanced,
+                expanded = expandedGroup == sAdvanced,
+                onToggle = { onGroupToggle(sAdvanced) },
+            ) {
+                SwitchRow(
+                    title = stringResource(R.string.settings_unblock),
+                    subtitle = stringResource(R.string.settings_unblock_summary),
+                    checked = settings.unblockEnabled,
+                    onCheckedChange = viewModel::setUnblockEnabled,
+                )
+            }
+
+            SettingsGroup(
+                title = sNavbar,
+                expanded = expandedGroup == sNavbar,
+                onToggle = { onGroupToggle(sNavbar) },
+            ) {
+                Text(
+                    text = stringResource(R.string.settings_navbar_summary),
+                    style = MaterialTheme.typography.bodySmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.padding(start = 24.dp, bottom = 4.dp),
+                )
+                NavBarConfigSection(
+                    visibleTabs = visibleTabs,
+                    // 意图转发给 ViewModel（内部基于 scope 内最新 settings 值计算
+                    // 新 tabOrder，快速连点不丢更新；原 bug：基于 remember 快照
+                    // 读-改-写，第二次操作覆盖第一次）。
+                    onToggle = viewModel::toggleNavTab,
+                    onMove = viewModel::moveNavTab,
+                )
+                Text(
+                    text = stringResource(R.string.settings_navbar_reset),
+                    style = MaterialTheme.typography.bodyLarge,
+                    color = MaterialTheme.colorScheme.primary,
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clickable { viewModel.setTabOrder(NavTabOption.entries.map { it.key }) }
+                        .padding(horizontal = 24.dp, vertical = 14.dp),
+                )
+            }
+
+            if (uiState.isLoggedIn) {
+                SettingsGroup(
+                    title = sAccount,
+                    expanded = expandedGroup == sAccount,
+                    onToggle = { onGroupToggle(sAccount) },
+                ) {
+                    ClickableRow(
+                        title = stringResource(R.string.settings_logout),
+                        onClick = viewModel::logout,
+                    )
+                }
+            }
+
+            SettingsGroup(
+                title = sAbout,
+                expanded = expandedGroup == sAbout,
+                onToggle = { onGroupToggle(sAbout) },
+            ) {
+                ClickableSubtitleRow(
+                    title = "当前版本",
+                    subtitle = currentVersion ?: "",
+                    onClick = {},
+                )
+                ClickableSubtitleRow(
+                    title = "更新源地址",
+                    subtitle = if (uiState.updateSourceUrl.isBlank()) "默认（内置常量）" else uiState.updateSourceUrl,
+                    onClick = {
+                        sourceUrlDraft = uiState.updateSourceUrl
+                        showSourceUrlDialog = true
                     },
                 )
-            }
-            SettingsExpandRow(
-                title = stringResource(R.string.settings_main_image_pack),
-                subtitle = currentMainImageName,
-                expanded = mainImageExpanded,
-                onToggle = { mainImageExpanded = !mainImageExpanded },
-            )
-            if (mainImageExpanded) {
-                MainImagePicker(
-                    selectedUri = settings.activeMainImagePackId,
-                    onPick = { uri -> settingsScope.launch { repository.setActiveMainImagePack(uri) } },
-                    onClear = { settingsScope.launch { repository.setActiveMainImagePack(null) } },
+                ClickableSubtitleRow(
+                    title = "检查更新",
+                    subtitle = updateCheckSubtitle(uiState.updateCheck),
+                    onClick = viewModel::checkUpdate,
                 )
             }
-
-            Divider(modifier = Modifier.padding(vertical = 8.dp))
-
-            // 歌词
-            SectionTitle(stringResource(R.string.settings_lyrics))
-            SwitchRow(
-                title = stringResource(R.string.settings_show_translation),
-                checked = settings.showTranslation,
-                onCheckedChange = viewModel::setShowTranslation,
-            )
-            SwitchRow(
-                title = stringResource(R.string.settings_verbatim),
-                checked = settings.verbatimLyrics,
-                onCheckedChange = viewModel::setVerbatimLyrics,
-            )
-            ChoiceRow(
-                title = stringResource(R.string.settings_lyrics_annotation),
-                options = LyricsAnnotationOptions,
-                selected = settings.lyricsAnnotation,
-                label = { it.displayName },
-                onSelect = viewModel::setLyricsAnnotation,
-            )
-
-            Divider(modifier = Modifier.padding(vertical = 8.dp))
-
-            // 高级（灰色解锁默认关）
-            SectionTitle(stringResource(R.string.settings_advanced))
-            SwitchRow(
-                title = stringResource(R.string.settings_unblock),
-                subtitle = stringResource(R.string.settings_unblock_summary),
-                checked = settings.unblockEnabled,
-                onCheckedChange = viewModel::setUnblockEnabled,
-            )
-
-            Divider(modifier = Modifier.padding(vertical = 8.dp))
-
-            // 导航栏（自定义底部 Tab 显示与顺序）
-            SectionTitle(stringResource(R.string.settings_navbar))
-            Text(
-                text = stringResource(R.string.settings_navbar_summary),
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                modifier = Modifier.padding(start = 24.dp, bottom = 4.dp),
-            )
-            NavBarConfigSection(
-                visibleTabs = visibleTabs,
-                // 意图转发给 ViewModel（内部基于 scope 内最新 settings 值计算
-                // 新 tabOrder，快速连点不丢更新；原 bug：基于 remember 快照
-                // 读-改-写，第二次操作覆盖第一次）。
-                onToggle = viewModel::toggleNavTab,
-                onMove = viewModel::moveNavTab,
-            )
-            Text(
-                text = stringResource(R.string.settings_navbar_reset),
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.primary,
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .clickable { viewModel.setTabOrder(NavTabOption.entries.map { it.key }) }
-                    .padding(horizontal = 24.dp, vertical = 14.dp),
-            )
-
-            Divider(modifier = Modifier.padding(vertical = 8.dp))
-
-            // 账号
-            SectionTitle(stringResource(R.string.settings_account))
-            if (uiState.isLoggedIn) {
-                ClickableRow(
-                    title = stringResource(R.string.settings_logout),
-                    onClick = viewModel::logout,
-                )
-            }
-
-            Divider(modifier = Modifier.padding(vertical = 8.dp))
-
-            // 关于 / 在线更新
-            SectionTitle(stringResource(R.string.settings_about))
-            ClickableSubtitleRow(
-                title = "当前版本",
-                subtitle = currentVersion ?: "",
-                onClick = {},
-            )
-            ClickableSubtitleRow(
-                title = "更新源地址",
-                subtitle = if (uiState.updateSourceUrl.isBlank()) "默认（内置常量）" else uiState.updateSourceUrl,
-                onClick = {
-                    sourceUrlDraft = uiState.updateSourceUrl
-                    showSourceUrlDialog = true
-                },
-            )
-            ClickableSubtitleRow(
-                title = "检查更新",
-                subtitle = updateCheckSubtitle(uiState.updateCheck),
-                onClick = viewModel::checkUpdate,
-            )
 
             // 发现新版本 / 下载中弹窗（下载进度由 ViewModel.setDownloading 回写，
             // 安装需要 Activity Context 与未知来源权限，故放 Screen 层处理）。
@@ -453,14 +521,30 @@ fun SettingsScreen(
     }
 }
 
+/**
+ * 设置二级菜单分组：点击标题展开该类设置、再点收起；同一时间只展开一组（由调用方的
+ * expanded 状态控制）。标题行复用 [SettingsExpandRow]，内容用 AnimatedVisibility 高度展开。
+ */
 @Composable
-private fun SectionTitle(title: String) {
-    Text(
-        text = title,
-        style = MaterialTheme.typography.labelLarge,
-        color = MaterialTheme.colorScheme.primary,
-        modifier = Modifier.padding(start = 24.dp, top = 16.dp, bottom = 4.dp),
-    )
+private fun SettingsGroup(
+    title: String,
+    expanded: Boolean,
+    onToggle: () -> Unit,
+    content: @Composable () -> Unit,
+) {
+    Column {
+        SettingsExpandRow(title = title, subtitle = "", expanded = expanded, onToggle = onToggle)
+        AnimatedVisibility(
+            visible = expanded,
+            enter = expandVertically(animationSpec = tween(220, easing = FastOutSlowInEasing)) + fadeIn(tween(160)),
+            exit = shrinkVertically(animationSpec = tween(180, easing = FastOutSlowInEasing)) + fadeOut(tween(120)),
+        ) {
+            Column {
+                content()
+                Divider(modifier = Modifier.padding(top = 8.dp))
+            }
+        }
+    }
 }
 
 /**
@@ -536,26 +620,35 @@ private fun SwitchRow(
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
     subtitle: String? = null,
+    enabled: Boolean = true,
 ) {
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .clickable { onCheckedChange(!checked) }
+            .clickable(enabled = enabled) { onCheckedChange(!checked) }
             .padding(horizontal = 24.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
         Column(modifier = Modifier.weight(1f)) {
-            Text(text = title, style = MaterialTheme.typography.bodyLarge)
+            Text(
+                text = title,
+                style = MaterialTheme.typography.bodyLarge,
+                color = MaterialTheme.colorScheme.onSurface.copy(
+                    alpha = if (enabled) 1f else 0.38f,
+                ),
+            )
             if (!subtitle.isNullOrEmpty()) {
                 Text(
                     text = subtitle,
                     style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(
+                        alpha = if (enabled) 1f else 0.38f,
+                    ),
                 )
             }
         }
-        Switch(checked = checked, onCheckedChange = onCheckedChange)
+        Switch(checked = checked, enabled = enabled, onCheckedChange = onCheckedChange)
     }
 }
 
@@ -567,6 +660,7 @@ private fun <T> ChoiceRow(
     selected: T,
     label: (T) -> String,
     onSelect: (T) -> Unit,
+    trailing: @Composable ((T) -> Unit)? = null,
 ) {
     Column(modifier = Modifier.padding(horizontal = 24.dp, vertical = 8.dp)) {
         Text(text = title, style = MaterialTheme.typography.bodyLarge)
@@ -588,8 +682,40 @@ private fun <T> ChoiceRow(
                     color = MaterialTheme.colorScheme.onSurface,
                     modifier = Modifier.padding(start = 8.dp),
                 )
+                if (trailing != null) {
+                    Spacer(modifier = Modifier.weight(1f))
+                    trailing(option)
+                }
             }
         }
+    }
+}
+
+/** 音质档位登录依赖标签：免登录（绿色调）/ 需登录会员（警示色调）。 */
+@Composable
+private fun QualityBadge(requiresLogin: Boolean) {
+    val container: Color
+    val content: Color
+    val textRes: Int
+    if (requiresLogin) {
+        container = MaterialTheme.colorScheme.errorContainer
+        content = MaterialTheme.colorScheme.onErrorContainer
+        textRes = R.string.settings_quality_badge_login
+    } else {
+        container = MaterialTheme.colorScheme.primaryContainer
+        content = MaterialTheme.colorScheme.onPrimaryContainer
+        textRes = R.string.settings_quality_badge_free
+    }
+    Box(
+        modifier = Modifier
+            .background(container, RoundedCornerShape(6.dp))
+            .padding(horizontal = 8.dp, vertical = 3.dp),
+    ) {
+        Text(
+            text = stringResource(textRes),
+            style = MaterialTheme.typography.labelSmall,
+            color = content,
+        )
     }
 }
 
