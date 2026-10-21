@@ -269,8 +269,10 @@ class NeteaseUnblockSource(
                     .build(),
             ).execute().use { response ->
                 val body = response.body?.string() ?: return@use null
-                val data = (json.parseToJsonElement(body) as? JsonObject)?.get("data") as? JsonObject
-                data?.get("cid").stringOrNull()?.toLongOrNull()
+                val root = json.parseToJsonElement(body) as? JsonObject
+                val data = root?.get("data") as? JsonObject
+                val cid = data?.get("cid").stringOrNull()?.toLongOrNull()
+                cid
             }
         }.getOrNull()
     }
@@ -284,27 +286,32 @@ class NeteaseUnblockSource(
                     .build(),
             ).execute().use { response ->
                 val body = response.body?.string() ?: return@use null
-                val data = (json.parseToJsonElement(body) as? JsonObject)?.get("data") as? JsonObject
+                val root = json.parseToJsonElement(body) as? JsonObject
+                val data = root?.get("data") as? JsonObject
                 val audios = (data?.get("dash") as? JsonObject)?.get("audio") as? JsonArray
-                    ?: return@use null
-                audios.asSequence()
-                    .mapNotNull { it as? JsonObject }
-                    .maxByOrNull { it["bandwidth"].stringOrNull()?.toLongOrNull() ?: 0L }
+                if (audios == null) return@use null
+                val streams = audios.mapNotNull { it as? JsonObject }
+                // 只选 AAC（mp4a），避免选到 Dolby/EC-3 导致 ExoPlayer 解不出声。
+                val aac = streams.filter { it["codecs"].stringOrNull()?.startsWith("mp4a") == true }
+                val pool = aac.ifEmpty { streams }
+                val url = pool.maxByOrNull { it["bandwidth"].stringOrNull()?.toLongOrNull() ?: 0L }
                     ?.let { it["baseUrl"].stringOrNull() ?: it["base_url"].stringOrNull() }
+                url
             }
         }.getOrNull()
     }
 
-    /** B 站标题匹配：标题需同时包含歌名与首位歌手，时长差 ≤5s，版本标记一致。 */
+    /** B 站标题匹配：标题需同时包含歌名与任一歌手，时长差 ≤10s，版本标记一致。 */
     private fun matchesBilibili(track: Track, title: String, durationMs: Long): Boolean {
         if (track.durationMS > 0 && durationMs > 0) {
-            if (abs(track.durationMS - durationMs) > DURATION_TOLERANCE_MS) return false
+            if (abs(track.durationMS - durationMs) > BILI_DURATION_TOLERANCE_MS) return false
         }
-        val normalizedTitle = normalize(title)
-        val name = normalize(track.name)
+        val normalizedTitle = normalizeBili(title)
+        val name = normalizeBili(track.name)
         if (name.isEmpty() || !normalizedTitle.contains(name)) return false
-        val artist = normalize(track.artists.firstOrNull()?.name.orEmpty())
-        if (artist.isNotEmpty() && !normalizedTitle.contains(artist)) return false
+        // 合唱曲第一歌手可能是别人、标题只提另一位 → 任一位命中即可。
+        val artists = track.artists.map { normalizeBili(it.name) }.filter { it.isNotEmpty() }
+        if (artists.isNotEmpty() && artists.none { normalizedTitle.contains(it) }) return false
         if (versionTags(track.name) != versionTags(title)) return false
         // 原曲不应命中演唱会/现场版；曲目本身是 Live 时放行。
         if (!versionTags(track.name).contains("live") &&
@@ -612,15 +619,19 @@ class NeteaseUnblockSource(
             .map { normalize(it) }
             .filter { it.isNotEmpty() }
 
-    /** 版本标记集合（iOS `versionMarkers`）。 */
+    /** 版本标记集合（iOS `versionMarkers`）；繁体先转简体，避免「演唱會」漏判。 */
     private fun versionTags(s: String): Set<String> {
-        val normalized = normalize(s)
+        val normalized = normalizeBili(s)
         return VERSION_TAGS.filter { normalized.contains(it) }.toSet()
     }
 
     /** 归一化：小写 + 仅保留字母/数字（等价 iOS 的 alphanumerics 过滤）。 */
     private fun normalize(s: String): String =
         s.lowercase(Locale.ROOT).filter { it.isLetterOrDigit() }
+
+    /** 先做常见繁体→简体映射再归一化（B 站标题大量使用繁体）。 */
+    private fun normalizeBili(s: String): String =
+        normalize(s.map { TRAD_TO_SIMP[it] ?: it }.joinToString(""))
 
     // MARK: - 网络 / 工具
 
@@ -672,6 +683,30 @@ class NeteaseUnblockSource(
         /** 咪咕官方 app 接口要求的 UA 与固定访客 id。 */
         private const val MIGU_UA = "Mozilla/5.0"
         private const val MIGU_USER_ID = "1554861458870011"
+
+        /** B 站投稿常带 MV 前奏/尾奏，时长容差比官方源放宽到 10s。 */
+        private const val BILI_DURATION_TOLERANCE_MS = 10_000L
+
+        /**
+         * 常见繁体→简体字符（歌手/歌名匹配用）。
+         *
+         * B 站标题大量使用繁体（「周杰倫」），网易云曲目是简体（「周杰伦」），
+         * 不做映射会导致明明搜到却匹配失败。
+         */
+        private val TRAD_TO_SIMP = mapOf(
+            '傑' to '杰', '倫' to '伦', '週' to '周', '張' to '张', '學' to '学', '愛' to '爱',
+            '陳' to '陈', '鄧' to '邓', '蕭' to '萧', '劉' to '刘', '楊' to '杨', '黃' to '黄',
+            '華' to '华', '語' to '语', '樂' to '乐', '團' to '团', '時' to '时', '間' to '间',
+            '會' to '会', '說' to '说', '這' to '这', '麼' to '么', '點' to '点', '開' to '开',
+            '關' to '关', '還' to '还', '讓' to '让', '對' to '对', '錯' to '错', '難' to '难',
+            '過' to '过', '樣' to '样', '無' to '无', '聲' to '声', '線' to '线', '戀' to '恋',
+            '夢' to '梦', '願' to '愿', '滿' to '满', '遠' to '远', '離' to '离', '別' to '别',
+            '頁' to '页', '詩' to '诗', '詞' to '词', '誰' to '谁', '淚' to '泪', '傷' to '伤',
+            '憶' to '忆', '記' to '记', '飄' to '飘', '風' to '风', '雲' to '云', '電' to '电',
+            '陽' to '阳', '陰' to '阴', '紅' to '红', '綠' to '绿', '藍' to '蓝', '鳥' to '鸟',
+            '魚' to '鱼', '龍' to '龙', '貓' to '猫', '頭' to '头', '髮' to '发', '臉' to '脸',
+            '車' to '车', '馬' to '马', '飛' to '飞', '還' to '还', '進' to '进', '邊' to '边',
+        )
 
         /** 每个源只匹配前 N 条候选（iOS `prefix(5)`）。 */
         private const val CANDIDATE_LIMIT = 5
