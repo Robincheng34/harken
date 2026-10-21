@@ -37,6 +37,10 @@ class NowPlayingViewModel {
 
     /** 切换歌词面板（封面 ⇄ 歌词）。 */
     fun toggleLyricsPanel() {
+        // 切换本身是一次用户操作，必须重置无操作计时：否则页面打开超过 5 秒后
+        // 点歌词，自动沉浸会在 ~250ms 内触发、控制组件瞬间被收起（用户感知为
+        // 「点歌词控制条生硬消失」）。按钮点击不经指针屏障，屏障记不到它。
+        markInteraction()
         _uiState.update {
             it.copy(
                 showLyricsPanel = !it.showLyricsPanel,
@@ -74,6 +78,8 @@ class NowPlayingViewModel {
 
     /** 切换队列面板。 */
     fun toggleQueuePanel() {
+        // 同 toggleLyricsPanel：按钮点击要重置无操作计时。
+        markInteraction()
         _uiState.update {
             it.copy(
                 showQueuePanel = !it.showQueuePanel,

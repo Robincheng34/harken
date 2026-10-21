@@ -18,12 +18,17 @@ import android.content.Intent
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
 import androidx.compose.animation.shrinkVertically
+import androidx.compose.animation.togetherWith
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -110,6 +115,9 @@ const val NOW_PLAYING_ROUTE = "now_playing"
 
 /** 官方红心红（点赞激活色）。 */
 private val LikeRed = Color(0xFFE8434F)
+
+/** 播放页中心区内容模式（封面 ⇄ 歌词 AnimatedContent 状态）。 */
+private enum class CenterMode { Lyrics, Cover, Vinyl }
 
 /**
  * 全屏播放页（官方客户端布局）。
@@ -409,39 +417,69 @@ fun NowPlayingScreen(
                         ),
                     contentAlignment = Alignment.Center,
                 ) {
-                    if (uiState.showLyricsPanel) {
-                        LyricsPanel(
-                            lyrics = state.lyrics,
-                            positionSeconds = state.positionMs / 1000.0,
-                            showTranslation = settings.showTranslation,
-                            verbatimLyrics = settings.verbatimLyrics,
-                            isScrubbing = uiState.isLyricsScrubbing,
-                            onSeekTo = { seconds -> controller.seekTo((seconds * 1000).toLong()) },
-                            onScrubbingChange = viewModel::setLyricsScrubbing,
-                            onSongInfo = { track?.id?.let { onOpenSongInfo(it) } },
-                            modifier = Modifier.fillMaxSize(),
-                        )
-                    } else if (settings.nowPlayingMode == NowPlayingMode.IMMERSIVE) {
-                        // 沉浸模式（播放页样式 IMMERSIVE）：大封面、无黑胶唱片。
-                        ImmersiveCover(
-                            coverURL = track?.album?.picUrl,
-                            screenHeight = screenHeight,
-                        )
-                    } else {
-                        VinylRecordView(
-                            coverURL = track?.album?.picUrl,
-                            size = (screenHeight * 0.40f).coerceIn(220.dp, 340.dp),
-                            isPlaying = state.isPlaying,
-                        )
+                    // 唱片 ⇄ 歌词平滑过渡（替代原 if/else 硬切换）：旧内容微微放大
+                    // 并淡出、新内容从 94% 缩放淡入，380ms 标准缓动——点击歌词不再生硬。
+                    val centerMode = when {
+                        uiState.showLyricsPanel -> CenterMode.Lyrics
+                        settings.nowPlayingMode == NowPlayingMode.IMMERSIVE -> CenterMode.Cover
+                        else -> CenterMode.Vinyl
+                    }
+                    AnimatedContent(
+                        targetState = centerMode,
+                        transitionSpec = {
+                            (fadeIn(animationSpec = tween(380, easing = FastOutSlowInEasing)) +
+                                scaleIn(
+                                    initialScale = 0.94f,
+                                    animationSpec = tween(380, easing = FastOutSlowInEasing),
+                                )) togetherWith
+                                (fadeOut(animationSpec = tween(260, easing = FastOutSlowInEasing)) +
+                                    scaleOut(
+                                        targetScale = 1.05f,
+                                        animationSpec = tween(260, easing = FastOutSlowInEasing),
+                                    ))
+                        },
+                        label = "nowPlayingCenter",
+                    ) { mode ->
+                        when (mode) {
+                            CenterMode.Lyrics -> LyricsPanel(
+                                lyrics = state.lyrics,
+                                positionSeconds = state.positionMs / 1000.0,
+                                showTranslation = settings.showTranslation,
+                                verbatimLyrics = settings.verbatimLyrics,
+                                isScrubbing = uiState.isLyricsScrubbing,
+                                onSeekTo = { seconds -> controller.seekTo((seconds * 1000).toLong()) },
+                                onScrubbingChange = viewModel::setLyricsScrubbing,
+                                onSongInfo = { track?.id?.let { onOpenSongInfo(it) } },
+                                modifier = Modifier.fillMaxSize(),
+                            )
+                            CenterMode.Cover -> ImmersiveCover(
+                                coverURL = track?.album?.picUrl,
+                                screenHeight = screenHeight,
+                            )
+                            CenterMode.Vinyl -> VinylRecordView(
+                                coverURL = track?.album?.picUrl,
+                                size = (screenHeight * 0.40f).coerceIn(220.dp, 340.dp),
+                                isPlaying = state.isPlaying,
+                            )
+                        }
                     }
                 }
 
                 // 3-5. 社交行 / 控制条 / 五图标行：沉浸歌词模式下整体收起，
                 // 中间歌词区（weight 1f）随之占满整屏；退出沉浸时平滑回归。
+                // 收起 = 向下淡出收缩、回归 = 自底向上展开，420ms 标准缓动。
                 AnimatedVisibility(
                     visible = !uiState.isLyricsImmersive,
-                    enter = fadeIn(animationSpec = tween(220)) + expandVertically(animationSpec = tween(260)),
-                    exit = fadeOut(animationSpec = tween(180)) + shrinkVertically(animationSpec = tween(260)),
+                    enter = fadeIn(animationSpec = tween(360, easing = FastOutSlowInEasing)) +
+                        expandVertically(
+                            animationSpec = tween(420, easing = FastOutSlowInEasing),
+                            expandFrom = Alignment.Bottom,
+                        ),
+                    exit = fadeOut(animationSpec = tween(260, easing = FastOutSlowInEasing)) +
+                        shrinkVertically(
+                            animationSpec = tween(420, easing = FastOutSlowInEasing),
+                            shrinkTowards = Alignment.Bottom,
+                        ),
                 ) {
                 Column {
                 // 3. 社交行：曲名 + 歌手 + 红心 + 评论
