@@ -44,6 +44,7 @@ import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -59,11 +60,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.graphics.asAndroidBitmap
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.onPlaced
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntRect
 import android.graphics.Bitmap
-import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
@@ -81,9 +82,13 @@ fun GlassTabBar(
     screenHeightPx: Int = 0,
 ) {
     val tokens = glassTokens()
-    // 底栏横拖切换（iOS `GlassTabBar` 的 DragGesture）：在药丸上左右拖，超过阈值
-    // 即切到相邻 Tab（左滑→下一个，右滑→上一个）。阈值 40dp，避免误触。
-    val swipeThresholdPx = with(LocalDensity.current) { 40.dp.toPx() }
+    // 底栏横拖（iOS `GlassTabBar` 的 DragGesture）：手指横拖时按落点在 Tab 行内的
+    // 相对位置**实时**切换选中项（跟手），而不是松手才跳一格。
+    // rememberUpdatedState：拖拽过程中 selected 会变，若把它作为 pointerInput 的 key
+    // 会导致手势被重启、拖到一半断掉；用最新的状态值读取即可。
+    val currentSelected by rememberUpdatedState(selected)
+    val currentOnSelect by rememberUpdatedState(onSelect)
+    var rowWidthPx by remember { mutableStateOf(0) }
     // 完全透明：导航栏不带任何颜色——无填充、无高光、无描边、无投影。
     // 玻璃观感全部来自底下「真·磨砂」层（背后内容本身被糊化）与选中镜片的折射
     // 形变，而不是在背后内容上叠一层白/灰/品牌色半透明色块。此前叠色块的写法
@@ -103,23 +108,20 @@ fun GlassTabBar(
             modifier = Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 8.dp)
-                .pointerInput(tabs, selected, swipeThresholdPx) {
-                    // 横拖累计位移，抬手时按方向切相邻 Tab。
-                    var totalDx = 0f
+                .onSizeChanged { rowWidthPx = it.width }
+                .pointerInput(tabs, rowWidthPx) {
+                    // 把手指 x 映射到等宽的 Tab 单元，越过边界即时切换（iOS 同款）。
                     detectHorizontalDragGestures(
-                        onDragStart = { totalDx = 0f },
-                        onHorizontalDrag = { change, dragAmount ->
+                        onHorizontalDrag = { change, _ ->
                             change.consume()
-                            totalDx += dragAmount
-                        },
-                        onDragEnd = {
-                            if (abs(totalDx) >= swipeThresholdPx) {
-                                val index = tabs.indexOf(selected)
-                                val target = if (totalDx < 0) index + 1 else index - 1
-                                if (target in tabs.indices) onSelect(tabs[target])
+                            if (rowWidthPx > 0 && tabs.isNotEmpty()) {
+                                val cell = rowWidthPx.toFloat() / tabs.size
+                                val index = (change.position.x / cell).toInt()
+                                    .coerceIn(0, tabs.lastIndex)
+                                val target = tabs[index]
+                                if (target != currentSelected) currentOnSelect(target)
                             }
                         },
-                        onDragCancel = { totalDx = 0f },
                     )
                 },
             horizontalArrangement = Arrangement.SpaceEvenly,
