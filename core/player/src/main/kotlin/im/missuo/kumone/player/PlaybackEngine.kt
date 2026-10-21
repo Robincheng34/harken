@@ -243,6 +243,36 @@ class PlaybackEngine(
         publish()
     }
 
+    /**
+     * 从播放队列移除指定位置（队列面板左滑删除）。
+     *
+     * 只改队列数据，不动当前播放：被删项一定在当前曲之后（面板只列 upcoming），
+     * 因此 ExoPlayer 的当前 MediaItem 无需重建。
+     */
+    fun removeFromQueue(index: Int) {
+        queue.removeAt(index)
+        publish()
+    }
+
+    /** 撤销删除：把曲目按原位置插回队列。 */
+    fun insertIntoQueue(index: Int, track: Track) {
+        queue.insertAt(index, track)
+        publish()
+    }
+
+    /**
+     * 撤销删除（稳健版）：把曲目插回**当前播放曲之后**。
+     *
+     * 撤销时队列可能已因自动切歌 / 连续删除而变化，UI 侧缓存的绝对下标会
+     * 过期（实测插到错误位置）；引擎在调用瞬间读 [PlaybackQueue.currentIndex]
+     * 拿到的一定是实时位置。删的都是 upcoming（当前曲之后），插回当前曲之后
+     * 语义等价且永远有效。
+     */
+    fun insertAfterCurrent(track: Track) {
+        queue.insertAt(queue.currentIndex + 1, track)
+        publish()
+    }
+
     fun next() {
         if (queue.isFMMode) {
             fmNext()
@@ -424,7 +454,12 @@ class PlaybackEngine(
                 handleResolveFailure(track)
                 return@launch
             }
-            consecutiveFailures = 0
+            // 注意：这里**不能**把 consecutiveFailures 清零。原实现解析一成功就
+            // 重置计数，导致「解析成功但播放即挂/即完」的坏源每首都把熔断计数
+            // 清零，MAX_CONSECUTIVE_FAILURES 永远触发不了——实测整个 137 首的
+            // 队列在几分钟内被自动刷穿循环（播放列表乱跳的根因）。
+            // 计数器的清零改由「曲目稳定播放过」判定（见 advanceAfterFailure /
+            // onTrackEnded 里的 STABLE_PLAY_MS 检查）。
             exoPlayer.setMediaItem(buildMediaItem(track, resolved))
             exoPlayer.prepare()
             exoPlayer.play()
@@ -510,6 +545,21 @@ class PlaybackEngine(
             }
             return
         }
+        // 熔断计数：上一曲稳定播放过（≥ [STABLE_PLAY_MS]）才算正常播完并重置
+        // 计数；几乎没播就「自然结束」视为一次失败。原实现此路径完全没有失败
+        // 计数——秒结束的坏音源会一路 advance 把整个队列刷穿并无限循环
+        // （实测 137 首队列几分钟内被刷完，播放列表乱跳的根因之一）。
+        if (deckLoaded && exoPlayer.currentPosition >= STABLE_PLAY_MS) {
+            consecutiveFailures = 0
+        } else {
+            consecutiveFailures += 1
+            if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
+                // 连续秒完/失败达到上限：停下等用户手动处理，不再自动跳。
+                exoPlayer.pause()
+                publish()
+                return
+            }
+        }
         // 试听片段播完**照常**进下一曲：iOS 的播放结束链路
         // `deckFinished`(:1180) → `handleItemEnded()`(:849) → `advanceToNext(userInitiated: false)`(:814)
         // 全链路上 isTrial 出现 0 次。`autoAdvanceTarget()` 的 `guard !isTrial`
@@ -549,6 +599,13 @@ class PlaybackEngine(
             publish()
             return
         }
+        // 上一曲稳定播放过（≥ [STABLE_PLAY_MS]）则视为一次「成功」重置计数：
+        // 失败熔断只针对「连续秒挂」的坏源段，不该被长播放后的偶发一次报错连带。
+        // （playCurrent 解析成功处不再清零——否则「解析成功即挂」的坏源会
+        // 每首都重置计数，熔断永远触发不了。）
+        if (deckLoaded && exoPlayer.currentPosition >= STABLE_PLAY_MS) {
+            consecutiveFailures = 0
+        }
         consecutiveFailures += 1
         if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
             // 连续失败达到上限：停下并保留 state.error（onPlayerError 已写入）。
@@ -572,9 +629,10 @@ class PlaybackEngine(
         playCurrent()
     }
 
-    /** 解析失败（无地址/全部回退失败）：计数、报错、按 iOS 策略续跳或停止。 */
+    /** 解析失败（无地址/全部回退失败）：报错、按 iOS 策略续跳或停止。
+     *  计数统一由 [advanceAfterFailure] 负责（原实现两处各 +1，一次解析失败
+     *  被计成两 failures，熔断阈值实际是 MAX 的一半）。 */
     private suspend fun handleResolveFailure(track: Track) {
-        consecutiveFailures += 1
         val reason = track.playability(
             privilege = null,
             isLoggedIn = false,
@@ -685,6 +743,9 @@ class PlaybackEngine(
         private const val POSITION_POLL_MS = 500L
         private const val RESTART_THRESHOLD_MS = 4_000L
         private const val MAX_CONSECUTIVE_FAILURES = 5
+
+        /** 曲目「稳定播放」阈值：实际播放超过此时长才视作成功并重置熔断计数。 */
+        private const val STABLE_PLAY_MS = 5_000L
 
         @Volatile
         private var instance: PlaybackEngine? = null

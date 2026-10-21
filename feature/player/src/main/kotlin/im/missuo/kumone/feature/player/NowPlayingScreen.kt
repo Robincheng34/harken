@@ -557,10 +557,13 @@ fun NowPlayingScreen(
                     QueuePanel(
                         tracks = upcoming(state),
                         totalCount = state.queue.size,
+                        currentOffset = (state.currentIndex + 1).coerceAtLeast(0),
                         onPlayAt = { index ->
                             val offset = state.currentIndex + 1 + index
                             controller.play(state.queue, offset, state.context, source)
                         },
+                        onRemoveAt = { globalIndex -> controller.removeFromQueue(globalIndex) },
+                        onInsertAt = { track -> controller.insertAfterCurrent(track) },
                         onClearQueue = { controller.clearQueue() },
                     )
                 }

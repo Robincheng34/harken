@@ -156,6 +156,15 @@ class MusicController(private val context: Context) {
     /** 清空当前播放队列并停止播放（队列面板「删除当前播放队列」）。 */
     fun clearQueue() = engine.clearQueue()
 
+    /** 队列面板左滑删除单曲。 */
+    fun removeFromQueue(index: Int) = engine.removeFromQueue(index)
+
+    /** 撤销删除：把曲目插回原位置。 */
+    fun insertIntoQueue(index: Int, track: Track) = engine.insertIntoQueue(index, track)
+
+    /** 撤销删除（稳健版）：把曲目插回当前播放曲之后（引擎实时定位，无索引陈旧）。 */
+    fun insertAfterCurrent(track: Track) = engine.insertAfterCurrent(track)
+
     fun next() = engine.next()
 
     fun previous() = engine.previous()

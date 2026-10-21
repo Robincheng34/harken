@@ -197,6 +197,22 @@ class PlaybackQueue {
         }
     }
 
+    /**
+     * Re-inserts a previously removed track at [index] (队列面板「撤销删除」）。
+     *
+     * 只恢复队列数据，不改变当前播放曲：若插入点在当前曲之前，当前索引顺延一位。
+     */
+    fun insertAt(index: Int, track: Track) {
+        if (index < 0 || index > queue.size) return
+        val active = ArrayList(queue)
+        active.add(index, track)
+        queue = active
+        val listed = ArrayList(listedOrder)
+        listed.add(index.coerceIn(0, listed.size), track)
+        listedOrder = listed
+        if (index <= currentIndex) currentIndex += 1
+    }
+
     /** The next [limit] tracks: play-next insertions, then the queue rest. */
     fun upcoming(limit: Int): List<Track> {
         if (limit <= 0) return emptyList()
