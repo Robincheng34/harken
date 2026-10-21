@@ -247,22 +247,31 @@ fun NowPlayingScreen(
         // 排行榜卡片上（实测：点播放页空白处会打开背后的歌单详情）。
         // 屏障放在页面根 Box：主派发阶段子组件（更深）先消费，未消费的
         // 才由本屏障收掉，既不挡页面内交互，也断掉向下穿透。
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .pointerInput(Unit) {
-                    awaitPointerEventScope {
-                        while (true) {
-                            val event = awaitPointerEvent(PointerEventPass.Main)
-                            // 任何触摸 / 滑动 / 点击都计入「用户操作」，重置无操作计时。
-                            viewModel.markInteraction()
-                            if (event.changes.none { it.isConsumed }) {
-                                event.changes.forEach { it.consume() }
+        Box(modifier = Modifier.fillMaxSize()) {
+            // 触摸屏障（垫在内容之下）：只接收「内容子节点未命中」的空白区事件，
+            // 防止点击穿透到下层首页。
+            //
+            // 原 bug：屏障是内容的**父节点**，在 Main pass 里把所有未被消费的事件
+            // 直接吃掉。进度条 Slider 拖拽在超过 touch slop 之前不会 consume，
+            // 事件先被屏障吃掉 → Slider 永远进不了拖拽态，表现为「只能点击、拖不动」。
+            // 改成**兄弟节点**后，命中测试优先落到上层的 Slider（内容），屏障不在
+            // 它的命中路径里；只有空白区才由屏障兜底。
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .pointerInput(Unit) {
+                        awaitPointerEventScope {
+                            while (true) {
+                                val event = awaitPointerEvent(PointerEventPass.Main)
+                                // 任何触摸 / 滑动 / 点击都计入「用户操作」，重置无操作计时。
+                                viewModel.markInteraction()
+                                if (event.changes.none { it.isConsumed }) {
+                                    event.changes.forEach { it.consume() }
+                                }
                             }
                         }
-                    }
-                },
-        ) {
+                    },
+            )
             Column(
                 modifier = Modifier
                     .fillMaxSize()
