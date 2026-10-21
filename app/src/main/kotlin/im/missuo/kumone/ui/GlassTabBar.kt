@@ -23,6 +23,7 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -47,6 +48,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 import im.missuo.kumone.design.theme.GlassBox
 import im.missuo.kumone.design.theme.Layout
@@ -61,6 +63,7 @@ import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntRect
 import android.graphics.Bitmap
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
@@ -78,6 +81,9 @@ fun GlassTabBar(
     screenHeightPx: Int = 0,
 ) {
     val tokens = glassTokens()
+    // 底栏横拖切换（iOS `GlassTabBar` 的 DragGesture）：在药丸上左右拖，超过阈值
+    // 即切到相邻 Tab（左滑→下一个，右滑→上一个）。阈值 40dp，避免误触。
+    val swipeThresholdPx = with(LocalDensity.current) { 40.dp.toPx() }
     // 完全透明：导航栏不带任何颜色——无填充、无高光、无描边、无投影。
     // 玻璃观感全部来自底下「真·磨砂」层（背后内容本身被糊化）与选中镜片的折射
     // 形变，而不是在背后内容上叠一层白/灰/品牌色半透明色块。此前叠色块的写法
@@ -94,7 +100,28 @@ fun GlassTabBar(
             .height(Layout.tabBarHeight),
     ) {
         Row(
-            modifier = Modifier.fillMaxWidth().padding(horizontal = 8.dp),
+            modifier = Modifier
+                .fillMaxWidth()
+                .padding(horizontal = 8.dp)
+                .pointerInput(tabs, selected, swipeThresholdPx) {
+                    // 横拖累计位移，抬手时按方向切相邻 Tab。
+                    var totalDx = 0f
+                    detectHorizontalDragGestures(
+                        onDragStart = { totalDx = 0f },
+                        onHorizontalDrag = { change, dragAmount ->
+                            change.consume()
+                            totalDx += dragAmount
+                        },
+                        onDragEnd = {
+                            if (abs(totalDx) >= swipeThresholdPx) {
+                                val index = tabs.indexOf(selected)
+                                val target = if (totalDx < 0) index + 1 else index - 1
+                                if (target in tabs.indices) onSelect(tabs[target])
+                            }
+                        },
+                        onDragCancel = { totalDx = 0f },
+                    )
+                },
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically,
         ) {

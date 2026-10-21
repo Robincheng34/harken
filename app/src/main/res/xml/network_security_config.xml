@@ -7,5 +7,9 @@
 <network-security-config>
     <domain-config cleartextTrafficPermitted="true">
         <domain includeSubdomains="true">music.126.net</domain>
+        <!-- 灰色解锁第三方音源：酷狗搜索接口仅提供 HTTP（HTTPS 返回空），
+             酷我/酷狗音频 CDN 也可能回落明文。仅放行这两个音乐域，不全局开明文。 -->
+        <domain includeSubdomains="true">kugou.com</domain>
+        <domain includeSubdomains="true">kuwo.cn</domain>
     </domain-config>
 </network-security-config>
