@@ -9,9 +9,13 @@ import android.util.Log
 import androidx.core.content.ContextCompat
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
+import androidx.media3.datasource.DefaultDataSource
+import androidx.media3.datasource.DefaultHttpDataSource
 import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import im.missuo.kumone.net.api.NeteaseApi
 import im.missuo.kumone.net.lyrics.LyricsParser
 import im.missuo.kumone.net.model.Track
@@ -56,7 +60,31 @@ class PlaybackEngine(
 ) {
 
     /** ExoPlayer 实例；PlayerService 用它挂载 MediaSession。 */
-    internal val exoPlayer: ExoPlayer = ExoPlayer.Builder(context).build()
+    internal val exoPlayer: ExoPlayer = ExoPlayer.Builder(context)
+        // 媒体下载统一带 Referer + 浏览器 UA：B 站部分 CDN（upos-sz-mirrorcos /
+        // cn-jsnt-ct 等）有防盗链，缺 Referer 会返回 403，表现正好是「能显示封面
+        // 但不播、随即被引擎当作失败跳下一首」。网易云直链是签名 URL，不受影响。
+        .setMediaSourceFactory(
+            DefaultMediaSourceFactory(
+                DefaultDataSource.Factory(
+                    context,
+                    DefaultHttpDataSource.Factory()
+                        .setDefaultRequestProperties(
+                            // B 站 CDN 的防盗链校验：除 Referer 外还看 Origin / UA。
+                            // 实测缺 Referer 或 UA 为移动端/ExoPlayer 时返回 403；
+                            // 桌面 Chrome UA + 带斜杠的 Referer + Origin 可稳定 206。
+                            mapOf(
+                                "Referer" to "https://www.bilibili.com/",
+                                "Origin" to "https://www.bilibili.com",
+                                "Accept" to "*/*",
+                                "Accept-Language" to "zh-CN,zh;q=0.9",
+                                "User-Agent" to PLAYER_UA,
+                            ),
+                        ),
+                ),
+            ),
+        )
+        .build()
 
     /** 灰色解锁自建 client（连接 15s / 读取 30s）；注入 [SongUrlResolver] 作救援源。 */
     private val unblockClient = OkHttpClient.Builder()
@@ -420,8 +448,8 @@ class PlaybackEngine(
         }
     }
 
-    private fun buildMediaItem(track: Track, resolved: ResolvedSongUrl): MediaItem =
-        MediaItem.Builder()
+    private fun buildMediaItem(track: Track, resolved: ResolvedSongUrl): MediaItem {
+        val builder = MediaItem.Builder()
             .setUri(resolved.url)
             .setMediaId(track.id.toString())
             .setMediaMetadata(
@@ -432,7 +460,13 @@ class PlaybackEngine(
                     .setArtworkUri(track.album.picUrl?.let(Uri::parse))
                     .build(),
             )
-            .build()
+        // B 站音轨是 .m4s（URL 无媒体扩展名、Content-Type=octet-stream），显式声明
+        // MP4 容器，避免 DefaultMediaSourceFactory 选错提取器后报错、被引擎当作失败跳过。
+        if (resolved.unblockSource == "哔哩哔哩") {
+            builder.setMimeType(MimeTypes.AUDIO_MP4)
+        }
+        return builder.build()
+    }
 
     private fun loadLyrics(generation: Int, trackID: Long) {
         scope.launch {
@@ -642,6 +676,12 @@ class PlaybackEngine(
 
     companion object {
         private const val TAG = "PlaybackEngine"
+
+        /** 媒体下载用的桌面 Chrome UA（B 站 CDN 会拒绝 ExoPlayer/移动端 UA）。 */
+        private const val PLAYER_UA =
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
+                "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
+
         private const val POSITION_POLL_MS = 500L
         private const val RESTART_THRESHOLD_MS = 4_000L
         private const val MAX_CONSECUTIVE_FAILURES = 5

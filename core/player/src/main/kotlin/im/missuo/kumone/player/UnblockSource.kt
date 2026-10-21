@@ -49,7 +49,7 @@ interface UnblockSource {
 }
 
 /** iOS `AudioSourceProvider.isPlausibleMatch` 的时长容差（毫秒）。 */
-internal const val DURATION_TOLERANCE_MS = 5_000L
+internal const val DURATION_TOLERANCE_MS = 10_000L
 
 /**
  * 解锁命中但源名未知的占位值。
