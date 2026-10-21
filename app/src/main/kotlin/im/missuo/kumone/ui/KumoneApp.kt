@@ -25,6 +25,8 @@ import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.pager.HorizontalPager
+import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -198,8 +200,6 @@ fun KumoneApp(graph: AppGraph) {
 @Composable
 private fun AppContent(graph: AppGraph) {
     val overlayNav: NavHostController = rememberNavController()
-    // rememberSaveable：旋转/进程重建后保留选中 Tab（enum 可序列化）。
-    var selectedTab by rememberSaveable { mutableStateOf(AppTab.HOME) }
     val toastState = LocalToastState.current
 
     // 底部导航栏自定义配置：按设置页保存的顺序渲染可见 Tab（未配置时为全部默认顺序）。
@@ -213,10 +213,6 @@ private fun AppContent(graph: AppGraph) {
             ?.distinct()
             ?.ifEmpty { AppTab.entries.toList() }
             ?: AppTab.entries.toList()
-    }
-    // 当前选中的 Tab 被隐藏时，回落到第一个可见 Tab。
-    LaunchedEffect(visibleTabs) {
-        if (selectedTab !in visibleTabs) selectedTab = visibleTabs.first()
     }
 
     // 播放层提示（试听 / 已使用第三方音源）：由常驻 MusicController 判定并上抛
@@ -256,8 +252,6 @@ private fun AppContent(graph: AppGraph) {
     CompositionLocalProvider(LocalOpenNowPlaying provides openNowPlaying) {
         Box(modifier = Modifier.fillMaxSize()) {
             TabsScreen(
-                selectedTab = selectedTab,
-                onSelectTab = { selectedTab = it },
                 overlayNav = overlayNav,
                 tabs = visibleTabs,
             )
@@ -293,11 +287,36 @@ private fun AppContent(graph: AppGraph) {
  */
 @Composable
 private fun TabsScreen(
-    selectedTab: AppTab,
-    onSelectTab: (AppTab) -> Unit,
     overlayNav: NavHostController,
     tabs: List<AppTab>,
 ) {
+    // 选中 Tab 状态（rememberSaveable：旋转/进程重建后保留；enum 可序列化）。
+    var selectedTab by rememberSaveable { mutableStateOf(AppTab.HOME) }
+    val scope = rememberCoroutineScope()
+    // Pager 的页面顺序与 visibleTabs（设置页「导航栏」顺序）完全一致，
+    // 故 page 索引可直接映射到 tab，点击与滑动两个方向互相驱动。
+    val pagerState = rememberPagerState(
+        initialPage = tabs.indexOf(selectedTab).coerceAtLeast(0),
+    ) { tabs.size }
+    // 点击药丸 / 子页请求切 tab：更新选中态并把 Pager 翻到对应页（点击 → 翻页）。
+    val onSelectTab: (AppTab) -> Unit = { tab ->
+        selectedTab = tab
+        scope.launch { pagerState.scrollToPage(tabs.indexOf(tab)) }
+    }
+
+    // 设置改了 tabOrder 导致当前 Tab 被隐藏时，回落到第一个可见 Tab，
+    // 并让 Pager 与重排后的可见列表对齐（pageCount 由上面的 lambda 同步）。
+    LaunchedEffect(tabs) {
+        if (selectedTab !in tabs) selectedTab = tabs.first()
+        val target = tabs.indexOf(selectedTab).coerceAtLeast(0)
+        if (pagerState.currentPage != target) pagerState.scrollToPage(target)
+    }
+
+    // 滑动 Pager 驱动选中态（滑动 → 选中）；与点击方向形成双向同步。
+    LaunchedEffect(pagerState.currentPage) {
+        selectedTab = tabs[pagerState.currentPage]
+    }
+
     val behindLayer = rememberGraphicsLayer()
     var behindBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
     var screenHeightPx by remember { mutableStateOf(0) }
@@ -412,25 +431,32 @@ private fun TabsScreen(
                 .then(captureModifier)
                 .background(MaterialTheme.colorScheme.background),
         ) {
-            when (selectedTab) {
-                AppTab.HOME -> HomeScreen(
-                    navController = overlayNav,
-                    bottomClearance = bottomClearance,
-                )
-                AppTab.EXPLORE -> ExploreScreen(navController = overlayNav)
-                AppTab.SEARCH -> SearchScreen(
-                    navController = overlayNav,
-                    bottomClearance = bottomClearance,
-                    // 搜索页系统返回：切回首页而非退出（经 onSelectTab 回调，避免直接
-                    // 赋值被 when 分支智能转换的 selectedTab 参数）。
-                    onRequestHome = { onSelectTab(AppTab.HOME) },
-                )
-                AppTab.FM -> FmScreen(onOpenLogin = { overlayNav.navigate(Destinations.LOGIN) })
-                AppTab.LIBRARY -> LibraryScreen(
-                    onNavigate = { overlayNav.navigate(it) },
-                    onOpenLogin = { overlayNav.navigate(Destinations.LOGIN) },
-                    onRequestSearch = { onSelectTab(AppTab.SEARCH) },
-                )
+            HorizontalPager(
+                state = pagerState,
+                modifier = Modifier.fillMaxSize(),
+            ) { page ->
+                // 页面顺序与 visibleTabs 一致，page 索引直接映射到 tab。
+                val tab = tabs[page]
+                when (tab) {
+                    AppTab.HOME -> HomeScreen(
+                        navController = overlayNav,
+                        bottomClearance = bottomClearance,
+                    )
+                    AppTab.EXPLORE -> ExploreScreen(navController = overlayNav)
+                    AppTab.SEARCH -> SearchScreen(
+                        navController = overlayNav,
+                        bottomClearance = bottomClearance,
+                        // 搜索页系统返回：切回首页而非退出（经 onSelectTab 回调，避免直接
+                        // 赋值被 when 分支智能转换的 tab 参数）。
+                        onRequestHome = { onSelectTab(AppTab.HOME) },
+                    )
+                    AppTab.FM -> FmScreen(onOpenLogin = { overlayNav.navigate(Destinations.LOGIN) })
+                    AppTab.LIBRARY -> LibraryScreen(
+                        onNavigate = { overlayNav.navigate(it) },
+                        onOpenLogin = { overlayNav.navigate(Destinations.LOGIN) },
+                        onRequestSearch = { onSelectTab(AppTab.SEARCH) },
+                    )
+                }
             }
         }
 

@@ -43,6 +43,11 @@ dependencies {
     implementation(project(":core:playback"))
     implementation(project(":core:storage"))
 
+    // 灰色解锁（NeteaseUnblockSource）直接用 OkHttp 直连第三方源；core:net 已以
+    // `api` 导出这两个依赖，这里显式声明，让 :core:player 自描述、不依赖传递。
+    implementation(libs.okhttp)
+    implementation(libs.kotlinx.serialization.json)
+
     // JVM unit tests for the URL-resolution fallback chain (SongUrlResolver).
     testImplementation(libs.junit)
     testImplementation(libs.kotlinx.coroutines.test)

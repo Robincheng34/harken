@@ -20,9 +20,11 @@ import im.missuo.kumone.playback.PlayContext
 import im.missuo.kumone.playback.PlaySource
 import im.missuo.kumone.playback.PlaybackQueue
 import im.missuo.kumone.playback.RepeatMode
+import im.missuo.kumone.player.unblock.NeteaseUnblockSource
 import im.missuo.kumone.storage.download.LocalSongSource
 import im.missuo.kumone.storage.settings.SettingsRepository
 import kotlinx.coroutines.CancellationException
+import okhttp3.OkHttpClient
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -56,7 +58,18 @@ class PlaybackEngine(
     /** ExoPlayer 实例；PlayerService 用它挂载 MediaSession。 */
     internal val exoPlayer: ExoPlayer = ExoPlayer.Builder(context).build()
 
-    private val resolver = SongUrlResolver(api, settings, localSourceProvider = localSourceProvider)
+    /** 灰色解锁自建 client（连接 15s / 读取 30s）；注入 [SongUrlResolver] 作救援源。 */
+    private val unblockClient = OkHttpClient.Builder()
+        .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+        .build()
+
+    private val resolver = SongUrlResolver(
+        api,
+        settings,
+        unblock = NeteaseUnblockSource(unblockClient),
+        localSourceProvider = localSourceProvider,
+    )
     private val scrobbler = Scrobbler(api)
     private val queue = PlaybackQueue()
 

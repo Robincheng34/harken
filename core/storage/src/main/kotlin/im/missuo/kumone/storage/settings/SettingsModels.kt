@@ -72,7 +72,7 @@ enum class NavTabOption(val key: String, val label: String) {
 /**
  * 全部用户设置（iOS `SettingsManager` 的可观察状态）。
  *
- * 默认值与 iOS 一致：音质极高（exhigh）、灰色解锁默认关（主理人决策）、
+ * 默认值与 iOS 一致：音质极高（exhigh）、灰色解锁默认开（与 iOS 一致，三源全接）、
  * 外观跟随系统、播放页黑胶、显示翻译、逐字歌词开、注解关。
  *
  * [tabOrder] 为「可见且按显示顺序排列」的底部 Tab key 列表；为空表示全部
@@ -80,7 +80,7 @@ enum class NavTabOption(val key: String, val label: String) {
  */
 data class AppSettings(
     val audioQuality: AudioQuality = AudioQuality.EXHIGH,
-    val unblockEnabled: Boolean = false,
+    val unblockEnabled: Boolean = true,
     val appearance: AppAppearance = AppAppearance.AUTO,
     val nowPlayingMode: NowPlayingMode = NowPlayingMode.VINYL,
     val showTranslation: Boolean = true,
