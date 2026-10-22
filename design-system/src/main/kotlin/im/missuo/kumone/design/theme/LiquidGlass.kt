@@ -23,6 +23,7 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.displayCutoutPadding
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.shape.CircleShape
@@ -225,7 +226,7 @@ fun GlassTopAppBar(
     tokens: GlassTokens = glassTokens(),
     contentColor: Color = MaterialTheme.colorScheme.onSurface,
 ) {
-    Column(modifier = modifier) {
+    Column(modifier = modifier.displayCutoutPadding()) {
         TopAppBar(
             title = title,
             navigationIcon = navigationIcon,
