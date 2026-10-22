@@ -14,15 +14,15 @@ import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.border
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.platform.LocalDensity
+import im.missuo.kumone.design.component.SwipeToDeleteRow
 import im.missuo.kumone.design.composition.LocalSettingsRepository
+import im.missuo.kumone.storage.settings.AppSettings
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
@@ -33,7 +33,6 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -58,7 +57,6 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.animation.core.Animatable
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -82,10 +80,8 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import kotlin.math.roundToInt
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import im.missuo.kumone.design.composition.LocalIsLoggedIn
@@ -155,6 +151,10 @@ fun LibraryScreen(
     val context = LocalContext.current
     val settings = LocalSettingsRepository.current
     val settingsScope = rememberCoroutineScope()
+    // 删除确认开关（设置「高级」项）：开启后「近期」左滑停顿出现红条，需继续滑或点红区才删。
+    val appSettings by settings?.settings?.collectAsStateWithLifecycle(initialValue = AppSettings())
+        ?: remember { mutableStateOf(AppSettings()) }
+    val deleteGuard = appSettings.recentDeleteGuardEnabled
     val customBg by (settings?.activeMainImagePackId ?: MutableStateFlow(null))
         .collectAsStateWithLifecycle(initialValue = null)
     var showBgDialog by remember { mutableStateOf(false) }
@@ -205,6 +205,7 @@ fun LibraryScreen(
                     bottomClearance = bottomClearance,
                     onNavigate = onNavigate,
                     onChangeBackground = { showBgDialog = true },
+                    guard = deleteGuard,
                     modifier = Modifier.weight(1f),
                 )
             }
@@ -312,6 +313,7 @@ private fun LoggedInContent(
     bottomClearance: Dp,
     onNavigate: (String) -> Unit,
     onChangeBackground: () -> Unit,
+    guard: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
     // 顶层页签：0 音乐 / 1 播客 / 2 笔记。
@@ -342,7 +344,7 @@ private fun LoggedInContent(
                     onMore = { onNavigate(Destinations.LIBRARY_DRAWER) },
                 )
                 when (musicTab) {
-                    0 -> RecentContent(uiState = uiState, onNavigate = onNavigate)
+                    0 -> RecentContent(uiState = uiState, onNavigate = onNavigate, guard = guard)
                     1 -> PlaylistRows(playlists = uiState.createdPlaylists, onNavigate = onNavigate)
                     2 -> PlaylistRows(playlists = uiState.subscribedPlaylists, onNavigate = onNavigate)
                     else -> AlbumRows(albums = uiState.likedAlbums, onNavigate = onNavigate)
@@ -653,7 +655,7 @@ private fun MusicSubTabsRow(
  * 自编删除接口兜底；隐藏键池进程级，同一次 App 生命周期内删除不再回弹。
  */
 @Composable
-private fun RecentContent(uiState: LibraryUiState, onNavigate: (String) -> Unit) {
+private fun RecentContent(uiState: LibraryUiState, onNavigate: (String) -> Unit, guard: Boolean = false) {
     val api = LocalNeteaseApi.current ?: error("LocalNeteaseApi 必须在 KumoneApp 提供")
     val commands = LocalPlaybackCommands.current
     val scope = rememberCoroutineScope()
@@ -682,12 +684,11 @@ private fun RecentContent(uiState: LibraryUiState, onNavigate: (String) -> Unit)
         visibleTracks.forEach { track ->
             // key() 防滑动状态错位复用（同 TrackListView 的 key 教训）：普通 Column 的
             // forEach 按位置复用组合状态，删除一行后下方各行会上移接管上一行的
-            // rememberSwipeToDismissBoxState——若该状态恰处「已滑出」锚点，就会渲染出
-            // 幽灵红色删除块（行内容被整体偏移出屏）。按组合键 key 住每一行后，
-            // 列表收缩时各行的滑动状态各归其主，互不串位。
+            // 滑动偏移——若该状态恰处「已滑出」位置，就会渲染出幽灵红色删除块。
+            // 按组合键 key 住每一行后，列表收缩时各行的滑动状态各归其主，互不串位。
             key(playRecordKey(track)) {
-                SwipeToDeleteRecentRow(
-                    track = track,
+                SwipeToDeleteRow(
+                    guard = guard,
                     onPlay = {
                         // 直接起播但不自动进全屏播放页：迷你播放条浮现、停留在「我的」页。
                         scope.launch {
@@ -704,93 +705,17 @@ private fun RecentContent(uiState: LibraryUiState, onNavigate: (String) -> Unit)
                         PlayRecordHideStore.hide(playRecordKey(track))
                         scope.launch { runCatching { api.deletePlayRecord(track.id) } }
                     },
-                )
-            }
-        }
-    }
-}
-
-/**
- * 可左滑删除的近期曲目行（仅「我的」页「近期」Tab 使用）。
- *
- * 不用 [androidx.compose.material3.SwipeToDismissBox]：其 AnchoredDraggable 会把带微位移的
- * 点击误判成删除（项目记忆里的「点击即删」bug），且为遮住删除背景必须内容层不透明 →
- * 每行变成一条实色块，与红底页面割裂、正是「歌名被做成一条一条」的观感来源。
- * 此处自绘手势分离：[detectTapGestures] 负责点击播放、[detectHorizontalDragGestures]
- * 负责向左滑动删除，二者互不误触。行默认透明融入红底，仅左滑时才在右侧露出红色删除
- * 背景 + 垃圾桶，无实色块、无点击误删。
- */
-@Composable
-private fun SwipeToDeleteRecentRow(
-    track: Track,
-    onPlay: () -> Unit,
-    onDelete: (Track) -> Unit,
-) {
-    val density = LocalDensity.current
-    val scope = rememberCoroutineScope()
-    val swipeOffset = remember { Animatable(0f) }
-    val maxOffset = with(density) { 200.dp.toPx() }   // 最多左移距离（露出删除红条）
-    val threshold = with(density) { 96.dp.toPx() }     // 触发删除的滑动阈值
-
-    Box(modifier = Modifier.fillMaxWidth()) {
-        // 内容行：透明，融入红底页面；随左滑左移，右侧露出删除红条。
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .offset { IntOffset(swipeOffset.value.roundToInt(), 0) }
-                // 点击播放：与滑动手势分离，微位移不会误判为删除。
-                .pointerInput(Unit) {
-                    detectTapGestures(onTap = { onPlay() })
-                }
-                // 向左滑动删除：仅负向（左）生效，右滑被 clamp 归零。
-                .pointerInput(Unit) {
-                    detectHorizontalDragGestures(
-                        onHorizontalDrag = { change, dragAmount ->
-                            val next = (swipeOffset.value + dragAmount).coerceIn(-maxOffset, 0f)
-                            change.consume()
-                            scope.launch { swipeOffset.snapTo(next) }
-                        },
-                        onDragEnd = {
-                            scope.launch {
-                                if (swipeOffset.value <= -threshold) {
-                                    swipeOffset.animateTo(-maxOffset)
-                                    onDelete(track)
-                                } else {
-                                    swipeOffset.animateTo(0f)
-                                }
-                            }
-                        },
-                        onDragCancel = {
-                            scope.launch { swipeOffset.animateTo(0f) }
-                        },
+                    // 内容底色取「我的」页红（与整页红底无缝，不出现一条一条实心块）。
+                    contentBackground = Color(0xFF7A152B),
+                ) {
+                    // onClick 置空：点击已由 SwipeToDeleteRow 的 detectTapGestures 处理。
+                    ListRow(
+                        coverUrl = track.album.picUrl,
+                        title = track.name,
+                        subtitle = track.artistNames,
+                        onClick = {},
                     )
-                },
-        ) {
-            // onClick 置空：点击已由外层 detectTapGestures 处理，避免双层点击重复触发。
-            ListRow(
-                coverUrl = track.album.picUrl,
-                title = track.name,
-                subtitle = track.artistNames,
-                onClick = {},
-            )
-        }
-        // 删除红条：仅左滑时出现，固定右侧，宽度随滑动距离增长；内容透明故与红底页面无缝。
-        if (swipeOffset.value < -1f) {
-            val exposed = with(density) { (-swipeOffset.value).toDp() }
-            Box(
-                modifier = Modifier
-                    .align(Alignment.CenterEnd)
-                    .width(exposed)
-                    .fillMaxHeight()
-                    .background(MaterialTheme.colorScheme.error),
-                contentAlignment = Alignment.CenterEnd,
-            ) {
-                Icon(
-                    imageVector = Icons.Filled.Delete,
-                    contentDescription = "删除",
-                    tint = MaterialTheme.colorScheme.onError,
-                    modifier = Modifier.padding(end = 24.dp),
-                )
+                }
             }
         }
     }

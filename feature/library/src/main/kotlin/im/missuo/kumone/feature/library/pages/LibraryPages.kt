@@ -73,6 +73,8 @@ import im.missuo.kumone.design.composition.LocalIsLoggedIn
 import im.missuo.kumone.design.composition.LocalMusicController
 import im.missuo.kumone.design.composition.LocalNeteaseApi
 import im.missuo.kumone.design.composition.LocalPlaybackCommands
+import im.missuo.kumone.design.composition.LocalSettingsRepository
+import im.missuo.kumone.storage.settings.AppSettings
 import im.missuo.kumone.design.theme.BrandRed
 import im.missuo.kumone.design.theme.Layout
 import im.missuo.kumone.net.model.AlbumRef
@@ -293,6 +295,13 @@ fun RecentPlaysScreen(
     val playerState by (controller?.state ?: remember { MutableStateFlow(PlayerState()) })
         .collectAsStateWithLifecycle()
 
+    // 删除确认开关（设置「高级」项）：开启后「最近播放」左滑停顿出现红条，
+    // 需继续滑动或点击红色区域才删除。同时作用于「我的」页近期。
+    val settingsFlow = LocalSettingsRepository.current?.settings
+    val appSettings by settingsFlow?.collectAsStateWithLifecycle(initialValue = AppSettings())
+        ?: remember { mutableStateOf(AppSettings()) }
+    val deleteGuard = appSettings.recentDeleteGuardEnabled
+
     // 底部净空：作为列表 footer 随内容滚动（滚到底才出现），
     // 不再用 Scaffold 固定 bottomBar —— 那会在底部常驻一条 142dp 黑边。
     val bottomClearance =
@@ -416,6 +425,7 @@ fun RecentPlaysScreen(
                     },
                     // 底部净空随列表滚动，替掉原先 Scaffold 的常驻黑边。
                     footer = { item { Spacer(modifier = Modifier.height(bottomClearance)) } },
+                    guard = deleteGuard,
                     modifier = Modifier.weight(1f),
                 )
             }

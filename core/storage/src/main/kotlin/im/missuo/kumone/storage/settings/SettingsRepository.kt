@@ -55,6 +55,9 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
     /** 实验性：收起后显示把手，点击 / 上滑重新唤起。 */
     suspend fun setCollapseHandleEnabled(enabled: Boolean) = editBoolean(Keys.COLLAPSE_HANDLE, enabled)
 
+    /** 最近播放 / 近期删除确认开关。 */
+    suspend fun setRecentDeleteGuardEnabled(enabled: Boolean) = editBoolean(Keys.RECENT_DELETE_GUARD, enabled)
+
     /** 当前主题挂件 id（null = 未配置）。供主题应用层读取。 */
     val activeThemePackId: Flow<String?> = settings.map { it.activeThemePackId }
 
@@ -83,6 +86,7 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
             lyricsAnnotation = LyricsAnnotation.fromKey(this[Keys.LYRICS_ANNOTATION]),
             swipeCollapseEnabled = this[Keys.SWIPE_COLLAPSE] ?: defaults.swipeCollapseEnabled,
             collapseHandleEnabled = this[Keys.COLLAPSE_HANDLE] ?: defaults.collapseHandleEnabled,
+            recentDeleteGuardEnabled = this[Keys.RECENT_DELETE_GUARD] ?: defaults.recentDeleteGuardEnabled,
             tabOrder = this[Keys.TAB_ORDER]
                 ?.split(",")
                 ?.mapNotNull { raw -> NavTabOption.fromKey(raw.trim())?.key }
@@ -105,5 +109,6 @@ class SettingsRepository(private val dataStore: DataStore<Preferences>) {
         val MAIN_IMAGE_PACK = stringPreferencesKey("settings.mainImagePack")
         val SWIPE_COLLAPSE = booleanPreferencesKey("settings.swipeCollapse")
         val COLLAPSE_HANDLE = booleanPreferencesKey("settings.collapseHandle")
+        val RECENT_DELETE_GUARD = booleanPreferencesKey("settings.recentDeleteGuard")
     }
 }

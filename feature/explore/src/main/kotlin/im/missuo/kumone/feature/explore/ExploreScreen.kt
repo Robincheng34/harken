@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -125,7 +126,8 @@ fun ExploreScreen(navController: NavHostController) {
                     categories = uiState.categories,
                     selected = uiState.selectedCategory,
                     onSelect = { viewModel.select(it) },
-                    modifier = Modifier.padding(top = 8.dp),
+                    // statusBarsPadding：把顶部分类行推到系统状态栏之下，消除与状态栏的重叠。
+                    modifier = Modifier.statusBarsPadding().padding(top = 8.dp),
                 )
             }
             itemsIndexed(uiState.toplists, key = { _, item -> item.id }) { _, toplist ->

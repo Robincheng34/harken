@@ -37,6 +37,8 @@
     <string name="settings_advanced">高级</string>
     <string name="settings_unblock">灰色解锁</string>
     <string name="settings_unblock_summary">尝试解锁无版权歌曲（默认关闭）</string>
+    <string name="settings_recent_delete_guard">删除前确认</string>
+    <string name="settings_recent_delete_guard_summary">最近播放 / 我的页近期：左滑停顿出现红色删除区，需继续左滑或点击红色区域才删除（默认关闭，一滑即删）</string>
     <string name="settings_account">账号</string>
     <string name="settings_logout">退出登录</string>
     <string name="settings_navbar">导航栏</string>

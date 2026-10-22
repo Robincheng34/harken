@@ -358,6 +358,12 @@ fun SettingsScreen(
                     checked = settings.unblockEnabled,
                     onCheckedChange = viewModel::setUnblockEnabled,
                 )
+                SwitchRow(
+                    title = stringResource(R.string.settings_recent_delete_guard),
+                    subtitle = stringResource(R.string.settings_recent_delete_guard_summary),
+                    checked = settings.recentDeleteGuardEnabled,
+                    onCheckedChange = viewModel::setRecentDeleteGuardEnabled,
+                )
             }
 
             SettingsGroup(

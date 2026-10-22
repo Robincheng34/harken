@@ -103,6 +103,11 @@ class SettingsViewModel(
         repository.setCollapseHandleEnabled(enabled)
     }
 
+    /** 最近播放 / 近期删除确认开关。 */
+    fun setRecentDeleteGuardEnabled(enabled: Boolean) = scope.launch {
+        repository.setRecentDeleteGuardEnabled(enabled)
+    }
+
     /** 保存底部导航栏配置（可见 Tab 及顺序，见 [NavTabOption]）。 */
     fun setTabOrder(keys: List<String>) = scope.launch {
         repository.setTabOrder(keys)
