@@ -73,17 +73,20 @@ fun VinylRecordView(
             }
         }
     }
-    val angle = rotation.value
 
-    Box(modifier = modifier.size(size + 6.dp), contentAlignment = Alignment.Center) {
+    // 盘体/刻纹/扫光在任意旋转角视觉完全一致，整层只做一次静态渲染；
+    // 旋转交给 GPU（graphicsLayer），角度读取放在 lambda 内——避免 Composable 每帧重组。
+    Box(
+        modifier = modifier.size(size + 6.dp).graphicsLayer { rotationZ = rotation.value },
+        contentAlignment = Alignment.Center,
+    ) {
         // 盘体（含纸标框 / 金线环 / 主轴孔）整盘旋转。
         Canvas(modifier = Modifier.fillMaxSize()) {
             val disc = this.size.minDimension - 6.dp.toPx()
             val center = Offset(this.size.width / 2f, this.size.height / 2f)
-            drawVinylDisc(center = center, diameter = disc, rotationDegrees = angle)
-            rotate(degrees = angle, pivot = center) {
-                drawLabelChrome(center = center, discDiameter = disc)
-            }
+            // 静态盘体烘焙一次（固定 0 度）；整层旋转由父 Box.graphicsLayer 完成。
+            drawVinylDisc(center = center, diameter = disc, rotationDegrees = 0f)
+            drawLabelChrome(center = center, discDiameter = disc)
         }
         if (coverURL != null) {
             // 中心封面：圆形裁剪 + graphicsLayer 同步旋转（AsyncImage 是 Composable，
@@ -94,7 +97,6 @@ fun VinylRecordView(
                 contentScale = ContentScale.Crop,
                 modifier = Modifier
                     .size(size * LABEL_RATIO)
-                    .graphicsLayer(rotationZ = angle)
                     .clip(CircleShape),
             )
         }
