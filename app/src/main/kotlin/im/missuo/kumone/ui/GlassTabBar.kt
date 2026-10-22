@@ -214,8 +214,10 @@ private fun TabItem(
         .collectAsState(initial = false)
     LaunchedEffect(isPressed) { onPressedChange(isPressed) }
 
-    Box(
-        contentAlignment = Alignment.Center,
+    // 图标在上、文案在下的纵向布局（Column；曾误改为 Box 导致图标与文字重合）。
+    Column(
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(3.dp),
         modifier = modifier
             .clickable(
                 interactionSource = interactionSource,
