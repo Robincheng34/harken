@@ -80,28 +80,37 @@ fun SwipeToDeleteRow(
         // 红色删除背景：仅滑动后绘制，右侧垃圾桶图标。
         // - 不透明内容模式：整行撑满，靠内容层遮住未滑出区域。
         // - 透明内容模式：右锚定、宽度 = 滑出距离，只画在露出的缝隙里。
+        // 两种模式都先包一层 matchParentSize 容器再画红条——透明模式若直接对根 Box
+        // 的子级用 fillMaxHeight，会因父级（滚动容器）的无限高约束失效，红条塌成
+        // 垃圾桶图标自身高度（「细条」bug）；matchParentSize 的高度由内容行决定，有界。
         if (offset.value < -1f) {
-            val stripModifier = if (contentBackground != null) {
-                Modifier.matchParentSize()
-            } else {
-                Modifier
-                    .align(Alignment.CenterEnd)
-                    .width(with(density) { (-offset.value).toDp() })
-                    .fillMaxHeight()
-            }
             Box(
-                modifier = stripModifier
-                    .background(MaterialTheme.colorScheme.error)
-                    // 仅 guard 停顿态下点击红区才删除（否则红区不可点，点击落到内容层）。
-                    .clickable(enabled = guard && revealed) { onDelete() }
-                    .padding(end = 24.dp),
+                modifier = Modifier.matchParentSize(),
                 contentAlignment = Alignment.CenterEnd,
             ) {
-                Icon(
-                    imageVector = Icons.Filled.Delete,
-                    contentDescription = "删除",
-                    tint = MaterialTheme.colorScheme.onError,
-                )
+                Box(
+                    modifier = Modifier
+                        .then(
+                            if (contentBackground != null) {
+                                Modifier.matchParentSize()
+                            } else {
+                                Modifier
+                                    .fillMaxHeight()
+                                    .width(with(density) { (-offset.value).toDp() })
+                            },
+                        )
+                        .background(MaterialTheme.colorScheme.error)
+                        // 仅 guard 停顿态下点击红区才删除（否则红区不可点，点击落到内容层）。
+                        .clickable(enabled = guard && revealed) { onDelete() }
+                        .padding(end = 24.dp),
+                    contentAlignment = Alignment.CenterEnd,
+                ) {
+                    Icon(
+                        imageVector = Icons.Filled.Delete,
+                        contentDescription = "删除",
+                        tint = MaterialTheme.colorScheme.onError,
+                    )
+                }
             }
         }
         Row(
