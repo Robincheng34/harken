@@ -197,6 +197,12 @@ private const val LENS_LIVE_CAPTURE_ENABLED = false
  */
 private const val FROST_BLUR_RADIUS = 26f
 
+/**
+ * 「真·磨砂」底栏背景层开关。默认关闭：一加 7T Pro (API33) 上 RenderEffect(BlurEffect)
+ * 与 drawLayer 合成输出错误碎片压过底栏图标（ GlassTabBar 内有完整说明）。
+ */
+private const val FROST_ENABLED = false
+
 /** 镜片诊断日志 tag（真机 `adb logcat -s LiquidGlassLens` 观察捕获结果）。 */
 private const val TAG_LENS = "LiquidGlassLens"
 
@@ -598,7 +604,12 @@ private fun TabsScreen(
             // 高斯模糊，裁成与 GlassBox 相同的圆角矩形，垫在悬浮底栏之下。背后内容实时
             // 磨砂（滚动时随之更新），无需回读位图；读取失败/首帧时 behindLayer 为空则
             // 自然透明，不影响运行。这是 IT之家毛玻璃「糊化背后内容」的真正做法。
-            if (Build.VERSION.SDK_INT >= 33) {
+            // 「真·磨砂」背景层已整层禁用（FROST_ENABLED=false）：RenderEffect(BlurEffect)
+            // 与 drawLayer 的合成在一加 7T Pro (API33) 真机上输出错误碎片——背后页面内容
+            // 的笔画被画进底栏区域压过真实图标（「搜索成半月」「发现变琥珀闪电」）。
+            // 底栏玻璃观感改由 GlassTabBar 自身的液态玻璃材质承担，不再依赖 RenderEffect。
+            // 代码保留以便日后在兼容设备上重新启用排查。
+            if (FROST_ENABLED && Build.VERSION.SDK_INT >= 33) {
                 var frostOrigin by remember { mutableStateOf(Offset.Zero) }
                 Box(
                     modifier = Modifier

@@ -12,7 +12,6 @@ package im.missuo.kumone.ui
 import android.os.Build
 import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.runtime.collectAsState
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.ImageBitmap
 import im.missuo.kumone.design.theme.LiquidGlassLens
 import androidx.compose.animation.animateColorAsState
@@ -81,7 +80,7 @@ fun GlassTabBar(
     behindBackground: ImageBitmap? = null,
     screenHeightPx: Int = 0,
 ) {
-    val tokens = glassTokens()
+    // strong 玻璃 token 直接传入 GlassBox（见下方注释），此处不再单独取默认 token。
     // 底栏横拖（iOS `GlassTabBar` 的 DragGesture）：手指横拖时按落点在 Tab 行内的
     // 相对位置**实时**切换选中项（跟手），而不是松手才跳一格。
     // rememberUpdatedState：拖拽过程中 selected 会变，若把它作为 pointerInput 的 key
@@ -89,16 +88,18 @@ fun GlassTabBar(
     val currentSelected by rememberUpdatedState(selected)
     val currentOnSelect by rememberUpdatedState(onSelect)
     var rowWidthPx by remember { mutableStateOf(0) }
-    // 完全透明：导航栏不带任何颜色——无填充、无高光、无描边、无投影。
-    // 玻璃观感全部来自底下「真·磨砂」层（背后内容本身被糊化）与选中镜片的折射
-    // 形变，而不是在背后内容上叠一层白/灰/品牌色半透明色块。此前叠色块的写法
-    // 正是「颜色也不是玻璃的透明」的来源：色块越厚，越像贴纸而不是玻璃。
+    // 底栏重做：恢复液态玻璃材质托底（半透明填充 + 顶部高光 + 发丝描边 + 柔和投影）。
+    // 此前「完全透明 + 依赖底下真·磨砂层」的方案在真机上翻车：RenderEffect(BlurEffect)
+    // 与 drawLayer 的合成在一加 7T Pro (API33) 上输出错误碎片，把背后页面内容的笔画
+    // 画进底栏区域，压过真实图标（表现为「搜索图标成半月」「发现变琥珀闪电」「图标
+    // 颜色与选中态不符」）。玻璃观感改由材质自身承担：不依赖 RenderEffect，
+    // 任何背景上都精致、可靠、对比充足。
     GlassBox(
         shape = RoundedCornerShape(22.dp),
-        tokens = tokens.copy(fill = Color.Transparent),
-        addSpecular = false,
-        addBorder = false,
-        addShadow = false,
+        // strong 玻璃（浅色 White@0.82 / 深色 0x232327@0.72，MiniPlayer 同款）：
+        // 底栏悬浮在内容之上，普通 0.6 填充会被明亮封面穿透、图标对比不足；
+        // strong 托底既保住玻璃通透感，又让图标在任何背景上都清晰精致。
+        tokens = glassTokens(strong = true),
         modifier = modifier
             .fillMaxWidth()
             .padding(start = 12.dp, end = 12.dp, bottom = Layout.bottomMargin)
