@@ -265,7 +265,7 @@ fun DailySongsScreen(
  * 整列记录全过滤掉），故用 曲名 + 歌手 + 时长 组合成每条记录的稳定键：既能唯一定位
  * 单条，也能在切换「所有时间 / 最近一周」重新拉取后依旧命中、不再回弹。
  */
-private fun playRecordKey(song: Track): String =
+internal fun playRecordKey(song: Track): String =
     "${song.name}|${song.artistNames}|${song.durationMS}"
 
 /** 最近播放（T30，iOS `RecentsView`，支持「所有时间 / 最近一周」分段）。 */

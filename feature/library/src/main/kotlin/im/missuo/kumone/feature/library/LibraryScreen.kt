@@ -44,6 +44,7 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Apps
 import androidx.compose.material.icons.filled.CalendarMonth
 import androidx.compose.material.icons.filled.Cloud
+import androidx.compose.material.icons.filled.Delete
 import androidx.compose.material.icons.filled.Download
 import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Menu
@@ -53,13 +54,19 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.SwipeToDismissBox
+import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
+import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.key
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
@@ -84,9 +91,11 @@ import im.missuo.kumone.design.composition.LocalNeteaseApi
 import im.missuo.kumone.design.composition.LocalPlaybackCommands
 import im.missuo.kumone.design.navigation.Destinations
 import im.missuo.kumone.design.theme.Layout
+import im.missuo.kumone.feature.library.pages.playRecordKey
 import im.missuo.kumone.net.model.AlbumSummary
 import im.missuo.kumone.net.model.Formatters
 import im.missuo.kumone.net.model.PlaylistSummary
+import im.missuo.kumone.net.model.Track
 import im.missuo.kumone.playback.PlayContext
 import im.missuo.kumone.playback.PlaySource
 import im.missuo.kumone.player.PlayerState
@@ -635,12 +644,22 @@ private fun MusicSubTabsRow(
 
 // MARK: - 列表内容
 
-/** 近期：我喜欢的音乐 + 最近播放曲目。点击近期曲目直接播放（不再跳转最近播放页）。 */
+/**
+ * 近期：我喜欢的音乐 + 最近播放曲目。点击近期曲目直接播放（不再跳转最近播放页）。
+ * 单曲左滑删除，复用「最近播放」页同一套方案：组合键（曲名|歌手|时长）本地隐藏 +
+ * 自编删除接口兜底；隐藏键池进程级，同一次 App 生命周期内删除不再回弹。
+ */
 @Composable
 private fun RecentContent(uiState: LibraryUiState, onNavigate: (String) -> Unit) {
+    val api = LocalNeteaseApi.current ?: error("LocalNeteaseApi 必须在 KumoneApp 提供")
     val commands = LocalPlaybackCommands.current
     val scope = rememberCoroutineScope()
     val liked = uiState.likedSongs
+    // 本地隐藏键池：删过的近期曲目在同一次 App 生命周期内保持隐藏（同「最近播放」页）。
+    val hiddenKeys by PlayRecordHideStore.hiddenKeys.collectAsStateWithLifecycle()
+    val visibleTracks = remember(uiState.recentTracks, hiddenKeys) {
+        uiState.recentTracks.filter { playRecordKey(it) !in hiddenKeys }
+    }
     Column(
         modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
@@ -657,26 +676,91 @@ private fun RecentContent(uiState: LibraryUiState, onNavigate: (String) -> Unit)
                 }
             },
         )
-        uiState.recentTracks.forEach { track ->
+        visibleTracks.forEach { track ->
+            // key() 防滑动状态错位复用（同 TrackListView 的 key 教训）：普通 Column 的
+            // forEach 按位置复用组合状态，删除一行后下方各行会上移接管上一行的
+            // rememberSwipeToDismissBoxState——若该状态恰处「已滑出」锚点，就会渲染出
+            // 幽灵红色删除块（行内容被整体偏移出屏）。按组合键 key 住每一行后，
+            // 列表收缩时各行的滑动状态各归其主，互不串位。
+            key(playRecordKey(track)) {
+                SwipeToDeleteRecentRow(
+                    track = track,
+                    onPlay = {
+                        // 直接起播但不自动进全屏播放页：迷你播放条浮现、停留在「我的」页。
+                        scope.launch {
+                            commands?.playFrom(
+                                tracks = visibleTracks,
+                                startTrackId = track.id,
+                                source = PlaySource.NONE,
+                                context = PlayContext.recents,
+                                openPlayer = false,
+                            )
+                        }
+                    },
+                    onDelete = {
+                        PlayRecordHideStore.hide(playRecordKey(track))
+                        scope.launch { runCatching { api.deletePlayRecord(track.id) } }
+                    },
+                )
+            }
+        }
+    }
+}
+
+/**
+ * 可左滑删除的近期曲目行（仅「我的」页「近期」Tab 使用）。
+ * 复用「最近播放」页同一套滑动删除方案：向左滑露出红色删除背景，滑到底触发
+ * [onDelete]；反向（向右）滑动禁用，避免误触。点击仍走 [ListRow] 的 [onPlay]。
+ * 内容层不透明（与页面红底同色），未滑动时不会透出红色删除背景。
+ */
+@OptIn(ExperimentalMaterial3Api::class)
+@Composable
+private fun SwipeToDeleteRecentRow(
+    track: Track,
+    onPlay: () -> Unit,
+    onDelete: (Track) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val dismissState = rememberSwipeToDismissBoxState(
+        confirmValueChange = { value ->
+            if (value == SwipeToDismissBoxValue.EndToStart) {
+                onDelete(track)
+                true
+            } else {
+                false
+            }
+        },
+    )
+    SwipeToDismissBox(
+        state = dismissState,
+        enableDismissFromStartToEnd = false,
+        backgroundContent = {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.error)
+                    .padding(end = 24.dp),
+                contentAlignment = Alignment.CenterEnd,
+            ) {
+                Icon(
+                    imageVector = Icons.Filled.Delete,
+                    contentDescription = "删除",
+                    tint = MaterialTheme.colorScheme.onError,
+                )
+            }
+        },
+        content = {
+            // 内容层不透明：与「我的」页红底同色，避免未滑动时透出红色删除背景。
             ListRow(
                 coverUrl = track.album.picUrl,
                 title = track.name,
                 subtitle = track.artistNames,
-                onClick = {
-                    // 直接起播但不自动进全屏播放页：迷你播放条浮现、停留在「我的」页。
-                    scope.launch {
-                        commands?.playFrom(
-                            tracks = uiState.recentTracks,
-                            startTrackId = track.id,
-                            source = PlaySource.NONE,
-                            context = PlayContext.recents,
-                            openPlayer = false,
-                        )
-                    }
-                },
+                onClick = onPlay,
+                modifier = Modifier.background(PageGradient),
             )
-        }
-    }
+        },
+        modifier = modifier,
+    )
 }
 
 /** 歌单列表（创建 / 收藏）。 */
@@ -730,9 +814,10 @@ private fun ListRow(
     title: String,
     subtitle: String?,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
             .clickable(onClick = onClick)

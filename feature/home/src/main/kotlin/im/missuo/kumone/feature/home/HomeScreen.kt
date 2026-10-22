@@ -181,7 +181,7 @@ fun HomeScreen(
                         if (isLoggedIn) {
                             item(key = "feature-cards") {
                                 FunctionCards(
-                                    onDaily = { toast.show(comingSoon) }, // P1（T30）开放
+                                    onDaily = { navController.navigate(DAILY_SONGS_ROUTE) },
                                     onFM = { commands?.startFM() },
                                     onHeartbeat = { toast.show(comingSoon) }, // P1（T30）开放
                                     dailyCover = uiState.dailyFirstCover,
