@@ -262,11 +262,14 @@ private fun AppContent(graph: AppGraph) {
         settingsRepository?.settings ?: flowOf<AppSettings?>(null)
     }.collectAsStateWithLifecycle(initialValue = null)
     val visibleTabs = remember(storedSettings) {
-        storedSettings?.tabOrder
+        val fromOrder = storedSettings?.tabOrder
             ?.mapNotNull { key -> AppTab.entries.firstOrNull { it.name == key } }
             ?.distinct()
             ?.ifEmpty { AppTab.entries.toList() }
             ?: AppTab.entries.toList()
+        // 「我的」(LIBRARY) 为常驻 Tab：任何配置下强制可见（仅可调整顺序、不可隐藏，
+        // 也兜底修复此前被隐藏的旧配置——设置页开关已禁用，此处为渲染层保证）。
+        if (AppTab.LIBRARY in fromOrder) fromOrder else fromOrder + AppTab.LIBRARY
     }
 
     // 播放层提示（试听 / 已使用第三方音源）：由常驻 MusicController 判定并上抛

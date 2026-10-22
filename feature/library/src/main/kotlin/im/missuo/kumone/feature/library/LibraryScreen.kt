@@ -14,12 +14,14 @@ import android.content.Intent
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.border
+import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalDensity
 import im.missuo.kumone.design.composition.LocalSettingsRepository
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
@@ -31,6 +33,8 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -54,14 +58,11 @@ import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.ExperimentalMaterial3Api
+import androidx.compose.animation.core.Animatable
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.SwipeToDismissBox
-import androidx.compose.material3.SwipeToDismissBoxValue
 import androidx.compose.material3.Text
-import androidx.compose.material3.rememberSwipeToDismissBoxState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -81,8 +82,10 @@ import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlin.math.roundToInt
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import im.missuo.kumone.design.composition.LocalIsLoggedIn
@@ -709,58 +712,88 @@ private fun RecentContent(uiState: LibraryUiState, onNavigate: (String) -> Unit)
 
 /**
  * 可左滑删除的近期曲目行（仅「我的」页「近期」Tab 使用）。
- * 复用「最近播放」页同一套滑动删除方案：向左滑露出红色删除背景，滑到底触发
- * [onDelete]；反向（向右）滑动禁用，避免误触。点击仍走 [ListRow] 的 [onPlay]。
- * 内容层不透明（与页面红底同色），未滑动时不会透出红色删除背景。
+ *
+ * 不用 [androidx.compose.material3.SwipeToDismissBox]：其 AnchoredDraggable 会把带微位移的
+ * 点击误判成删除（项目记忆里的「点击即删」bug），且为遮住删除背景必须内容层不透明 →
+ * 每行变成一条实色块，与红底页面割裂、正是「歌名被做成一条一条」的观感来源。
+ * 此处自绘手势分离：[detectTapGestures] 负责点击播放、[detectHorizontalDragGestures]
+ * 负责向左滑动删除，二者互不误触。行默认透明融入红底，仅左滑时才在右侧露出红色删除
+ * 背景 + 垃圾桶，无实色块、无点击误删。
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 private fun SwipeToDeleteRecentRow(
     track: Track,
     onPlay: () -> Unit,
     onDelete: (Track) -> Unit,
-    modifier: Modifier = Modifier,
 ) {
-    val dismissState = rememberSwipeToDismissBoxState(
-        confirmValueChange = { value ->
-            if (value == SwipeToDismissBoxValue.EndToStart) {
-                onDelete(track)
-                true
-            } else {
-                false
-            }
-        },
-    )
-    SwipeToDismissBox(
-        state = dismissState,
-        enableDismissFromStartToEnd = false,
-        backgroundContent = {
+    val density = LocalDensity.current
+    val scope = rememberCoroutineScope()
+    val swipeOffset = remember { Animatable(0f) }
+    val maxOffset = with(density) { 200.dp.toPx() }   // 最多左移距离（露出删除红条）
+    val threshold = with(density) { 96.dp.toPx() }     // 触发删除的滑动阈值
+
+    Box(modifier = Modifier.fillMaxWidth()) {
+        // 内容行：透明，融入红底页面；随左滑左移，右侧露出删除红条。
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .offset { IntOffset(swipeOffset.value.roundToInt(), 0) }
+                // 点击播放：与滑动手势分离，微位移不会误判为删除。
+                .pointerInput(Unit) {
+                    detectTapGestures(onTap = { onPlay() })
+                }
+                // 向左滑动删除：仅负向（左）生效，右滑被 clamp 归零。
+                .pointerInput(Unit) {
+                    detectHorizontalDragGestures(
+                        onHorizontalDrag = { change, dragAmount ->
+                            val next = (swipeOffset.value + dragAmount).coerceIn(-maxOffset, 0f)
+                            change.consume()
+                            scope.launch { swipeOffset.snapTo(next) }
+                        },
+                        onDragEnd = {
+                            scope.launch {
+                                if (swipeOffset.value <= -threshold) {
+                                    swipeOffset.animateTo(-maxOffset)
+                                    onDelete(track)
+                                } else {
+                                    swipeOffset.animateTo(0f)
+                                }
+                            }
+                        },
+                        onDragCancel = {
+                            scope.launch { swipeOffset.animateTo(0f) }
+                        },
+                    )
+                },
+        ) {
+            // onClick 置空：点击已由外层 detectTapGestures 处理，避免双层点击重复触发。
+            ListRow(
+                coverUrl = track.album.picUrl,
+                title = track.name,
+                subtitle = track.artistNames,
+                onClick = {},
+            )
+        }
+        // 删除红条：仅左滑时出现，固定右侧，宽度随滑动距离增长；内容透明故与红底页面无缝。
+        if (swipeOffset.value < -1f) {
+            val exposed = with(density) { (-swipeOffset.value).toDp() }
             Box(
                 modifier = Modifier
-                    .fillMaxSize()
-                    .background(MaterialTheme.colorScheme.error)
-                    .padding(end = 24.dp),
+                    .align(Alignment.CenterEnd)
+                    .width(exposed)
+                    .fillMaxHeight()
+                    .background(MaterialTheme.colorScheme.error),
                 contentAlignment = Alignment.CenterEnd,
             ) {
                 Icon(
                     imageVector = Icons.Filled.Delete,
                     contentDescription = "删除",
                     tint = MaterialTheme.colorScheme.onError,
+                    modifier = Modifier.padding(end = 24.dp),
                 )
             }
-        },
-        content = {
-            // 内容层不透明：与「我的」页红底同色，避免未滑动时透出红色删除背景。
-            ListRow(
-                coverUrl = track.album.picUrl,
-                title = track.name,
-                subtitle = track.artistNames,
-                onClick = onPlay,
-                modifier = Modifier.background(PageGradient),
-            )
-        },
-        modifier = modifier,
-    )
+        }
+    }
 }
 
 /** 歌单列表（创建 / 收藏）。 */

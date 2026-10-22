@@ -109,9 +109,12 @@ class SettingsViewModel(
     }
 
     /** 当前可见 Tab（基于 scope 内最新 settings 值派生；空 tabOrder = 全部默认）。 */
-    private fun currentVisibleTabs(): List<NavTabOption> =
-        _uiState.value.settings.tabOrder.mapNotNull { NavTabOption.fromKey(it) }
+    private fun currentVisibleTabs(): List<NavTabOption> {
+        val fromOrder = _uiState.value.settings.tabOrder.mapNotNull { NavTabOption.fromKey(it) }
             .ifEmpty { NavTabOption.entries.toList() }
+        // 「我的」(LIBRARY) 为常驻 Tab，任何配置下强制可见（防止旧配置遗漏）。
+        return if (NavTabOption.LIBRARY in fromOrder) fromOrder else fromOrder + NavTabOption.LIBRARY
+    }
 
     /**
      * 切换某个 Tab 的可见性（[show] = true 显示 / false 隐藏）。
@@ -121,6 +124,8 @@ class SettingsViewModel(
      * 计算收敛到 ViewModel：基于 scope 内最新 settings 值计算新 tabOrder 再写入。
      */
     fun toggleNavTab(option: NavTabOption, show: Boolean) = scope.launch {
+        // 「我的」(LIBRARY) 为常驻 Tab，不可隐藏（设置页开关已禁用，此处再兜底）。
+        if (option == NavTabOption.LIBRARY && !show) return@launch
         val visible = currentVisibleTabs()
         // 至少保留一个可见 Tab（隐藏最后一项直接忽略，兜底 UI 守卫）。
         if (!show && visible.size <= 1) return@launch

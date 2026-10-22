@@ -135,9 +135,12 @@ fun SettingsScreen(
     val settings = uiState.settings
 
     // 底部导航栏当前可见 Tab（按保存的顺序；未配置时为全部默认顺序）。
+    // 「我的」(LIBRARY) 为常驻 Tab：任何配置下强制可见（仅可调整顺序、不可隐藏），
+    // 兜底修复此前被隐藏的旧配置，避免行内出现「已隐藏 + 开关强制开启」的矛盾展示。
     val visibleTabs = remember(settings.tabOrder) {
-        settings.tabOrder.mapNotNull { NavTabOption.fromKey(it) }
+        val fromOrder = settings.tabOrder.mapNotNull { NavTabOption.fromKey(it) }
             .ifEmpty { NavTabOption.entries.toList() }
+        if (NavTabOption.LIBRARY in fromOrder) fromOrder else fromOrder + NavTabOption.LIBRARY
     }
 
     // 主题与挂件：展开态 + 当前套件名（未配置回落默认）。
@@ -567,6 +570,7 @@ private fun NavBarConfigSection(
     val rows = visibleTabs.map { it to true } + hiddenTabs.map { it to false }
     Column {
         rows.forEach { (option, visible) ->
+            val isLocked = option == NavTabOption.LIBRARY
             val visibleIndex = visibleTabs.indexOf(option)
             Row(
                 modifier = Modifier
@@ -576,9 +580,14 @@ private fun NavBarConfigSection(
             ) {
                 Column(modifier = Modifier.weight(1f)) {
                     Text(text = option.label, style = MaterialTheme.typography.bodyLarge)
-                    if (!visible) {
-                        Text(
+                    when {
+                        !visible -> Text(
                             text = "已隐藏",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        )
+                        isLocked -> Text(
+                            text = "不可隐藏，仅可调整顺序",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
@@ -597,11 +606,10 @@ private fun NavBarConfigSection(
                     Icon(Icons.Filled.KeyboardArrowDown, contentDescription = "下移")
                 }
                 Switch(
-                    checked = visible,
-                    // 原 bug：守卫写反（enabled = visible || visibleTabs.size > 1）——
-                    // 唯一可见 Tab 时反而可关，newOrder 空串导致配置整体重置。
-                    // 正确语义：只禁止「关闭最后一个可见项」，允许随时重新打开隐藏项。
-                    enabled = !visible || visibleTabs.size > 1,
+                    checked = visible || isLocked,
+                    // 「我的」(LIBRARY) 为常驻 Tab：开关强制开启且禁用（仅可调整顺序、
+                    // 不可隐藏）；其余 Tab 仍按原语义——只禁止「关闭最后一个可见项」。
+                    enabled = !isLocked && (!visible || visibleTabs.size > 1),
                     onCheckedChange = { onToggle(option, it) },
                 )
             }
