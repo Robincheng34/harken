@@ -3,6 +3,7 @@
 package im.missuo.kumone.design.component
 
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -21,9 +22,12 @@ import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
+import coil.compose.AsyncImage
 import im.missuo.kumone.net.model.AlbumRef
 import im.missuo.kumone.net.model.ArtistRef
 import im.missuo.kumone.net.model.Formatters
@@ -59,6 +63,17 @@ fun TrackRow(
                 style = MaterialTheme.typography.labelMedium,
                 color = if (isCurrent) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.width(24.dp),
+            )
+        }
+
+        track.album.picUrl?.let { albumUrl ->
+            AsyncImage(
+                model = Formatters.resizedImageURL(albumUrl, 96),
+                contentDescription = null,
+                contentScale = ContentScale.Crop,
+                modifier = Modifier
+                    .size(36.dp)
+                    .clip(RoundedCornerShape(6.dp)),
             )
         }
 
