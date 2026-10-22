@@ -35,6 +35,7 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
+import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -46,6 +47,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.graphics.asAndroidBitmap
@@ -66,6 +68,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.toIntSize
 import android.graphics.Bitmap
@@ -375,7 +378,7 @@ private fun TabsScreen(
         selectedTab = tabs[pagerState.currentPage]
     }
 
-    val behindLayer = rememberGraphicsLayer()
+    val lensLayer = rememberGraphicsLayer()
     var behindBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
     var screenHeightPx by remember { mutableStateOf(0) }
     var screenWidthPx by remember { mutableStateOf(0) }
@@ -397,15 +400,18 @@ private fun TabsScreen(
             Layout.tabBarHeight + Layout.bottomMargin
         }
 
-    // 滑动镜片折射源（仅 API33+）。采集策略为「按需」而非旧版 15fps 常驻回读
-    // （那是列表滚动掉帧的根因，已废弃）：
-    // ① 尺寸就绪后采一帧（静止镜片有折射源）；② 选中 Tab 变化时突发采集 ~400ms，
-    // 覆盖镜片滑动动画；③ 空闲期每 2s 低频刷新一帧（仅 Pager 非滚动时）。
-    // 列表滚动期间零采集，滚动性能不受影响；镜片静止时折射源允许略微滞后。
+    // 滑动镜片折射源（仅 API33+）。方案依据 IT之家逆向调研
+    // （H:\apk-work\liquid_glass_bottombar_research.md）：IT之家本体用 RenderNode
+    // 零回读（每帧 GPU 命令录制 + RenderEffect 链消费，isDirty 门控）；纯 Compose
+    // 无法把 GraphicsLayer 喂给 RuntimeShader（无公开 API），View 桥是第二阶段。
+    // 本阶段在现有 BitmapShader 架构内做到「回读量 ≈14 倍下降 + 实时采集」：
+    // 折射源图层只录制「底栏背后那一小条」（尺寸=底栏矩形，~1.3MB），恢复 15fps
+    // 连续采集——旧 15fps 整屏回读 ≈270MB/s（滚动掉帧 50% 的根因）降为 ~20MB/s，
+    // 镜片内容实时更新：滞后烙印与滑动不流畅同时消除。
     //
-    // 位图按「底栏矩形」裁剪（与 GlassTabBar 内滑动镜片的本地坐标 1:1 对齐：
-    // 镜片 x=0 ↔ 底栏左缘），几何解析必须在可组合作用域完成——
-    // LaunchedEffect 协程体内不能读取 CompositionLocal。
+    // 位图与 GlassTabBar 内滑动镜片的本地坐标 1:1 对齐（图层=底栏矩形，镜片 x=0 ↔
+    // 底栏左缘）。几何解析必须在可组合作用域完成——LaunchedEffect 协程体内不能
+    // 读取 CompositionLocal。
     val density = LocalDensity.current
     val barLeftPx = with(density) { 12.dp.toPx() }.roundToInt()
     val barTopPx = screenHeightPx - navInsetPx -
@@ -417,57 +423,59 @@ private fun TabsScreen(
     suspend fun captureLensSource() {
         if (Build.VERSION.SDK_INT < 33) return
         try {
-            val src = behindLayer.toImageBitmap().asAndroidBitmap()
-            val left = barLeftPx.coerceIn(0, src.width)
-            val top = barTopPx.coerceIn(0, src.height)
-            val w = barWidthPx.coerceAtMost(src.width - left)
-            val h = barHeightPx.coerceAtMost(src.height - top)
-            if (w > 0 && h > 0 && left + w <= src.width && top + h <= src.height) {
-                // AGSL 输入着色器无法采样 HARDWARE 位图（GPU 显存，rmContent.eval
-                // 恒返回黑色）——必须复制为软件位图（历史 bug 的修复，勿删）。
-                behindBitmap = Bitmap
-                    .createBitmap(src, left, top, w, h)
-                    .copy(Bitmap.Config.ARGB_8888, false)
-                    .asImageBitmap()
-            }
+            // 图层表面就是条带本身（record 尺寸=底栏矩形，见 captureModifier）。
+            // AGSL 输入着色器无法采样 HARDWARE 位图（GPU 显存，rmContent.eval 恒黑）
+            // ——必须复制为软件位图（历史 bug 的修复，勿删）。
+            behindBitmap = lensLayer.toImageBitmap().asAndroidBitmap()
+                .copy(Bitmap.Config.ARGB_8888, false)
+                .asImageBitmap()
         } catch (e: Exception) {
             Log.i(TAG_LENS, "lens capture error: ${e.message}")
         }
     }
 
-    LaunchedEffect(screenWidthPx, screenHeightPx) {
-        captureLensSource()
-    }
-    LaunchedEffect(selectedTab, screenWidthPx, screenHeightPx) {
-        repeat(10) {
+    // 15fps 连续采集：镜像 IT之家「每帧更新折射源」的观感（滚动/滑动实时跟随，
+    // 不再烙旧帧）。App 退到后台（currentState < STARTED）暂停采集省电。
+    val lifeOwner = LocalLifecycleOwner.current
+    val lifeState by lifeOwner.lifecycle.currentStateFlow.collectAsState()
+    LaunchedEffect(lifeState, screenWidthPx, screenHeightPx) {
+        if (!lifeState.isAtLeast(Lifecycle.State.STARTED)) return@LaunchedEffect
+        while (lifeState.isAtLeast(Lifecycle.State.STARTED)) {
             captureLensSource()
-            delay(40)
-        }
-    }
-    LaunchedEffect(screenWidthPx, screenHeightPx) {
-        while (true) {
-            delay(2000)
-            if (!pagerState.isScrollInProgress) captureLensSource()
+            delay(66)
         }
     }
 
     // 截帧修饰符仅 API33+ 挂载：API<33 设备 behindBitmap 恒为 null、不使用镜片，
-    // 若仍每帧把整屏内容重录进离屏 GraphicsLayer 再合成回来，纯属浪费 GPU，
-    // 构成老设备性能回归。门控后 API<33 内容正常直绘（零回归），API33+ 行为不变。
+    // 不做任何录制（零回归）。
+    //
+    // 必须调用 DrawScope.record(layer) 扩展（而非 GraphicsLayer.record(density,
+    // layoutDirection, size, block) 原生的四参重载）：扩展内部会把本 DrawScope 的
+    // canvas 临时切换为图层的录制画布，drawContent() 才会真正画进图层。
     val captureModifier = if (Build.VERSION.SDK_INT >= 33) {
-        // 将内容的绘制命令重定向到 behindLayer，再把它绘制到可见画布
-        // （Compose 1.7 官方捕获模式；位图仅在 API33+ 的 LaunchedEffect 中读取）。
-        //
-        // 必须调用 DrawScope.record(layer) 扩展（而非 GraphicsLayer.record(density,
-        // layoutDirection, size, block) 原生的四参重载）：扩展内部会把本 DrawScope 的
-        // canvas 临时切换为图层的录制画布，drawContent() 才会真正画进图层；四参重载的
-        // 区块接收者是图层自己的 scope，外层 drawContent() 仍画到屏幕，图层恒为空
-        // （磨砂磨不到内容、镜片采样到透明→渲染成黑药丸）。
         Modifier.drawWithContent {
-            behindLayer.record {
-                this@drawWithContent.drawContent()
+            // 只把「底栏背后那一小条」录进折射源图层：record 尺寸 = 底栏矩形，
+            // 内容按矩形左上角平移对齐 → 图层表面就是条带本身，回读量最小化。
+            // GPU 命令录制零像素搬运，每帧重录保证折射源随时新鲜（等价 IT之家
+            // 的 isDirty 重录语义）。
+            if (barWidthPx > 0 && barHeightPx > 0) {
+                lensLayer.record(IntSize(barWidthPx, barHeightPx)) {
+                    translate(-barLeftPx.toFloat(), -barTopPx.toFloat()) {
+                        this@drawWithContent.drawContent()
+                    }
+                }
             }
-            drawLayer(behindLayer)
+            // 内容正常直绘（磨砂层已禁用，无消费方需要整屏图层）。
+            this@drawWithContent.drawContent()
+            // 把条带图层按原屏幕位置画回：内容与该区域已绘像素一致（同一帧同一内容），
+            // 视觉无差；但「只录制不显示」的 GraphicsLayer 不会被 GPU 解析表面，
+            // toImageBitmap 回读恒为空 → 镜片渲染成黑药丸（实测）。原位画回促使
+            // 图层解析，回读才有内容。
+            if (barWidthPx > 0 && barHeightPx > 0) {
+                translate(barLeftPx.toFloat(), barTopPx.toFloat()) {
+                    drawLayer(lensLayer)
+                }
+            }
         }
     } else {
         Modifier
@@ -621,13 +629,10 @@ private fun TabsScreen(
                             )
                         }
                         .drawWithContent {
-                            // behindLayer 为整屏内容（原点在窗口 0,0）；平移 -frostOrigin 后，
-                            // 本 Box 的视口正好落在「底栏背后」的那块内容上，再被外层模糊+圆角裁剪。
-                            if (frostOrigin != Offset.Zero) {
-                                translate(-frostOrigin.x, -frostOrigin.y) {
-                                    drawLayer(behindLayer)
-                                }
-                            }
+                            // 原实现依赖整屏 behindLayer 图层（已随折射源改造移除，
+                            // 现折射源为条带级 lensLayer）。重启用前需按
+                            // H://apk-work//liquid_glass_bottombar_research.md 的
+                            // RenderNode 方案重建管线，此处仅保留自身内容兜底。
                             drawContent()
                         },
                 )
