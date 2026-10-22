@@ -16,13 +16,13 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.Text
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -43,6 +43,7 @@ import im.missuo.kumone.design.component.staggeredAppearance
 import im.missuo.kumone.design.composition.LocalNeteaseApi
 import im.missuo.kumone.design.composition.LocalPlaybackCommands
 import im.missuo.kumone.design.navigation.Destinations
+import im.missuo.kumone.design.theme.GlassTopAppBar
 import im.missuo.kumone.design.theme.Layout
 import im.missuo.kumone.feature.explore.components.CategoryChips
 import im.missuo.kumone.feature.explore.components.PlaylistGrid
@@ -106,101 +107,115 @@ fun ExploreScreen(navController: NavHostController) {
         if (shouldLoadMore) viewModel.loadMore()
     }
 
-    if (uiState.selectedCategory == CATEGORY_TOPLISTS) {
-        // iOS: ToplistGrid(toplists:).padding(.horizontal, contentInset)
-        LazyVerticalGrid(
-            columns = GridCells.Adaptive(minSize = 300.dp),
-            state = toplistGridState,
-            modifier = Modifier.fillMaxSize(),
-            contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                start = Layout.contentInset,
-                end = Layout.contentInset,
-                top = 8.dp,
-                bottom = 8.dp,
-            ),
-            horizontalArrangement = Arrangement.spacedBy(20.dp),
-            verticalArrangement = Arrangement.spacedBy(20.dp),
-        ) {
-            item(span = { GridItemSpan(maxLineSpan) }, key = "chips") {
-                CategoryChips(
-                    categories = uiState.categories,
-                    selected = uiState.selectedCategory,
-                    onSelect = { viewModel.select(it) },
-                    // statusBarsPadding：把顶部分类行推到系统状态栏之下，消除与状态栏的重叠。
-                    modifier = Modifier.statusBarsPadding().padding(top = 8.dp),
-                )
-            }
-            itemsIndexed(uiState.toplists, key = { _, item -> item.id }) { _, toplist ->
-                ToplistRowItem(
-                    toplist = toplist,
-                    onOpen = onOpenPlaylist,
-                )
-            }
-            item(span = { GridItemSpan(maxLineSpan) }, key = "clearance") {
-                Spacer(Modifier.height(Layout.fullChromeClearance))
-            }
-        }
-        return
-    }
-
-    // iOS: CardGrid { CoverCardBody(...) } + 底部加载态 / 触发位。
-    LazyVerticalGrid(
-        columns = GridCells.Adaptive(minSize = 140.dp), // 架构文档 T19：minWidth 140dp
-        state = playlistGridState,
-        modifier = Modifier.fillMaxSize(),
-        contentPadding = androidx.compose.foundation.layout.PaddingValues(
-            start = Layout.contentInset,
-            end = Layout.contentInset,
-            top = 8.dp,
-            bottom = 8.dp,
-        ),
-        horizontalArrangement = Arrangement.spacedBy(16.dp),
-        verticalArrangement = Arrangement.spacedBy(20.dp),
-    ) {
-        item(span = { GridItemSpan(maxLineSpan) }, key = "chips") {
-            CategoryChips(
-                categories = uiState.categories,
-                selected = uiState.selectedCategory,
-                onSelect = { viewModel.select(it) },
-                modifier = Modifier.padding(top = 8.dp),
-            )
-        }
-
-        itemsIndexed(uiState.playlists, key = { _, playlist -> playlist.id }) { index, playlist ->
-            im.missuo.kumone.design.component.CoverCard(
-                imageUrl = Formatters.resizedImageURL(playlist.coverURL, 384),
-                contentDescription = playlist.name,
-                title = playlist.name,
-                subtitle = playlist.copywriter,
-                size = null,
-                playCount = playlist.playCount,
-                onPlay = { onPlayPlaylist(playlist.id) },
-                onClick = { onOpenPlaylist(playlist.id) },
-                modifier = Modifier.staggeredAppearance(index = index % 10),
-            )
-        }
-
-        // iOS: isLoading -> ProgressView；否则 hasMore 时空位触发加载。
-        if (uiState.isLoading) {
-            item(span = { GridItemSpan(maxLineSpan) }, key = "loading") {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .padding(vertical = 20.dp),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    CircularProgressIndicator(
-                        modifier = Modifier.size(24.dp),
-                        strokeWidth = 2.dp,
-                        color = MaterialTheme.colorScheme.primary,
+    // 顶部结构重做：玻璃顶栏（「发现」标题，M3 TopAppBar 自带状态栏 insets）
+    // + 固定分类胶囊行（不随内容滚走），下方内容各自滚动 —— 对齐 App 的液态玻璃
+    // 设计语言，且任何分类下都不会与系统状态栏重叠（旧实现仅排行榜分支有留白）。
+    Column(modifier = Modifier.fillMaxSize()) {
+        ExploreHeader(
+            categories = uiState.categories,
+            selected = uiState.selectedCategory,
+            onSelect = { viewModel.select(it) },
+        )
+        if (uiState.selectedCategory == CATEGORY_TOPLISTS) {
+            // iOS: ToplistGrid(toplists:).padding(.horizontal, contentInset)
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(minSize = 300.dp),
+                state = toplistGridState,
+                modifier = Modifier.weight(1f),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                    start = Layout.contentInset,
+                    end = Layout.contentInset,
+                    top = 12.dp,
+                    bottom = 8.dp,
+                ),
+                horizontalArrangement = Arrangement.spacedBy(20.dp),
+                verticalArrangement = Arrangement.spacedBy(20.dp),
+            ) {
+                itemsIndexed(uiState.toplists, key = { _, item -> item.id }) { _, toplist ->
+                    ToplistRowItem(
+                        toplist = toplist,
+                        onOpen = onOpenPlaylist,
                     )
+                }
+                item(span = { GridItemSpan(maxLineSpan) }, key = "clearance") {
+                    Spacer(Modifier.height(Layout.fullChromeClearance))
+                }
+            }
+        } else {
+            // iOS: CardGrid { CoverCardBody(...) } + 底部加载态 / 触发位。
+            LazyVerticalGrid(
+                columns = GridCells.Adaptive(minSize = 140.dp), // 架构文档 T19：minWidth 140dp
+                state = playlistGridState,
+                modifier = Modifier.weight(1f),
+                contentPadding = androidx.compose.foundation.layout.PaddingValues(
+                    start = Layout.contentInset,
+                    end = Layout.contentInset,
+                    top = 12.dp,
+                    bottom = 8.dp,
+                ),
+                horizontalArrangement = Arrangement.spacedBy(16.dp),
+                verticalArrangement = Arrangement.spacedBy(20.dp),
+            ) {
+                itemsIndexed(uiState.playlists, key = { _, playlist -> playlist.id }) { index, playlist ->
+                    im.missuo.kumone.design.component.CoverCard(
+                        imageUrl = Formatters.resizedImageURL(playlist.coverURL, 384),
+                        contentDescription = playlist.name,
+                        title = playlist.name,
+                        subtitle = playlist.copywriter,
+                        size = null,
+                        playCount = playlist.playCount,
+                        onPlay = { onPlayPlaylist(playlist.id) },
+                        onClick = { onOpenPlaylist(playlist.id) },
+                        modifier = Modifier.staggeredAppearance(index = index % 10),
+                    )
+                }
+
+                // iOS: isLoading -> ProgressView；否则 hasMore 时空位触发加载。
+                if (uiState.isLoading) {
+                    item(span = { GridItemSpan(maxLineSpan) }, key = "loading") {
+                        Box(
+                            modifier = Modifier
+                                .fillMaxSize()
+                                .padding(vertical = 20.dp),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(24.dp),
+                                strokeWidth = 2.dp,
+                                color = MaterialTheme.colorScheme.primary,
+                            )
+                        }
+                    }
+                }
+
+                item(span = { GridItemSpan(maxLineSpan) }, key = "clearance") {
+                    Spacer(Modifier.height(Layout.fullChromeClearance))
                 }
             }
         }
+    }
+}
 
-        item(span = { GridItemSpan(maxLineSpan) }, key = "clearance") {
-            Spacer(Modifier.height(Layout.fullChromeClearance))
-        }
+/**
+ * 发现页顶部：玻璃顶栏（「发现」标题，M3 TopAppBar 自带状态栏 insets，永不与
+ * 系统状态栏重叠）+ 固定分类胶囊行（横滑切换分类，不随内容滚动）。
+ */
+@Composable
+private fun ExploreHeader(
+    categories: List<String>,
+    selected: String,
+    onSelect: (String) -> Unit,
+) {
+    Column(modifier = Modifier.fillMaxWidth()) {
+        GlassTopAppBar(
+            title = { Text(text = stringResource(R.string.explore_title)) },
+        )
+        CategoryChips(
+            categories = categories,
+            selected = selected,
+            onSelect = onSelect,
+            modifier = Modifier.padding(vertical = 8.dp),
+        )
     }
 }
 

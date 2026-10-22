@@ -12,8 +12,6 @@
 package im.missuo.kumone.ui
 
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.FastOutSlowInEasing
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -93,11 +91,9 @@ import im.missuo.kumone.design.composition.LocalSettingsRepository
 import im.missuo.kumone.design.composition.LocalToastState
 import im.missuo.kumone.design.composition.LocalUpdateRepository
 import im.missuo.kumone.design.navigation.Destinations
+import im.missuo.kumone.design.theme.AppAnimations
 import im.missuo.kumone.design.theme.Layout
 import im.missuo.kumone.design.theme.KumoneTheme
-import im.missuo.kumone.design.theme.QUICK_MILLIS
-import im.missuo.kumone.design.theme.SMOOTH_MILLIS
-import im.missuo.kumone.design.theme.STANDARD_MILLIS
 import im.missuo.kumone.di.AppGraph
 import im.missuo.kumone.di.LoginState
 import im.missuo.kumone.feature.detail.detailGraph
@@ -315,10 +311,16 @@ private fun AppContent(graph: AppGraph) {
             )
 
             // 覆盖层：详情 / 登录 / 全屏播放 / 设置 / P1。
+            // 转场统一取自 AppAnimations：进场淡入+轻微上滑（expo-out）、出场淡出、
+            // 返回互为镜像。原实现未设置任何转场（库默认），全局观感割裂。
             NavHost(
                 navController = overlayNav,
                 startDestination = Destinations.NONE,
                 modifier = Modifier.fillMaxSize(),
+                enterTransition = { AppAnimations.navEnter() },
+                exitTransition = { AppAnimations.navExit() },
+                popEnterTransition = { AppAnimations.navPopEnter() },
+                popExitTransition = { AppAnimations.navPopExit() },
             ) {
                 composable(Destinations.NONE) { Box(Modifier.fillMaxSize()) }
                 homeGraph(overlayNav)
@@ -357,10 +359,11 @@ private fun TabsScreen(
     val pagerState = rememberPagerState(
         initialPage = tabs.indexOf(selectedTab).coerceAtLeast(0),
     ) { tabs.size }
-    // 点击药丸 / 子页请求切 tab：更新选中态并把 Pager 翻到对应页（点击 → 翻页）。
+    // 点击药丸 / 子页请求切 tab：更新选中态并把 Pager 平滑翻到对应页
+    // （animateScrollToPage：点击切 Tab 有跟手过渡动画；原 scrollToPage 是瞬间硬切）。
     val onSelectTab: (AppTab) -> Unit = { tab ->
         selectedTab = tab
-        scope.launch { pagerState.scrollToPage(tabs.indexOf(tab)) }
+        scope.launch { pagerState.animateScrollToPage(tabs.indexOf(tab)) }
     }
 
     // 设置改了 tabOrder 导致当前 Tab 被隐藏时，回落到第一个可见 Tab，
@@ -544,22 +547,18 @@ private fun TabsScreen(
                 // 打开播放页统一走 AppContent 注入的带守卫入口（原 bug：直接
                 // navigate 无 currentDestination 守卫，双击重复入栈播放页）。
                 val openNowPlaying = LocalOpenNowPlaying.current
+                // 进出场统一取 AppAnimations：进场 expo-out 上滑+淡入（300ms）、
+                // 出场 ease-in 下滑+淡出（220ms，比入场快）。
                 AnimatedVisibility(
                     visible = currentTrackId != null && !miniPlayerCollapsed,
                     enter = slideInVertically(
+                        animationSpec = AppAnimations.enter(),
                         initialOffsetY = { it },
-                        animationSpec = tween(
-                            durationMillis = SMOOTH_MILLIS,
-                            easing = FastOutSlowInEasing,
-                        ),
-                    ) + fadeIn(animationSpec = tween(durationMillis = STANDARD_MILLIS)),
+                    ) + fadeIn(animationSpec = AppAnimations.enter()),
                     exit = slideOutVertically(
+                        animationSpec = AppAnimations.exit(),
                         targetOffsetY = { it },
-                        animationSpec = tween(
-                            durationMillis = SMOOTH_MILLIS,
-                            easing = FastOutSlowInEasing,
-                        ),
-                    ) + fadeOut(animationSpec = tween(durationMillis = QUICK_MILLIS)),
+                    ) + fadeOut(animationSpec = AppAnimations.exit()),
                 ) {
                     MiniPlayerBar(
                         // 复用带 currentDestination 守卫的入口（原 bug：直接
@@ -575,19 +574,13 @@ private fun TabsScreen(
                     AnimatedVisibility(
                         visible = currentTrackId != null && miniPlayerCollapsed && collapseHandleEnabled,
                         enter = slideInVertically(
+                            animationSpec = AppAnimations.enter(),
                             initialOffsetY = { it },
-                            animationSpec = tween(
-                                durationMillis = SMOOTH_MILLIS,
-                                easing = FastOutSlowInEasing,
-                            ),
-                        ) + fadeIn(animationSpec = tween(durationMillis = STANDARD_MILLIS)),
+                        ) + fadeIn(animationSpec = AppAnimations.enter()),
                         exit = slideOutVertically(
+                            animationSpec = AppAnimations.exit(),
                             targetOffsetY = { it },
-                            animationSpec = tween(
-                                durationMillis = SMOOTH_MILLIS,
-                                easing = FastOutSlowInEasing,
-                            ),
-                        ) + fadeOut(animationSpec = tween(durationMillis = QUICK_MILLIS)),
+                        ) + fadeOut(animationSpec = AppAnimations.exit()),
                     ) {
                         CollapsedHandle(onResume = { miniPlayerCollapsed = false })
                     }

@@ -37,6 +37,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import im.missuo.kumone.design.theme.AppAnimations
+import im.missuo.kumone.design.component.staggeredAppearance
 import im.missuo.kumone.design.theme.Layout
 import im.missuo.kumone.feature.explore.R
 
@@ -59,28 +60,31 @@ fun CategoryChips(
         modifier = modifier
             .horizontalScroll(rememberScrollState())
             .padding(vertical = 2.dp),
-        horizontalArrangement = Arrangement.spacedBy(8.dp),
+        horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         // iOS 边缘留白：max(0, contentInset - spacing)。
-        Spacer(Modifier.width(Layout.contentInset - 8.dp))
-        categories.forEach { category ->
+        Spacer(Modifier.width(Layout.contentInset - 10.dp))
+        categories.forEachIndexed { index, category ->
             CategoryChip(
                 label = stringResource(categoryLabelRes(category)),
                 selected = category == selected,
                 onClick = { onSelect(category) },
+                // 入场逐个延迟浮现（stagger 令牌：40ms/个，上限 400ms）。
+                modifier = Modifier.staggeredAppearance(index = index % 10),
             )
         }
-        Spacer(Modifier.width(Layout.contentInset - 8.dp))
+        Spacer(Modifier.width(Layout.contentInset - 10.dp))
     }
 }
 
-/** 单个分类 chip（iOS `ChipButtonStyle` 1:1 移植）。 */
+/** 单个分类 chip（iOS `ChipButtonStyle` 1:1 移植；按压缩放无过冲，全局动效统一）。 */
 @Composable
 private fun CategoryChip(
     label: String,
     selected: Boolean,
     onClick: () -> Unit,
+    modifier: Modifier = Modifier,
 ) {
     val interactionSource = remember { MutableInteractionSource() }
     val pressed by interactionSource.collectIsPressedAsState()
@@ -90,25 +94,25 @@ private fun CategoryChip(
         label = "chipPressScale",
     )
     Row(
-        modifier = Modifier
+        modifier = modifier
             .scale(scale)
             .clip(RoundedCornerShape(percent = 50)) // iOS: Capsule()
             .background(
                 if (selected) MaterialTheme.colorScheme.primary
-                else MaterialTheme.colorScheme.primary.copy(alpha = 0.06f),
+                else MaterialTheme.colorScheme.primary.copy(alpha = 0.08f),
             )
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
                 onClick = onClick,
             )
-            .padding(horizontal = 14.dp, vertical = 8.dp),
+            .padding(horizontal = 16.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Text(
             text = label,
             color = if (selected) Color.White else MaterialTheme.colorScheme.primary,
-            fontSize = 12.sp, // iOS: system(size: 12)
+            fontSize = 13.sp,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
         )
     }

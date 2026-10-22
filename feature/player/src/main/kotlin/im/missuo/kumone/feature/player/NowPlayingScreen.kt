@@ -20,7 +20,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.expandVertically
 import androidx.compose.animation.fadeIn
@@ -90,6 +89,7 @@ import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import coil.compose.AsyncImage
 import kotlinx.coroutines.delay
 import im.missuo.kumone.design.composition.LocalIsLoggedIn
+import im.missuo.kumone.design.theme.AppAnimations
 import im.missuo.kumone.design.composition.LocalMusicController
 import im.missuo.kumone.design.composition.LocalNeteaseApi
 import im.missuo.kumone.design.composition.LocalDownloadRepository
@@ -427,15 +427,15 @@ fun NowPlayingScreen(
                     AnimatedContent(
                         targetState = centerMode,
                         transitionSpec = {
-                            (fadeIn(animationSpec = tween(380, easing = FastOutSlowInEasing)) +
+                            (fadeIn(animationSpec = AppAnimations.smooth()) +
                                 scaleIn(
                                     initialScale = 0.94f,
-                                    animationSpec = tween(380, easing = FastOutSlowInEasing),
+                                    animationSpec = AppAnimations.smooth(),
                                 )) togetherWith
-                                (fadeOut(animationSpec = tween(260, easing = FastOutSlowInEasing)) +
+                                (fadeOut(animationSpec = AppAnimations.exit()) +
                                     scaleOut(
                                         targetScale = 1.05f,
-                                        animationSpec = tween(260, easing = FastOutSlowInEasing),
+                                        animationSpec = AppAnimations.exit(),
                                     ))
                         },
                         label = "nowPlayingCenter",
@@ -467,17 +467,17 @@ fun NowPlayingScreen(
 
                 // 3-5. 社交行 / 控制条 / 五图标行：沉浸歌词模式下整体收起，
                 // 中间歌词区（weight 1f）随之占满整屏；退出沉浸时平滑回归。
-                // 收起 = 向下淡出收缩、回归 = 自底向上展开，420ms 标准缓动。
+                // 收起 = 向下淡出收缩（出场 220ms）、回归 = 自底向上展开（进场 300ms）。
                 AnimatedVisibility(
                     visible = !uiState.isLyricsImmersive,
-                    enter = fadeIn(animationSpec = tween(360, easing = FastOutSlowInEasing)) +
+                    enter = fadeIn(animationSpec = AppAnimations.enter()) +
                         expandVertically(
-                            animationSpec = tween(420, easing = FastOutSlowInEasing),
+                            animationSpec = AppAnimations.enter(),
                             expandFrom = Alignment.Bottom,
                         ),
-                    exit = fadeOut(animationSpec = tween(260, easing = FastOutSlowInEasing)) +
+                    exit = fadeOut(animationSpec = AppAnimations.exit()) +
                         shrinkVertically(
-                            animationSpec = tween(420, easing = FastOutSlowInEasing),
+                            animationSpec = AppAnimations.exit(),
                             shrinkTowards = Alignment.Bottom,
                         ),
                 ) {

@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!-- 发现页（feature/explore）中文文案真源（硬约束 11）。 -->
 <resources>
+    <string name="explore_title">发现</string>
     <!-- 分区与网格 -->
     <string name="explore_loading_more">加载中…</string>
     <string name="explore_network_error">网络连接失败</string>

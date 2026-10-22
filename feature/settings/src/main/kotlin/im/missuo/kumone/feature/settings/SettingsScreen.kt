@@ -22,7 +22,6 @@ import androidx.compose.animation.shrinkVertically
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.core.tween
-import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
 import androidx.compose.material.icons.filled.KeyboardArrowDown
@@ -36,6 +35,7 @@ import androidx.compose.material3.RadioButton
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Switch
 import androidx.compose.material3.Text
+import im.missuo.kumone.design.theme.AppAnimations
 import im.missuo.kumone.design.theme.GlassTopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
@@ -549,8 +549,8 @@ private fun SettingsGroup(
         SettingsExpandRow(title = title, subtitle = "", expanded = expanded, onToggle = onToggle)
         AnimatedVisibility(
             visible = expanded,
-            enter = expandVertically(animationSpec = tween(220, easing = FastOutSlowInEasing)) + fadeIn(tween(160)),
-            exit = shrinkVertically(animationSpec = tween(180, easing = FastOutSlowInEasing)) + fadeOut(tween(120)),
+            enter = expandVertically(animationSpec = AppAnimations.enter()) + fadeIn(AppAnimations.enter()),
+            exit = shrinkVertically(animationSpec = AppAnimations.exit()) + fadeOut(AppAnimations.exit()),
         ) {
             Column {
                 content()

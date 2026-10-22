@@ -14,7 +14,6 @@ package im.missuo.kumone.feature.library
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.foundation.background
@@ -71,6 +70,7 @@ import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import im.missuo.kumone.design.composition.LocalNeteaseApi
 import im.missuo.kumone.design.navigation.Destinations
+import im.missuo.kumone.design.theme.AppAnimations
 import im.missuo.kumone.net.model.UserProfile
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -120,7 +120,7 @@ fun LibraryDrawerScreen(
 
     val scrimAlpha by animateFloatAsState(
         targetValue = if (shown) 1f else 0f,
-        animationSpec = tween(220),
+        animationSpec = AppAnimations.quick(),
         label = "drawerScrim",
     )
 
@@ -138,8 +138,8 @@ fun LibraryDrawerScreen(
 
         AnimatedVisibility(
             visible = shown,
-            enter = slideInHorizontally(animationSpec = tween(260)) { -it },
-            exit = slideOutHorizontally(animationSpec = tween(220)) { -it },
+            enter = slideInHorizontally(animationSpec = AppAnimations.enter()) { -it },
+            exit = slideOutHorizontally(animationSpec = AppAnimations.exit()) { -it },
             modifier = Modifier.align(Alignment.CenterStart),
         ) {
             DrawerPanel(
