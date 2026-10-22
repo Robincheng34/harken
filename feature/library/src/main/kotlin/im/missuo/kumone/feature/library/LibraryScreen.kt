@@ -335,9 +335,12 @@ private fun LoggedInContent(
 
         when (selectedTab) {
             0 -> {
+                // 我喜欢的音乐（specialType==5）由 ViewModel 排除在 createdPlaylists 之外，
+                // 这里把它拼回创建列表首位，并让「创建 N」计数一并包含它。
+                val createdWithLiked = listOfNotNull(uiState.likedSongs) + uiState.createdPlaylists
                 MusicSubTabsRow(
                     selected = musicTab,
-                    createdCount = uiState.createdPlaylists.size,
+                    createdCount = createdWithLiked.size,
                     subscribedCount = uiState.subscribedPlaylists.size,
                     albumCount = uiState.likedAlbums.size,
                     onSelect = { musicTab = it },
@@ -345,7 +348,7 @@ private fun LoggedInContent(
                 )
                 when (musicTab) {
                     0 -> RecentContent(uiState = uiState, onNavigate = onNavigate, guard = guard)
-                    1 -> PlaylistRows(playlists = uiState.createdPlaylists, onNavigate = onNavigate)
+                    1 -> PlaylistRows(playlists = createdWithLiked, onNavigate = onNavigate)
                     2 -> PlaylistRows(playlists = uiState.subscribedPlaylists, onNavigate = onNavigate)
                     else -> AlbumRows(albums = uiState.likedAlbums, onNavigate = onNavigate)
                 }
@@ -650,16 +653,16 @@ private fun MusicSubTabsRow(
 // MARK: - 列表内容
 
 /**
- * 近期：我喜欢的音乐 + 最近播放曲目。点击近期曲目直接播放（不再跳转最近播放页）。
- * 单曲左滑删除，复用「最近播放」页同一套方案：组合键（曲名|歌手|时长）本地隐藏 +
- * 自编删除接口兜底；隐藏键池进程级，同一次 App 生命周期内删除不再回弹。
+ * 近期：仅展示最近播放曲目（recentTracks 已是纯播放记录，不含我喜欢的音乐）。
+ * 点击近期曲目直接播放（不再跳转最近播放页）。单曲左滑删除，复用「最近播放」页
+ * 同一套方案：组合键（曲名|歌手|时长）本地隐藏 + 自编删除接口兜底；隐藏键池进程级，
+ * 同一次 App 生命周期内删除不再回弹。
  */
 @Composable
 private fun RecentContent(uiState: LibraryUiState, onNavigate: (String) -> Unit, guard: Boolean = false) {
     val api = LocalNeteaseApi.current ?: error("LocalNeteaseApi 必须在 KumoneApp 提供")
     val commands = LocalPlaybackCommands.current
     val scope = rememberCoroutineScope()
-    val liked = uiState.likedSongs
     // 本地隐藏键池：删过的近期曲目在同一次 App 生命周期内保持隐藏（同「最近播放」页）。
     val hiddenKeys by PlayRecordHideStore.hiddenKeys.collectAsStateWithLifecycle()
     val visibleTracks = remember(uiState.recentTracks, hiddenKeys) {
@@ -669,18 +672,6 @@ private fun RecentContent(uiState: LibraryUiState, onNavigate: (String) -> Unit,
         modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
         verticalArrangement = Arrangement.spacedBy(4.dp),
     ) {
-        ListRow(
-            coverUrl = liked?.coverURL,
-            title = "我喜欢的音乐",
-            subtitle = liked?.let { "${it.trackCount}首" },
-            onClick = {
-                if (liked != null) {
-                    onNavigate(Destinations.playlistDetail(liked.id))
-                } else {
-                    onNavigate(Destinations.FAVORITES)
-                }
-            },
-        )
         visibleTracks.forEach { track ->
             // key() 防滑动状态错位复用（同 TrackListView 的 key 教训）：普通 Column 的
             // forEach 按位置复用组合状态，删除一行后下方各行会上移接管上一行的
