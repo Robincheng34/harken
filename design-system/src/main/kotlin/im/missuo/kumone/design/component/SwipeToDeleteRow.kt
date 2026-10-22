@@ -10,7 +10,9 @@ import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material.icons.Icons
@@ -38,8 +40,12 @@ import kotlinx.coroutines.launch
  *
  * 视觉：行级红色删除背景（[matchParentSize] 撑满整行 + 右侧垃圾桶图标），默认藏在内容层
  * 之下，向左滑才露出——与网易云「最近播放」页的删除条一致。内容层用 [contentBackground]
- * 不透明底色遮住红条；近期页传红色、最近播放页传列表底色，均能保证未滑动时不露红、滑动时
- * 无缝露出红条（不出现「一条一条」实心块）。
+ * 不透明底色遮住红条（最近播放页传列表底色）。
+ *
+ * **透明内容模式**（[contentBackground] = null，用于「我的」页近期）：行不铺任何底色、
+ * 与页面渐变完全无缝（此前铺固定红色在渐变页上会显出「一条一条」的色块）；红色删除条
+ * 相应改为**右锚定、宽度随滑动距离生长**，只存在于滑出的缝隙里——露出观感与
+ * 最近播放页一致（红条 + 垃圾桶），静止时完全隐形。
  *
  * 手势：[detectTapGestures] 点击播放、[detectHorizontalDragGestures] 左滑删除，二者分离，
  * 微位移不会误判为删除（规避 SwipeToDismissBox 的「点击即删」）。
@@ -56,7 +62,7 @@ fun SwipeToDeleteRow(
     onPlay: () -> Unit,
     onDelete: () -> Unit,
     modifier: Modifier = Modifier,
-    contentBackground: Color = MaterialTheme.colorScheme.background,
+    contentBackground: Color? = MaterialTheme.colorScheme.background,
     content: @Composable () -> Unit,
 ) {
     val density = LocalDensity.current
@@ -71,11 +77,20 @@ fun SwipeToDeleteRow(
     val commit = tween<Float>(durationMillis = 280)
 
     Box(modifier = modifier.fillMaxWidth()) {
-        // 红色删除背景：仅滑动后绘制，整行撑满，右侧垃圾桶图标。
+        // 红色删除背景：仅滑动后绘制，右侧垃圾桶图标。
+        // - 不透明内容模式：整行撑满，靠内容层遮住未滑出区域。
+        // - 透明内容模式：右锚定、宽度 = 滑出距离，只画在露出的缝隙里。
         if (offset.value < -1f) {
+            val stripModifier = if (contentBackground != null) {
+                Modifier.matchParentSize()
+            } else {
+                Modifier
+                    .align(Alignment.CenterEnd)
+                    .width(with(density) { (-offset.value).toDp() })
+                    .fillMaxHeight()
+            }
             Box(
-                modifier = Modifier
-                    .matchParentSize()
+                modifier = stripModifier
                     .background(MaterialTheme.colorScheme.error)
                     // 仅 guard 停顿态下点击红区才删除（否则红区不可点，点击落到内容层）。
                     .clickable(enabled = guard && revealed) { onDelete() }
@@ -93,7 +108,13 @@ fun SwipeToDeleteRow(
             modifier = Modifier
                 .fillMaxWidth()
                 .offset { IntOffset(offset.value.roundToInt(), 0) }
-                .background(contentBackground)
+                .then(
+                    if (contentBackground != null) {
+                        Modifier.background(contentBackground)
+                    } else {
+                        Modifier
+                    },
+                )
                 .pointerInput(guard) {
                     detectTapGestures(onTap = {
                         if (guard && revealed) {

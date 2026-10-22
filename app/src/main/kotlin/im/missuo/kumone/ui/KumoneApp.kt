@@ -42,7 +42,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
@@ -124,14 +123,15 @@ import im.missuo.kumone.design.theme.GlassBox
 import im.missuo.kumone.design.theme.glassTokens
 import androidx.compose.ui.graphics.Color
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlin.math.roundToInt
 
 /**
  * 实时折射捕获间隔（纳秒）。IT之家液态玻璃的标志是「内容滑过底栏时产生扭曲」，
  * 因此逐帧把 behindLayer 截成底栏条带喂给镜片；节流到约 15fps 以平衡折射实时性
  * 与 GPU 回读开销（见 [TabsScreen]）。
  */
-private const val LIVE_CAPTURE_INTERVAL_NANOS = 66_000_000L
 
 /**
  * 收起后的「把手」（实验性，仅当「收起后显示把手」开关开启时渲染）。
@@ -178,22 +178,12 @@ private fun CollapsedHandle(onResume: () -> Unit) {
 }
 
 /**
- * 是否启用「镜片实时折射」的整屏 GPU→CPU 回读。
- *
- * 实测（OnePlus7TPro，滚动信息流）：开启时 50% 掉帧、帧时中位数 31ms，而 GPU
- * 百分位仅 2ms——瓶颈是主线程上每 66ms 一次的整屏（1440×3120 ≈ 18MB）
- * `behindLayer.toImageBitmap()` 同步回读 + 位图拷贝，与 GPU 无关。用户反馈
- * 「app 滑动的时候肉眼可见的卡顿掉帧」即由此而来。
- *
- * 关闭后：镜片不再有折射源（选中态只剩红色图标/文案），但「真·磨砂」背景
- * （[TabsScreen] 里 drawLayer + BlurEffect，纯 GPU、无回读）完全保留——
- * 玻璃观感的主要来源仍在，滚动则回到 60fps。
- */
-private const val LENS_LIVE_CAPTURE_ENABLED = false
-
-/**
  * 底栏「真·磨砂」背景的高斯模糊半径（px）。把整屏 behindLayer 平移到位后经
  * RenderEffect 模糊，垫在悬浮底栏之下，形成 IT之家风格的毛玻璃底（见 [TabsScreen]）。
+ *
+ * 旧「镜片实时折射」的 15fps 常驻整屏回读已移除（实测 OnePlus7TPro 上 50% 掉帧，
+ * 瓶颈是主线程每 66ms 一次 18MB toImageBitmap 同步回读 + 位图拷贝）；折射源采集
+ * 已改为按需突发（见 [TabsScreen] 的 captureLensSource），列表滚动期间零采集。
  */
 private const val FROST_BLUR_RADIUS = 26f
 
@@ -388,10 +378,9 @@ private fun TabsScreen(
     val behindLayer = rememberGraphicsLayer()
     var behindBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
     var screenHeightPx by remember { mutableStateOf(0) }
+    var screenWidthPx by remember { mutableStateOf(0) }
 
-    // 底部系统手势栏内边距（px）。悬浮 chrome 用 navigationBarsPadding 抬到其上，
-    // 因此折射源条带必须取「手势栏之上」的底部一段，且传给 GlassTabBar 的高度也要
-    // 扣掉这段，否则镜片裁剪会整体错位一个手势栏高度。
+    // 底部系统手势栏内边距（px）。悬浮 chrome 用 navigationBarsPadding 抬到其上。
     val navInsetPx = WindowInsets.navigationBars.getBottom(LocalDensity.current)
 
     // 列表尾部净空：用户反馈「首页推荐歌手下方空间太大」，故不再叠加 extraPadding(12dp)。
@@ -408,51 +397,57 @@ private fun TabsScreen(
             Layout.tabBarHeight + Layout.bottomMargin
         }
 
-    // 折射源条带高度（px）：必须在可组合作用域内解析 Density——
-    // LaunchedEffect 的协程体内不能读取 CompositionLocal。
-    val stripHeightPx = with(LocalDensity.current) {
-        (Layout.tabBarHeight + Layout.bottomMargin + Layout.extraPadding).roundToPx()
+    // 滑动镜片折射源（仅 API33+）。采集策略为「按需」而非旧版 15fps 常驻回读
+    // （那是列表滚动掉帧的根因，已废弃）：
+    // ① 尺寸就绪后采一帧（静止镜片有折射源）；② 选中 Tab 变化时突发采集 ~400ms，
+    // 覆盖镜片滑动动画；③ 空闲期每 2s 低频刷新一帧（仅 Pager 非滚动时）。
+    // 列表滚动期间零采集，滚动性能不受影响；镜片静止时折射源允许略微滞后。
+    //
+    // 位图按「底栏矩形」裁剪（与 GlassTabBar 内滑动镜片的本地坐标 1:1 对齐：
+    // 镜片 x=0 ↔ 底栏左缘），几何解析必须在可组合作用域完成——
+    // LaunchedEffect 协程体内不能读取 CompositionLocal。
+    val density = LocalDensity.current
+    val barLeftPx = with(density) { 12.dp.toPx() }.roundToInt()
+    val barTopPx = screenHeightPx - navInsetPx -
+        with(density) { Layout.bottomMargin.toPx() }.roundToInt() -
+        with(density) { Layout.tabBarHeight.toPx() }.roundToInt()
+    val barWidthPx = (screenWidthPx - with(density) { 24.dp.toPx() }).roundToInt()
+    val barHeightPx = with(density) { Layout.tabBarHeight.toPx() }.roundToInt()
+
+    suspend fun captureLensSource() {
+        if (Build.VERSION.SDK_INT < 33) return
+        try {
+            val src = behindLayer.toImageBitmap().asAndroidBitmap()
+            val left = barLeftPx.coerceIn(0, src.width)
+            val top = barTopPx.coerceIn(0, src.height)
+            val w = barWidthPx.coerceAtMost(src.width - left)
+            val h = barHeightPx.coerceAtMost(src.height - top)
+            if (w > 0 && h > 0 && left + w <= src.width && top + h <= src.height) {
+                // AGSL 输入着色器无法采样 HARDWARE 位图（GPU 显存，rmContent.eval
+                // 恒返回黑色）——必须复制为软件位图（历史 bug 的修复，勿删）。
+                behindBitmap = Bitmap
+                    .createBitmap(src, left, top, w, h)
+                    .copy(Bitmap.Config.ARGB_8888, false)
+                    .asImageBitmap()
+            }
+        } catch (e: Exception) {
+            Log.i(TAG_LENS, "lens capture error: ${e.message}")
+        }
     }
 
-    // 实时折射（仅 API33+）：逐帧（节流到 ~15fps）把背后内容截成底栏条带喂给镜片，
-    // 使页面内容滚动时持续透过镜片产生扭曲——这正是 IT之家液态玻璃的核心特征
-    // （“文字/封面透过底部导航栏的折射效果特别明显”）。读取失败时保留上一帧，
-    // 绝不置空（避免闪回扁平药丸）。
-    //
-    // [LENS_LIVE_CAPTURE_ENABLED] 为 false 时整条回读链路关闭（滚动掉帧的根因，
-    // 见常量注释）：behindBitmap 恒为 null，镜片无折射源，底栏仅剩真·磨砂。
-    LaunchedEffect(behindLayer, screenHeightPx) {
-        if (LENS_LIVE_CAPTURE_ENABLED && Build.VERSION.SDK_INT >= 33 && screenHeightPx > 0) {
-            var lastCaptureNanos = 0L
-            var logged = false
-            while (true) {
-                val frameNanos = withFrameNanos { it }
-                if (frameNanos - lastCaptureNanos < LIVE_CAPTURE_INTERVAL_NANOS) continue
-                lastCaptureNanos = frameNanos
-                try {
-                    val src = behindLayer.toImageBitmap().asAndroidBitmap()
-                    val h = minOf(stripHeightPx, src.height)
-                    // 条带顶边与 GlassTabBar 的 stripTopInScreen 对齐
-                    // （= screenHeightPx - stripHeightPx），故同样扣除手势栏高度。
-                    val top = maxOf(0, src.height - navInsetPx - h)
-                    if (src.width > 0 && h > 0 && top + h <= src.height) {
-                        behindBitmap = Bitmap
-                            .createBitmap(src, 0, top, src.width, h)
-                            .asImageBitmap()
-                        if (!logged) {
-                            Log.i(TAG_LENS, "behind capture(live): ${src.width}x$h")
-                            logged = true
-                        }
-                    }
-                } catch (e: Exception) {
-                    if (!logged) {
-                        Log.i(TAG_LENS, "behind capture error: ${e.message}")
-                        logged = true
-                    }
-                }
-            }
-        } else {
-            behindBitmap = null
+    LaunchedEffect(screenWidthPx, screenHeightPx) {
+        captureLensSource()
+    }
+    LaunchedEffect(selectedTab, screenWidthPx, screenHeightPx) {
+        repeat(10) {
+            captureLensSource()
+            delay(40)
+        }
+    }
+    LaunchedEffect(screenWidthPx, screenHeightPx) {
+        while (true) {
+            delay(2000)
+            if (!pagerState.isScrollInProgress) captureLensSource()
         }
     }
 
@@ -482,7 +477,7 @@ private fun TabsScreen(
         modifier = Modifier
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
-            .onSizeChanged { screenHeightPx = it.height },
+            .onSizeChanged { screenHeightPx = it.height; screenWidthPx = it.width },
     ) {
         // 只把「Tab 页面内容」录进折射图层：悬浮 chrome（迷你播放条 / TabBar）必须留在
         // 图层之外，否则镜片折射到的是 TabBar 自身的深色玻璃像素而不是背后内容。
@@ -642,9 +637,6 @@ private fun TabsScreen(
                 onSelect = onSelectTab,
                 tabs = tabs,
                 behindBackground = behindBitmap,
-                // 传「手势栏之上的内容高度」：GlassTabBar 以 screenHeightPx - stripHeightPx
-                // 定位条带顶边，与上面按 navInsetPx 裁出的位图保持 1:1 对齐。
-                screenHeightPx = (screenHeightPx - navInsetPx).coerceAtLeast(0),
             )
         }
     }

@@ -93,6 +93,11 @@ fun createLensRuntimeShader(
  * 液态玻璃选中标尺。
  *
  * @param background 背后内容位图（折射源）；为 null 时回落 Canvas 兜底。
+ *   支持整条底栏条带位图：配合 [backgroundOffsetX] 把采样窗口平移到镜片当前位置，
+ *   支撑「选中镜片在 Tab 间滑动」而无需每帧重裁剪位图。
+ * @param backgroundOffsetX 折射源在镜片本地坐标系中的 X 偏移读取器（px）。
+ *   每帧在绘制期读取并经 [android.graphics.BitmapShader.setTranslate] 平移采样，
+ *   滑动动画期间逐帧变化也不触发重组。
  * @param tint 品牌色（选中态 primary）。
  * @param edgeHighlight 边缘光学轮廓强度：按压 1f，其余 0f（静止态完全透明、不带描边色）。
  * @param cornerRadiusDp 镜片圆角。
@@ -108,6 +113,7 @@ fun LiquidGlassLens(
     cornerRadiusDp: Dp = 30.dp,
     refractionHeightDp: Dp = 48.dp,
     refractionAmountDp: Dp = 36.dp,
+    backgroundOffsetX: () -> Float = { 0f },
 ) {
     val density = LocalDensity.current.density
     val cornerRadiusPx = cornerRadiusDp.value * density
@@ -128,12 +134,19 @@ fun LiquidGlassLens(
         val contentInput = remember(bmp) {
             BitmapShader(bmp, Shader.TileMode.CLAMP, Shader.TileMode.CLAMP)
         }
+        // 采样矩阵复用（每帧 reset+postTranslate，不额外分配）。
+        val localMatrix = remember(bmp) { android.graphics.Matrix() }
         Box(
             modifier = modifier.then(
                 Modifier.drawWithContent {
                     val px = this.size
                     // 每帧绑定最新背后内容（contentInput 仅在 bmp 变化时重建），
                     // 实现实时折射而无需重编译 AGSL。
+                    // setLocalMatrix：把整条条带位图平移到镜片本地坐标——镜片滑动到
+                    // 位置 X 时，本地 (0,0) 对应条带的 (X, 0)，折射源随之跟手。
+                    localMatrix.reset()
+                    localMatrix.postTranslate(-backgroundOffsetX(), 0f)
+                    contentInput.setLocalMatrix(localMatrix)
                     rs.setInputShader("rmContent", contentInput)
                     rs.setFloatUniform("size", px.width, px.height)
                     rs.setFloatUniform(

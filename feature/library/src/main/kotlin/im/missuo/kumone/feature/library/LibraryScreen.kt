@@ -705,8 +705,10 @@ private fun RecentContent(uiState: LibraryUiState, onNavigate: (String) -> Unit,
                         PlayRecordHideStore.hide(playRecordKey(track))
                         scope.launch { runCatching { api.deletePlayRecord(track.id) } }
                     },
-                    // 内容底色取「我的」页红（与整页红底无缝，不出现一条一条实心块）。
-                    contentBackground = Color(0xFF7A152B),
+                    // 透明内容模式（contentBackground = null）：行不铺底色、与「我的」页
+                    // 红色渐变完全无缝（铺固定红色会在渐变上显出一条一条的色块）；
+                    // 红色删除条为右锚定随滑动展开，露出观感与最近播放页一致。
+                    contentBackground = null,
                 ) {
                     // onClick 置空：点击已由 SwipeToDeleteRow 的 detectTapGestures 处理。
                     ListRow(
