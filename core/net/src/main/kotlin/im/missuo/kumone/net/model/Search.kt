@@ -70,6 +70,8 @@ data class SearchSuggestResponse(
  *
  * @param iconType 官方角标类型：1=热 2=新 3=沸 4=爆（0/其他=无角标）。
  * @param iconUrl 官方定制角标图片（优先于 [iconType] 文字角标）。
+ * @param alg 官方推荐位来源标记：普通榜单条目为空或 `alg_search_rec_*`，
+ *   推广位条目为 `featured`（官方热搜榜第 3 条那类广告，UI 侧过滤不展示）。
  */
 @Serializable
 data class HotSearchItem(
@@ -79,6 +81,7 @@ data class HotSearchItem(
     @Serializable(with = LenientNullableIntSerializer::class)
     val iconType: Int? = null,
     val iconUrl: String? = null,
+    val alg: String? = null,
 )
 
 /** `/search/hot/detail` envelope。 */
