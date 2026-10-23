@@ -37,11 +37,13 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.key
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
@@ -59,6 +61,7 @@ import im.missuo.kumone.design.theme.Layout
 import im.missuo.kumone.design.theme.glassTokens
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.launch
+import kotlin.math.abs
 import kotlin.math.roundToInt
 
 /**
@@ -97,6 +100,37 @@ fun GlassTabBar(
         animationSpec = AppAnimations.snappy(),
         label = "lensSlide",
     )
+
+    // 拉伸进度（0..1）：液态玻璃 blob —— 滑动速度越快镜片被拉得越长（IT之家/酷安真机
+    // 录屏校准：滑动中 blob 覆盖 1.5~2 个 Tab，停稳回缩成常规药丸），这是「液态」手感
+    // 的最大来源。独立逐帧循环从 lensX 取速度（70ms 低通顺化起落），写入
+    // mutableFloatState 供镜片 draw-time 读取（零重组）；动画帧流停止后循环仍在跑，
+    // 保证回缩尾巴能收敛到 0，不会把拉伸「冻」在半路。
+    val lensStretch = remember { mutableFloatStateOf(0f) }
+    LaunchedEffect(cellWidthPx) {
+        var prevX = Float.NaN
+        var prevT = 0L
+        while (true) {
+            val frameTime = withFrameNanos { it }
+            if (cellWidthPx > 0f) {
+                val x = lensX
+                if (!prevX.isNaN() && prevT > 0L) {
+                    val dt = (frameTime - prevT) / 1_000_000_000f
+                    if (dt > 0f) {
+                        // 参考速度 = 7 个 cell/秒：单格弹簧滑动峰值速度大约映射到 u≈1。
+                        val v = abs(x - prevX) / dt
+                        val target = (v / (cellWidthPx * 7f)).coerceIn(0f, 1f)
+                        val cur = lensStretch.floatValue
+                        var next = cur + (target - cur) * (dt * 14f).coerceAtMost(1f)
+                        if (next < 0.002f) next = 0f
+                        if (next != cur) lensStretch.floatValue = next
+                    }
+                }
+                prevX = x
+                prevT = frameTime
+            }
+        }
+    }
     val cellWidthDp = with(density) { cellWidthPx.toDp() }
     val lensEdgeHighlight by animateFloatAsState(
         targetValue = if (pressedTab == selected) 1f else 0f,
@@ -135,6 +169,7 @@ fun GlassTabBar(
                     tint = MaterialTheme.colorScheme.primary,
                     edgeHighlight = lensEdgeHighlight,
                     cornerRadiusDp = 26.dp,
+                    stretch = { lensStretch.floatValue },
                     modifier = Modifier.matchParentSize(),
                 )
                 }
