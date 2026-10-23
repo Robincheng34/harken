@@ -52,10 +52,10 @@ import androidx.compose.ui.unit.dp
 import kotlin.math.sqrt
 
 /** 横向拉长很小（1.08 倍）：IT之家 的镜片基本维持一个 Tab 宽，不做横向拉长。 */
-private const val STRETCH_MAX_X = 0.08f
+private const val STRETCH_MAX_X = 0.05f
 
 /** 纵向膨胀：滑动时镜片再「探出」一点（液体被挤高），这是液态感的主要来源。 */
-private const val STRETCH_MAX_Y = 0.12f
+private const val STRETCH_MAX_Y = 0.26f
 
 /**
  * 液态玻璃选中标尺。
@@ -83,6 +83,8 @@ fun LiquidGlassLens(
     frostRadiusDp: Dp = 8.dp,
     magnification: Float = 1.28f,
     stretch: () -> Float = { 0f },
+    /** 水滴晃动量（衰减振荡，约 ±0.055）：竖向鼓、横向收，像水珠回弹。 */
+    wobble: () -> Float = { 0f },
 ) {
     val density = LocalDensity.current.density
     val cornerRadiusPx = cornerRadiusDp.value * density
@@ -100,8 +102,11 @@ fun LiquidGlassLens(
                     .fillMaxSize()
                     .graphicsLayer {
                         val u = stretch()
-                        scaleX = 1f + STRETCH_MAX_X * u
-                        scaleY = 1f + STRETCH_MAX_Y * u
+                        val w = wobble()
+                        // 竖向鼓起 + 晃动；横向轻微拉长但被晃动反向压缩（近似体积守恒），
+                        // 读起来像水珠被「挤」起来，而不是整体等比放大。
+                        scaleX = 1f + STRETCH_MAX_X * u - 0.40f * w
+                        scaleY = 1f + STRETCH_MAX_Y * u + w
                     },
             ) {
                 // 下层：实时毛玻璃。修饰符顺序关键：clip 在外、graphicsLayer(BlurEffect)

@@ -127,6 +127,28 @@ fun GlassTabBar(
             Animatable(lensX).animateTo(target, settleSpec) { lensX = value }
         }
     }
+    // 水滴晃动：松开手指后给镜片一个衰减振荡（竖直鼓/横向收，像水珠回弹）。
+    // 与速度拉伸叠加：滑动中拉长，落位瞬间晃两下再停。
+    val lensWobble = remember { mutableFloatStateOf(0f) }
+    var wobbleJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    fun kickWobble() {
+        wobbleJob?.cancel()
+        wobbleJob = scope.launch {
+            val start = withFrameNanos { it }
+            while (true) {
+                val now = withFrameNanos { it }
+                val t = (now - start) / 1_000_000_000f
+                if (t > 0.55f) {
+                    lensWobble.floatValue = 0f
+                    break
+                }
+                val env = (1f - t / 0.55f)
+                lensWobble.floatValue =
+                    kotlin.math.sin(t * 2f * Math.PI.toFloat() * 4.5f) * env * env * 0.055f
+            }
+        }
+    }
+
     // 把手指 x（Row 本地坐标）映射为镜片左缘并实时跟手，同时跨格即时切换选中项。
     // 选格 = 手指所在 cell（floor(fx/cell)）：手指必须真正越过两格中线（即 cell 边界）
     // 才切换——此前用 round(fx/cell) 导致手指刚过当前格中心就误切到下一格。
@@ -139,9 +161,10 @@ fun GlassTabBar(
         val t = tabs[idx]
         if (t != currentSelected) currentOnSelect(t)
     }
-    // 松手：镜片落位到最近一格（选中项已随手势即时更新，这里仅驱动落位动画）。
+    // 松手：镜片落位到最近一格（选中项已随手势即时更新），并触发一次水滴晃动。
     fun finalizeDrag() {
         isDragging = false
+        kickWobble()
     }
     // 初次布局直接 snap（不从左边缘滑入）；其后选中项切换（非拖拽中）才弹簧收尾。
     LaunchedEffect(targetX, isDragging) {
@@ -255,10 +278,8 @@ fun GlassTabBar(
                     modifier = Modifier
                         .graphicsLayer {
                             translationX = lensX + lensInsetPx
-                            // 竖向用 scaleY 从中心放大（而不是加高盒子）：盒子保持条高、
-                            // 天然与条垂直居中，上下溢出严格对称；加高盒子会被父约束/
-                            // 投影裁剪，且容易算偏（真机实测偏上 25px）。
-                            scaleY = 1.22f
+                            // 静止 = 1.0：镜片正好在框内（IT之家 只在滑动过程中溢出）。
+                            // 溢出与水滴晃动全部由 LiquidGlassLens 内层按速度/晃动值驱动。
                         }
                         .width(cellWidthDp - 10.dp)
                         .fillMaxHeight()
@@ -278,6 +299,7 @@ fun GlassTabBar(
                         edgeHighlight = lensEdgeHighlight,
                         cornerRadiusDp = 26.dp,
                         stretch = { lensStretch.floatValue },
+                        wobble = { lensWobble.floatValue },
                         modifier = Modifier.matchParentSize(),
                     )
                 }
