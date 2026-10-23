@@ -4,8 +4,8 @@
 //
 // 液态玻璃：strong 玻璃药丸托底（半透明填充 + 顶部高光 + 发丝描边 + 柔和投影），
 // 选中态为「滑动液态玻璃镜片」——IT之家/酷安同款：镜片在 Tab 之间连续滑动
-// （弹簧收尾），折射源为整条底栏条带位图，经 BitmapShader 逐帧平移对齐镜片
-// 当前位置（见 LiquidGlassLens.backgroundOffsetX），无需每帧重裁剪位图。
+// （临界阻尼弹簧收尾），折射源为 live GraphicsLayer，经 BlurEffect（GPU RenderEffect）
+// 实时毛玻璃化、随镜片位置（lensX）逐帧平移对齐（见 LiquidGlassLens），零回读、无滞后。
 
 package im.missuo.kumone.ui
 
@@ -45,7 +45,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
-import androidx.compose.ui.graphics.ImageBitmap
+import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
@@ -65,7 +65,7 @@ import kotlin.math.roundToInt
  * @param tabs 展示的 Tab 列表（由设置页「导航栏」配置的可见 Tab，默认五个主 Tab）。
  * @param selected 当前选中 Tab。
  * @param onSelect Tab 切换回调。
- * @param behindBackground 底栏背后内容的条带位图（按底栏矩形裁剪，折射源）；
+ * @param backdrop 底栏背后内容的 live [GraphicsLayer]（按底栏矩形录制的折射源）；
  *   null 或 API<33 时不渲染滑动镜片，仅保留玻璃材质托底。
  */
 @Composable
@@ -74,7 +74,7 @@ fun GlassTabBar(
     onSelect: (AppTab) -> Unit,
     modifier: Modifier = Modifier,
     tabs: List<AppTab> = AppTab.entries,
-    behindBackground: ImageBitmap? = null,
+    backdrop: GraphicsLayer? = null,
 ) {
     // 底栏横拖（iOS `GlassTabBar` 的 DragGesture）：手指横拖时按落点在 Tab 行内的
     // 相对位置**实时**切换选中项（跟手），而不是松手才跳一格。
@@ -91,10 +91,10 @@ fun GlassTabBar(
     val cellWidthPx = if (tabs.isEmpty()) 0f else rowWidthPx.toFloat() / tabs.size
     val pillIndex = tabs.indexOf(selected).coerceAtLeast(0)
     // 滑动镜片位置（底栏本地坐标，px）：随选中 Tab 弹簧滑动（酷安/IT之家同款手感，
-    // 无可见过冲——全局动效令牌统一）。
+    // 临界阻尼无可见过冲——snappy 弹簧比 bouncy 更贴近 IT之家 62 阻尼的丝滑观感）。
     val lensX by animateFloatAsState(
         targetValue = if (cellWidthPx > 0f) rowPaddingPx + pillIndex * cellWidthPx else 0f,
-        animationSpec = AppAnimations.bouncy(),
+        animationSpec = AppAnimations.snappy(),
         label = "lensSlide",
     )
     val cellWidthDp = with(density) { cellWidthPx.toDp() }
@@ -118,9 +118,10 @@ fun GlassTabBar(
             .padding(start = 12.dp, end = 12.dp, bottom = Layout.bottomMargin)
             .height(Layout.tabBarHeight),
     ) {
-        // 滑动镜片层（图标之下、玻璃填充之上）：整条底栏条带作折射源，
-        // BitmapShader 逐帧平移对齐镜片当前位置，镜片随选中 Tab 连续滑动。
-        if (Build.VERSION.SDK_INT >= 33 && behindBackground != null && cellWidthPx > 0f) {
+        // 滑动镜片层（图标之下、玻璃填充之上）：折射源是 KumoneApp 经 captureModifier
+        // 实时录制的 live GraphicsLayer（零回读），镜片经 RenderEffect 在 GPU 上消费、
+        // 随 lensX 连续滑动（临界阻尼弹簧收尾），与 IT之家/酷安同款液态玻璃手感。
+        if (Build.VERSION.SDK_INT >= 33 && backdrop != null && cellWidthPx > 0f) {
             Box(modifier = Modifier.matchParentSize()) {
                 Box(
                     modifier = Modifier
@@ -128,14 +129,14 @@ fun GlassTabBar(
                         .width(cellWidthDp)
                         .fillMaxHeight(),
                 ) {
-                    LiquidGlassLens(
-                        background = behindBackground,
-                        backgroundOffsetX = { lensX },
-                        tint = MaterialTheme.colorScheme.primary,
-                        edgeHighlight = lensEdgeHighlight,
-                        cornerRadiusDp = 26.dp,
-                        modifier = Modifier.matchParentSize(),
-                    )
+                LiquidGlassLens(
+                    backdrop = backdrop,
+                    lensX = { lensX },
+                    tint = MaterialTheme.colorScheme.primary,
+                    edgeHighlight = lensEdgeHighlight,
+                    cornerRadiusDp = 26.dp,
+                    modifier = Modifier.matchParentSize(),
+                )
                 }
             }
         }

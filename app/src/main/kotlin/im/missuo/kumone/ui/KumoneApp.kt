@@ -35,7 +35,6 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
-import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -46,12 +45,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawWithContent
-import androidx.compose.ui.graphics.ImageBitmap
 import androidx.compose.ui.unit.IntSize
-import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.graphics.asAndroidBitmap
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.BlurEffect
@@ -68,12 +63,9 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.toIntSize
-import android.graphics.Bitmap
 import android.os.Build
-import android.util.Log
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.NavHost
 import androidx.navigation.compose.composable
@@ -379,7 +371,6 @@ private fun TabsScreen(
     }
 
     val lensLayer = rememberGraphicsLayer()
-    var behindBitmap by remember { mutableStateOf<ImageBitmap?>(null) }
     var screenHeightPx by remember { mutableStateOf(0) }
     var screenWidthPx by remember { mutableStateOf(0) }
 
@@ -400,18 +391,10 @@ private fun TabsScreen(
             Layout.tabBarHeight + Layout.bottomMargin
         }
 
-    // 滑动镜片折射源（仅 API33+）。方案依据 IT之家逆向调研
-    // （H:\apk-work\liquid_glass_bottombar_research.md）：IT之家本体用 RenderNode
-    // 零回读（每帧 GPU 命令录制 + RenderEffect 链消费，isDirty 门控）；纯 Compose
-    // 无法把 GraphicsLayer 喂给 RuntimeShader（无公开 API），View 桥是第二阶段。
-    // 本阶段在现有 BitmapShader 架构内做到「回读量 ≈14 倍下降 + 实时采集」：
-    // 折射源图层只录制「底栏背后那一小条」（尺寸=底栏矩形，~1.3MB），恢复 15fps
-    // 连续采集——旧 15fps 整屏回读 ≈270MB/s（滚动掉帧 50% 的根因）降为 ~20MB/s，
-    // 镜片内容实时更新：滞后烙印与滑动不流畅同时消除。
-    //
-    // 位图与 GlassTabBar 内滑动镜片的本地坐标 1:1 对齐（图层=底栏矩形，镜片 x=0 ↔
-    // 底栏左缘）。几何解析必须在可组合作用域完成——LaunchedEffect 协程体内不能
-    // 读取 CompositionLocal。
+    // 滑动镜片折射源（仅 API33+）：captureModifier 把「底栏背后那一小条」录进
+    // lensLayer（GraphicsLayer，GPU 命令录制、零回读）。镜片（LiquidGlassLens）经
+    // RenderEffect 在 GPU 上实时消费 lensLayer，与本帧合成同源——彻底消除此前的
+    // toImageBitmap 回读导致的「烙旧帧 / 滑动卡顿」。几何解析必须在可组合作用域完成。
     val density = LocalDensity.current
     val barLeftPx = with(density) { 12.dp.toPx() }.roundToInt()
     val barTopPx = screenHeightPx - navInsetPx -
@@ -420,44 +403,20 @@ private fun TabsScreen(
     val barWidthPx = (screenWidthPx - with(density) { 24.dp.toPx() }).roundToInt()
     val barHeightPx = with(density) { Layout.tabBarHeight.toPx() }.roundToInt()
 
-    suspend fun captureLensSource() {
-        if (Build.VERSION.SDK_INT < 33) return
-        try {
-            // 图层表面就是条带本身（record 尺寸=底栏矩形，见 captureModifier）。
-            // AGSL 输入着色器无法采样 HARDWARE 位图（GPU 显存，rmContent.eval 恒黑）
-            // ——必须复制为软件位图（历史 bug 的修复，勿删）。
-            behindBitmap = lensLayer.toImageBitmap().asAndroidBitmap()
-                .copy(Bitmap.Config.ARGB_8888, false)
-                .asImageBitmap()
-        } catch (e: Exception) {
-            Log.i(TAG_LENS, "lens capture error: ${e.message}")
-        }
-    }
-
-    // 15fps 连续采集：镜像 IT之家「每帧更新折射源」的观感（滚动/滑动实时跟随，
-    // 不再烙旧帧）。App 退到后台（currentState < STARTED）暂停采集省电。
-    val lifeOwner = LocalLifecycleOwner.current
-    val lifeState by lifeOwner.lifecycle.currentStateFlow.collectAsState()
-    LaunchedEffect(lifeState, screenWidthPx, screenHeightPx) {
-        if (!lifeState.isAtLeast(Lifecycle.State.STARTED)) return@LaunchedEffect
-        while (lifeState.isAtLeast(Lifecycle.State.STARTED)) {
-            captureLensSource()
-            delay(66)
-        }
-    }
-
-    // 截帧修饰符仅 API33+ 挂载：API<33 设备 behindBitmap 恒为 null、不使用镜片，
+    // 截帧修饰符仅 API33+ 挂载：API<33 设备 lensLayer 不被录制、不使用镜片，
     // 不做任何录制（零回归）。
     //
     // 必须调用 DrawScope.record(layer) 扩展（而非 GraphicsLayer.record(density,
     // layoutDirection, size, block) 原生的四参重载）：扩展内部会把本 DrawScope 的
     // canvas 临时切换为图层的录制画布，drawContent() 才会真正画进图层。
+    // 录制即隔离：只把「底栏背后那一小条」录进 lensLayer，悬浮 chrome（迷你播放条 /
+    // TabBar）留在图层之外，镜片折射到的是真实背后内容而非底栏自身像素。
     val captureModifier = if (Build.VERSION.SDK_INT >= 33) {
         Modifier.drawWithContent {
             // 只把「底栏背后那一小条」录进折射源图层：record 尺寸 = 底栏矩形，
-            // 内容按矩形左上角平移对齐 → 图层表面就是条带本身，回读量最小化。
-            // GPU 命令录制零像素搬运，每帧重录保证折射源随时新鲜（等价 IT之家
-            // 的 isDirty 重录语义）。
+            // 内容按矩形左上角平移对齐 → 图层表面就是条带本身。GPU 命令录制零像素
+            // 搬运、零回读；内容变化即重录（等价 IT之家 isDirty 重录语义）。镜片
+            // 经 RenderEffect 直接消费该 layer（见 LiquidGlassLens），无需画回。
             if (barWidthPx > 0 && barHeightPx > 0) {
                 lensLayer.record(IntSize(barWidthPx, barHeightPx)) {
                     translate(-barLeftPx.toFloat(), -barTopPx.toFloat()) {
@@ -465,17 +424,8 @@ private fun TabsScreen(
                     }
                 }
             }
-            // 内容正常直绘（磨砂层已禁用，无消费方需要整屏图层）。
+            // 内容照常直绘到屏幕。
             this@drawWithContent.drawContent()
-            // 把条带图层按原屏幕位置画回：内容与该区域已绘像素一致（同一帧同一内容），
-            // 视觉无差；但「只录制不显示」的 GraphicsLayer 不会被 GPU 解析表面，
-            // toImageBitmap 回读恒为空 → 镜片渲染成黑药丸（实测）。原位画回促使
-            // 图层解析，回读才有内容。
-            if (barWidthPx > 0 && barHeightPx > 0) {
-                translate(barLeftPx.toFloat(), barTopPx.toFloat()) {
-                    drawLayer(lensLayer)
-                }
-            }
         }
     } else {
         Modifier
@@ -641,7 +591,7 @@ private fun TabsScreen(
                 selected = selectedTab,
                 onSelect = onSelectTab,
                 tabs = tabs,
-                behindBackground = behindBitmap,
+                backdrop = lensLayer,
             )
         }
     }
