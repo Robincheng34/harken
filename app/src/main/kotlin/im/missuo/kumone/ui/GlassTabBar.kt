@@ -294,11 +294,13 @@ private fun TabItem(
     val interactionSource = remember { MutableInteractionSource() }
 
     // 图标 / 文案颜色随选中态平滑过渡（AppAnimations.standard：250ms ease-in-out）。
+    // 只有选中项带品牌色（primary 红）；未选中用中性 onSurface（近黑/近白），
+    // 不用 onSurfaceVariant（暖棕灰 #6E5C5C，视觉上仍像「有颜色」，与 IT之家一致）。
     val tint by animateColorAsState(
         targetValue = if (isSelected) {
             MaterialTheme.colorScheme.primary
         } else {
-            MaterialTheme.colorScheme.onSurfaceVariant
+            MaterialTheme.colorScheme.onSurface
         },
         animationSpec = AppAnimations.standard(),
         label = "tabTint",
