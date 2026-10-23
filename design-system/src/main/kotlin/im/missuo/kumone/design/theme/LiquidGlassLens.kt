@@ -142,18 +142,13 @@ fun LiquidGlassLens(
                         .drawWithContent {
                             val px = this.size
                             val r = CornerRadius(cornerRadiusPx)
-                            // 中性玻璃填充（不染品牌色，避免红色调）：静止淡、按压略深。
-                            drawRoundRect(
-                                color = Color.White.copy(alpha = 0.10f + 0.08f * edgeHighlight),
-                                topLeft = Offset.Zero,
-                                size = px,
-                                cornerRadius = r,
-                            )
-                            // 顶部高光（玻璃反光的「上亮」），越靠上越亮。
+                            // 纯透明液态玻璃：只保留「毛玻璃折射 + 放大 + 滑动拉伸」，
+                            // 不铺白色填充、不画描边（白填充会在深色页面上形成白色块/轮廓）。
+                            // 仅一道极淡的顶部反光勾出玻璃存在感，按压时略微增强。
                             drawRoundRect(
                                 brush = Brush.verticalGradient(
                                     colors = listOf(
-                                        Color.White.copy(alpha = 0.30f),
+                                        Color.White.copy(alpha = 0.10f + 0.06f * edgeHighlight),
                                         Color.White.copy(alpha = 0.0f),
                                     ),
                                     startY = 0f,
@@ -162,30 +157,6 @@ fun LiquidGlassLens(
                                 topLeft = Offset.Zero,
                                 size = px,
                                 cornerRadius = r,
-                            )
-                            // 底部一层极淡暗影，制造厚度。
-                            drawRoundRect(
-                                brush = Brush.verticalGradient(
-                                    colors = listOf(
-                                        Color.Black.copy(alpha = 0.0f),
-                                        Color.Black.copy(alpha = 0.10f),
-                                    ),
-                                    startY = px.height * 0.5f,
-                                    endY = px.height,
-                                ),
-                                topLeft = Offset.Zero,
-                                size = px,
-                                cornerRadius = r,
-                            )
-                            // 发丝描边：中性玻璃轮廓（按压时更亮，浮现 iOS 式光学轮廓），
-                            // 不染品牌色——去掉红色描边。
-                            val hairline = 1.dp.toPx()
-                            drawRoundRect(
-                                color = Color.White.copy(alpha = 0.5f + 0.30f * edgeHighlight),
-                                topLeft = Offset(hairline / 2f, hairline / 2f),
-                                size = Size(px.width - hairline, px.height - hairline),
-                                cornerRadius = CornerRadius(cornerRadiusPx),
-                                style = Stroke(width = hairline),
                             )
                         },
                 )
