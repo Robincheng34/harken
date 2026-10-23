@@ -9,7 +9,6 @@
 
 package im.missuo.kumone.ui
 
-import android.os.Build
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
@@ -44,7 +43,11 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.geometry.CornerRadius
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.graphicsLayer
@@ -57,7 +60,6 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.dp
 import im.missuo.kumone.design.theme.AppAnimations
 import im.missuo.kumone.design.theme.GlassBox
-import im.missuo.kumone.design.theme.LiquidGlassLens
 import im.missuo.kumone.design.theme.Layout
 import im.missuo.kumone.design.theme.glassTokens
 import kotlinx.coroutines.flow.map
@@ -69,8 +71,9 @@ import kotlin.math.roundToInt
  * @param tabs 展示的 Tab 列表（由设置页「导航栏」配置的可见 Tab，默认五个主 Tab）。
  * @param selected 当前选中 Tab。
  * @param onSelect Tab 切换回调。
- * @param backdrop 底栏背后内容的 live [GraphicsLayer]（按底栏矩形录制的折射源）；
- *   null 或 API<33 时不渲染滑动镜片，仅保留玻璃材质托底。
+ * @param backdrop 历史遗留参数：旧版镜片用它做折射/毛玻璃。现在选中镜片改为
+ *   「条内更亮的软白块」（IT之家 观感，无折射），不再消费该图层，保留参数以
+ *   兼容调用方签名。
  */
 @Composable
 fun GlassTabBar(
@@ -78,7 +81,7 @@ fun GlassTabBar(
     onSelect: (AppTab) -> Unit,
     modifier: Modifier = Modifier,
     tabs: List<AppTab> = AppTab.entries,
-    backdrop: GraphicsLayer? = null,
+    @Suppress("UNUSED_PARAMETER") backdrop: GraphicsLayer? = null,
 ) {
     // 底栏横拖（iOS `GlassTabBar` 的 DragGesture）：手指横拖时镜片**逐像素跟手**滑动
     // （1:1 跟踪手指，而非松手才跳一格），高度灵敏；越过 Tab 边界即时切换选中项
@@ -182,43 +185,67 @@ fun GlassTabBar(
         label = "lensEdge",
     )
 
-    // 底栏本体：完全透明（不引入背景色、不加高光）。addSpecular=false 是必须的：
-    // 浅色主题默认 specular 是 white@0.6，铺在「我的」页深红底上会糊出一层粉白，
-    // 与选中镜片（毛玻璃+淡白填充）形成「条身一个色、镜片另一个色」的两种颜色。
-    // 关掉高光后条身与页面完全同色，只剩发丝边 + 选中镜片一个亮面材质。
+    // 底栏本体：白色半透明圆角条（IT之家同款观感）——无高光、无描边、无投影残留，
+    // 只有一层半透明白玻璃，背后内容淡淡透出。之前「完全透明」会让条身与选中镜片
+    // 呈现两种颜色，参考图的实际做法是：条子本身就是白色玻璃，选中项是条内更亮的软白块。
     GlassBox(
-        shape = RoundedCornerShape(22.dp),
-        tokens = glassTokens(strong = false).copy(
-            fill = Color.Transparent,
-            shadow = Color.Transparent,
-        ),
+        shape = RoundedCornerShape(30.dp),
+        // strong 玻璃再提一档不透明度（浅色 0.82→0.88 / 深色 0.72→0.78）：
+        // 参考图里条子是很实的白，背后内容只淡淡透出；太透在浅色卡片上会「消失」。
+        // 阴影加深：白底页面上条子与背景同色，靠投影勾出悬浮轮廓（参考图同样有柔和投影）。
+        tokens = glassTokens(strong = true).let { t ->
+            t.copy(
+                fill = t.fill.copy(alpha = (t.fill.alpha + 0.06f).coerceAtMost(0.92f)),
+                shadow = Color.Black.copy(alpha = 0.26f),
+            )
+        },
         addSpecular = false,
-        addShadow = false,
+        addBorder = false,
+        addShadow = true,
         modifier = modifier
             .fillMaxWidth()
             .padding(start = 12.dp, end = 12.dp, bottom = Layout.bottomMargin)
             .height(Layout.tabBarHeight),
     ) {
-        // 滑动镜片层（图标之下、玻璃填充之上）：折射源是 KumoneApp 经 captureModifier
-        // 实时录制的 live GraphicsLayer（零回读），镜片经 RenderEffect 在 GPU 上消费、
-        // 随 lensX 连续滑动（临界阻尼弹簧收尾），与 IT之家/酷安同款液态玻璃手感。
-        if (Build.VERSION.SDK_INT >= 33 && backdrop != null && cellWidthPx > 0f) {
+        // 选中镜片：条内一块更亮的「软白」圆角块（无描边、无折射、无着色）——
+        // 外层淡晕 + 内层白块两笔画出羽化圆角边；滑动时随速度轻微拉长（液态感），
+        // 停稳回弹。图标（选中红 / 未选中中性黑）绘制在它之上。
+        if (cellWidthPx > 0f) {
             Box(modifier = Modifier.matchParentSize()) {
                 Box(
                     modifier = Modifier
-                        .graphicsLayer { translationX = lensX }
+                        .graphicsLayer {
+                            translationX = lensX
+                            val u = lensStretch.floatValue
+                            scaleX = 1f + 0.16f * u
+                            scaleY = 1f + 0.06f * u
+                        }
                         .width(cellWidthDp)
                         .fillMaxHeight(),
                 ) {
-                LiquidGlassLens(
-                    backdrop = backdrop,
-                    lensX = { lensX },
-                    tint = MaterialTheme.colorScheme.primary,
-                    edgeHighlight = lensEdgeHighlight,
-                    cornerRadiusDp = 26.dp,
-                    stretch = { lensStretch.floatValue },
-                    modifier = Modifier.matchParentSize(),
-                )
+                    Box(
+                        modifier = Modifier
+                            .matchParentSize()
+                            .drawWithContent {
+                                val w = size.width
+                                val h = size.height
+                                val radius = CornerRadius(h / 2f)
+                                // 外晕：比主体略大一圈的低透明度白，制造羽化边缘。
+                                drawRoundRect(
+                                    color = Color.White.copy(alpha = 0.10f + 0.06f * lensEdgeHighlight),
+                                    topLeft = Offset(-h * 0.10f, -h * 0.06f),
+                                    size = Size(w + h * 0.20f, h + h * 0.12f),
+                                    cornerRadius = radius,
+                                )
+                                // 主体：更亮的软白块（浅色主题下比条身白一档）。
+                                drawRoundRect(
+                                    color = Color.White.copy(alpha = 0.34f + 0.12f * lensEdgeHighlight),
+                                    topLeft = Offset.Zero,
+                                    size = Size(w, h),
+                                    cornerRadius = radius,
+                                )
+                            },
+                    )
                 }
             }
         }
