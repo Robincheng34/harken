@@ -13,12 +13,12 @@
 //      · 滑动时按速度实时跟手，并按速度向上/下「鼓」出条外；
 //      · 松手落位 + 一次衰减振荡（水滴晃动）。
 //
-//  用法（最外层套一层即可，content 里放你原来的页面内容）：
+//  用法（两步：① 把本文件丢进任意 module；② 在页面最外层套一层）：
+//
+//      import liquidnav.*
 //
 //      val items = listOf(
 //          LiquidNavItem(Icons.Filled.Home, "首页"),
-//          LiquidNavItem(Icons.Filled.Explore, "发现"),
-//          LiquidNavItem(Icons.Filled.Person, "我的"),
 //      )
 //      var selected by remember { mutableIntStateOf(0) }
 //      LiquidGlassNavScaffold(
@@ -26,15 +26,19 @@
 //          selectedIndex = selected,
 //          onSelect = { selected = it },
 //      ) {
-//          // 你的页面内容（会被自动录进折射源）
-//          when (selected) { 0 -> HomeScreen(); 1 -> ExploreScreen(); else -> MineScreen() }
+//          // 你的整屏页面内容（首页/发现/我的…）
 //      }
 //
-//  要求：compileSdk/targetSdk ≥ 33 才能用真模糊（RenderEffect）；低版本自动降级为普通
-//  半透明玻璃（无模糊、无折射），不会崩。
+//  前置条件：没有。
+//   · 只需要 Jetpack Compose + Material3（你这个项目本来就有）。
+//   · 不需要改 Activity、不需要引入依赖、不需要 edge-to-edge —— 开了 edge-to-edge
+//     会自动避让手势区；没开就自动贴住内容底边，两种都能正常显示。
+//   · Android 13（API 33）以下没有实时高斯模糊，自动降级成普通半透明玻璃，不会崩。
+//   · 想微调：改下面 LiquidNavTokens（尺寸/模糊/圆角）与 LiquidLens 里的
+//     0.26f（滑动鼓起幅度）、0.055f/4.5f（水滴晃动幅度/频率）。
 // =====================================================================================
 
-package im.missuo.kumone.design.navigation
+package liquidnav
 
 import android.os.Build
 import androidx.compose.animation.animateColorAsState
