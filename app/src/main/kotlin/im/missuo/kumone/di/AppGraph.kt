@@ -18,12 +18,14 @@ import im.missuo.kumone.net.client.CookieStore
 import im.missuo.kumone.net.client.NeteaseClient
 import im.missuo.kumone.net.model.UserProfile
 import im.missuo.kumone.net.update.UpdateChecker
+import im.missuo.kumone.feature.library.PlayRecordHideStore
 import im.missuo.kumone.player.MusicController
 import im.missuo.kumone.player.PlaybackCommands
 import im.missuo.kumone.player.PlayerDependencies
 import im.missuo.kumone.storage.cookies.DataStoreCookieStore
 import im.missuo.kumone.storage.db.KumoneDatabase
 import im.missuo.kumone.storage.download.DownloadRepository
+import im.missuo.kumone.storage.playrecord.RecentPlayHideRepository
 import im.missuo.kumone.storage.search.SearchHistoryRepository
 import im.missuo.kumone.storage.settings.SettingsRepository
 import im.missuo.kumone.storage.update.UpdateRepository
@@ -77,6 +79,9 @@ class AppGraph private constructor(context: Context) {
             scope = scope,
             localSource = downloadRepository,
         )
+        // 「最近播放」本地删除标记落盘：官方删除接口不生效，删除只能本地隐藏，
+        // 键池必须持久化，否则重启后已删记录全部回弹（用户反馈的 bug）。
+        PlayRecordHideStore.attach(RecentPlayHideRepository(dataStore))
     }
 
     val musicController: MusicController = MusicController(appContext)
