@@ -103,9 +103,9 @@ fun HomeScreen(
     val isLoggedIn by LocalIsLoggedIn.current.collectAsStateWithLifecycle()
 
     val scope = rememberCoroutineScope()
-    val viewModel = remember(api) { HomeViewModel(api) }
-    // 页面销毁时取消 ViewModel 内部协程（原 bug：自建 scope 永不取消，收集器常驻泄漏）。
-    DisposableEffect(Unit) { onDispose { viewModel.cancel() } }
+    // 进程级复用：切 Tab 离开首页时不销毁 VM、也不取消其协程，回来直接命中缓存状态，
+    // 不再重新拉全量数据（旧实现每次回首页都重新请求）。
+    val viewModel = remember(api) { HomeViewModel.obtain(api) }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val ptrState = rememberPullToRefreshState()
     // 下拉刷新：整页内容随拖拽进度向下位移，顶部留出空隙；刷新图标只出现在

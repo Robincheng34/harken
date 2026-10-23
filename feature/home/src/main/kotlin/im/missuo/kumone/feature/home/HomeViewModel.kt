@@ -32,6 +32,7 @@ class HomeViewModel(
     private val _uiState: MutableStateFlow<HomeUiState> = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
+
     /** 加载（登录态变化时由 UI 重新触发；已加载则跳过，iOS `if case .loaded`）。 */
     fun load(loggedIn: Boolean) {
         if (_uiState.value.isLoading.not() && _uiState.value.isLoaded()) return
@@ -166,11 +167,38 @@ class HomeViewModel(
         scope.cancel()
     }
 
-    private companion object {
+    companion object {
+        // ---- 进程级复用（切 Tab 回来不重新拉取）----
+        @Volatile
+        private var shared: HomeViewModel? = null
+
+        @Volatile
+        private var sharedApi: NeteaseApi? = null
+
+        /**
+         * 进程级复用工厂。
+         *
+         * 背景：首页在 `HorizontalPager` 里，切到远处 Tab 时页面会被销毁；原实现
+         * `remember { HomeViewModel(api) } + onDispose { cancel() }` 连 VM 一起丢掉，
+         * 回首页就重新拉全量数据（用户反馈「从搜索页回首页每次都重新获取」）。
+         * 挂到进程级后配合 [load] 的「已加载则跳过」守卫，切 Tab 不再发请求；
+         * 需要最新数据用下拉刷新 / [reload]。
+         */
+        fun obtain(api: NeteaseApi): HomeViewModel {
+            shared?.let { if (sharedApi === api) return it }
+            return synchronized(this) {
+                shared?.let { if (sharedApi === api) return it }
+                HomeViewModel(api).also {
+                    shared = it
+                    sharedApi = api
+                }
+            }
+        }
+
         /** 官方排行榜 ID（iOS 过滤表）：飙升/新歌/热歌/原创/云音乐欧美榜。 */
-        val OFFICIAL_TOPLIST_IDS = setOf(19_723_756L, 3_779_629L, 2_884_035L, 3_778_678L, 60_198L)
+        private val OFFICIAL_TOPLIST_IDS = setOf(19_723_756L, 3_779_629L, 2_884_035L, 3_778_678L, 60_198L)
 
         /** 私人雷达家族（全局歌单 ID，内容按登录账号生成）。 */
-        val RADAR_PLAYLIST_IDS = listOf(3_136_952_023L, 2_829_883_282L, 2_829_816_518L, 2_829_896_389L)
+        private val RADAR_PLAYLIST_IDS = listOf(3_136_952_023L, 2_829_883_282L, 2_829_816_518L, 2_829_896_389L)
     }
 }
