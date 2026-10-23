@@ -29,6 +29,11 @@
 //          // 你的整屏页面内容（首页/发现/我的…）
 //      }
 //
+//  依赖：仅 AndroidX Compose（Apache-2.0）+ Kotlin 标准库，无第三方库。
+//        Compose BOM 2025.01.00（Compose UI/Foundation 1.7.x、Material3 1.3.x）已验证。
+//  血统：源自 missuo/kumone（LGPL-3.0）的 GlassTabBar，按 LGPL-3.0 保留归属；
+//        视觉参考为 IT之家 / 酷安（闭源 App，仅作观感参照，未拷贝其代码或资源）。
+//
 //  前置条件：没有。
 //   · 只需要 Jetpack Compose + Material3（你这个项目本来就有）。
 //   · 不需要改 Activity、不需要引入依赖、不需要 edge-to-edge —— 开了 edge-to-edge
