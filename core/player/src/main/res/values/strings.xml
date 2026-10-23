@@ -20,6 +20,6 @@
     <string name="player_unblock_toast_unnamed">已使用第三方音源</string>
     <!-- 依赖缺失兜底前台通知（PlayerService.startForegroundMinimal）：仅为满足
       startForeground 时限、避免 ForegroundServiceDidNotStartInTime 崩溃。 -->
-    <string name="player_service_name">Kumone 雲音</string>
+    <string name="player_service_name">Harken 倾耳</string>
     <string name="player_service_channel_name">播放</string>
 </resources>

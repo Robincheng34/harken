@@ -1,4 +1,4 @@
-// Kumone 雲音 — root build script.
+// Harken 倾耳 — root build script.
 // Plugins are declared here with `apply false` so subprojects can apply them;
 // versions are owned solely by gradle/libs.versions.toml.
 

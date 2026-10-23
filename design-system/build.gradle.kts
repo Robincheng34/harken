@@ -9,7 +9,7 @@ plugins {
 }
 
 android {
-    namespace = "im.missuo.kumone.design"
+    namespace = "com.rc.harken.design"
     compileSdk = 35
 
     defaultConfig {

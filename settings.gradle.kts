@@ -1,6 +1,6 @@
-// Kumone 雲音 — Gradle settings.
+// Harken 倾耳 — Gradle settings.
 //
-// Module layout follows docs/kumone-android-architecture.md §3:
+// Module layout follows docs/harken-android-architecture.md §3:
 //   :core:net / :core:playback are pure Kotlin/JVM modules (no Android SDK
 //   needed — the QA command `./gradlew :core:net:test :core:playback:test`
 //   must run on a bare JDK machine).
@@ -44,7 +44,7 @@ fun hasAndroidSdk(): Boolean {
     return false
 }
 
-rootProject.name = "Kumone"
+rootProject.name = "Harken"
 
 include(":core:net")
 include(":core:playback")

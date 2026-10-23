@@ -1,4 +1,4 @@
-// Dedicated selector lens for the kumone bottom navigation bar.
+// Dedicated selector lens for the harken bottom navigation bar.
 //
 // Ported from IT之家 / NetEase-style LiquidBottomTabsView selector lens
 // (reverse-engineered from com.ruanmei.ithome resources: res/raw/bottom_tab_lens.agsl).
@@ -6,11 +6,11 @@
 // Original upstream (generic glass.agsl): MIT License, Copyright (c) 2025 QmDeve,
 // https://github.com/QmDeve/AndroidLiquidGlassView — Modified By iruanmi.com.
 // The selector-lens variant (bottom_tab_lens.agsl) is the iruanmi adaptation used by
-// IT之家's bottom bar. This kumone copy preserves the exact math and uniform contract.
+// IT之家's bottom bar. This harken copy preserves the exact math and uniform contract.
 //
 // Effect: a rounded-rect refraction band that samples the navigation capsule directly
 // from rmContent, applies chromatic dispersion, an iOS-style optical rim, and a
-// press-driven edgeHighlight. tintColor/tintAlpha give the kumone brand-red wash.
+// press-driven edgeHighlight. tintColor/tintAlpha give the harken brand-red wash.
 
 uniform shader rmContent;
 

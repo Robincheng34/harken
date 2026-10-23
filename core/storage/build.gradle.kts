@@ -10,7 +10,7 @@ plugins {
 }
 
 android {
-    namespace = "im.missuo.kumone.storage"
+    namespace = "com.rc.harken.storage"
     compileSdk = 35
 
     defaultConfig {

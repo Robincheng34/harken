@@ -1,8 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <!-- 品牌色（对应 :design-system Theme Token：iOS Theme.swift） -->
-    <color name="kumone_primary">#EC4949</color>
-    <color name="kumone_primary_dark">#C92929</color>
-    <color name="kumone_background">#FFFFFF</color>
-    <color name="kumone_ic_launcher_background">#000000</color>
+    <color name="harken_primary">#EC4949</color>
+    <color name="harken_primary_dark">#C92929</color>
+    <color name="harken_background">#FFFFFF</color>
+    <color name="harken_ic_launcher_background">#000000</color>
 </resources>

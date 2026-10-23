@@ -9,7 +9,7 @@ plugins {
 }
 
 android {
-    namespace = "im.missuo.kumone.player"
+    namespace = "com.rc.harken.player"
     compileSdk = 35
 
     defaultConfig {

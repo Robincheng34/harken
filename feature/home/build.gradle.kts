@@ -8,7 +8,7 @@ plugins {
 }
 
 android {
-    namespace = "im.missuo.kumone.feature.home"
+    namespace = "com.rc.harken.feature.home"
     compileSdk = 35
 
     defaultConfig {

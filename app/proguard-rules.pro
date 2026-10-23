@@ -1,16 +1,16 @@
-# Kumone 雲音 — R8/ProGuard rules for the release build.
+# Harken 倾耳 — R8/ProGuard rules for the release build.
 
 # Keep kotlinx.serialization generated serializers.
 -keepattributes *Annotation*, InnerClasses
 -dontnote kotlinx.serialization.**
--keepclassmembers class im.missuo.kumone.** {
+-keepclassmembers class com.rc.harken.** {
     *** Companion;
 }
--keepclasseswithmembers class im.missuo.kumone.** {
+-keepclasseswithmembers class com.rc.harken.** {
     kotlinx.serialization.KSerializer serializer(...);
 }
--keep,includedescriptorclasses class im.missuo.kumone.**$$serializer { *; }
--keepclassmembers class im.missuo.kumone.** {
+-keep,includedescriptorclasses class com.rc.harken.**$$serializer { *; }
+-keepclassmembers class com.rc.harken.** {
     *** INSTANCE;
 }
 
@@ -21,15 +21,15 @@
 -dontwarn org.openjsse.**
 
 # Room: entities/DAOs are reflected over by the generated implementation.
--keep class im.missuo.kumone.storage.db.** { *; }
+-keep class com.rc.harken.storage.db.** { *; }
 -keepclassmembers class * extends androidx.room.RoomDatabase { <init>(); }
 
 # Media3: MediaSessionService / PlayerService are resolved by manifest name.
--keep class im.missuo.kumone.player.PlayerService { *; }
--keep class im.missuo.kumone.player.** extends androidx.media3.session.MediaSessionService { *; }
+-keep class com.rc.harken.player.PlayerService { *; }
+-keep class com.rc.harken.player.** extends androidx.media3.session.MediaSessionService { *; }
 
 # DataStore preferences: keep the Preferences.Key generated accessors.
--keepclassmembers class im.missuo.kumone.storage.** {
+-keepclassmembers class com.rc.harken.storage.** {
     *** Companion;
 }
 

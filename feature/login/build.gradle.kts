@@ -8,7 +8,7 @@ plugins {
 }
 
 android {
-    namespace = "im.missuo.kumone.feature.login"
+    namespace = "com.rc.harken.feature.login"
     compileSdk = 35
 
     defaultConfig {

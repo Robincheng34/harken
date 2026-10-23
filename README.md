@@ -1,10 +1,10 @@
-# Kumone 雲音 (im.missuo.kumone)
+# Harken 倾耳 (com.rc.harken)
 
-网易云音乐第三方客户端 — iOS 应用 [missuo/kumone](https://github.com/missuo/kumone)（Swift 6.2 + SwiftUI，LGPL-3.0）的 Android 移植版。
+网易云音乐第三方客户端 — iOS 应用（Swift 6.2 + SwiftUI，LGPL-3.0，上游见根目录 [NOTICE](NOTICE)）的 Android 移植版。
 
-- **包名**：`im.missuo.kumone` ｜ minSdk 26 / targetSdk 35 ｜ 分发：侧载 APK + GitHub Releases
+- **包名**：`com.rc.harken` ｜ minSdk 26 / targetSdk 35 ｜ 分发：侧载 APK + GitHub Releases
 - **架构**：单 Activity + 多模块 + MVVM；协议层（weapi/eapi 加密、约 50 个端点、模型解析、歌词解析）与播放队列状态机为**纯 Kotlin/JVM 模块**（`:core:net`、`:core:playback`），不依赖 Android framework
-- **技术栈**：Jetpack Compose (Material3) + Media3 ExoPlayer + OkHttp + kotlinx.serialization + Room + DataStore；设计文档见 `docs/kumone-android-architecture.md`
+- **技术栈**：Jetpack Compose (Material3) + Media3 ExoPlayer + OkHttp + kotlinx.serialization + Room + DataStore；设计文档见 `docs/harken-android-architecture.md`
 
 ## 构建
 
@@ -43,7 +43,7 @@ feature 模块的 ViewModel 为纯 Kotlin + 协程，可在有 SDK 的机器上�
 ## 模块结构
 
 ```
-kumone-android/
+harken-android/
 ├── core/                  # 协议与播放内核
 │   ├── net/               # 纯 JVM：weapi/eapi 加密、模型、API、歌词解析
 │   ├── playback/          # 纯 JVM：队列状态机（RepeatMode/shuffle/FM/插播）
@@ -51,7 +51,7 @@ kumone-android/
 │   └── player/            # Android：Media3 引擎、前台服务、音质回落与上报
 ├── design-system/         # 主题 Token、基础组件、曲目行、封面取色、共享路由与 CompositionLocal
 ├── feature/               # login / home / explore / search / detail / fm / library / player / settings
-└── app/                   # DI（AppGraph）、导航框架（KumoneApp / GlassTabBar）
+└── app/                   # DI（AppGraph）、导航框架（HarkenApp / GlassTabBar）
 ```
 
 依赖方向单向：`app → feature:* → design-system → core:*`，feature 模块**不得**反向依赖
@@ -125,5 +125,5 @@ kumone-android/
 
 ## 合规
 
-- 本项目基于 [kumone](https://github.com/missuo/kumone) by missuo 移植，遵循 **LGPL-3.0**，详见根目录 [`NOTICE`](NOTICE)。
+- 本项目基于上游 LGPL-3.0 项目移植，详见根目录 [`NOTICE`](NOTICE)。
 - 灰色歌曲解锁功能默认关闭，并保留「客户书面确认后启用」的合规流程。

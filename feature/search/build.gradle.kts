@@ -8,7 +8,7 @@ plugins {
 }
 
 android {
-    namespace = "im.missuo.kumone.feature.search"
+    namespace = "com.rc.harken.feature.search"
     compileSdk = 35
 
     defaultConfig {

@@ -6,11 +6,11 @@ plugins {
 }
 
 android {
-    namespace = "im.missuo.kumone"
+    namespace = "com.rc.harken"
     compileSdk = 35
 
     defaultConfig {
-        applicationId = "im.missuo.kumone"
+        applicationId = "com.rc.harken"
         minSdk = 26
         targetSdk = 35
         versionCode = 1

@@ -8,7 +8,7 @@ plugins {
 }
 
 android {
-    namespace = "im.missuo.kumone.feature.fm"
+    namespace = "com.rc.harken.feature.fm"
     compileSdk = 35
 
     defaultConfig {
