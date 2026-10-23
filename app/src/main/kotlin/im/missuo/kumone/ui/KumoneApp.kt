@@ -22,7 +22,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.navigationBars
-import androidx.compose.foundation.layout.navigationBarsPadding
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.pager.HorizontalPager
 import androidx.compose.foundation.pager.rememberPagerState
 import androidx.compose.foundation.layout.padding
@@ -374,30 +374,41 @@ private fun TabsScreen(
     var screenHeightPx by remember { mutableStateOf(0) }
     var screenWidthPx by remember { mutableStateOf(0) }
 
-    // 底部系统手势栏内边距（px）。悬浮 chrome 用 navigationBarsPadding 抬到其上。
-    val navInsetPx = WindowInsets.navigationBars.getBottom(LocalDensity.current)
+    // 底部系统手势栏内边距（px）。悬浮 chrome 抬到其上。
+    val appDensity = LocalDensity.current
+    val navInsetPx = WindowInsets.navigationBars.getBottom(appDensity)
+    // 手势区保底：隐藏手势提示条的机型 navigationBars inset≈0，但「上滑回桌面」
+    // 手势区依然存在——真机实测底栏玻璃底边距屏幕底仅 ~8dp，与手势区重叠。
+    // 取 inset 与保底值的较大者：3 键导航机型沿用系统 inset，全面屏手势
+    // 机型至少留 Layout.minGestureClearance，底栏彻底离开手势热区。
+    val extraGestureBottom = (Layout.minGestureClearance - with(appDensity) { navInsetPx.toDp() })
+        .coerceAtLeast(0.dp)
+    val chromeInsetPx = navInsetPx + with(appDensity) { extraGestureBottom.toPx() }.roundToInt()
 
     // 列表尾部净空：用户反馈「首页推荐歌手下方空间太大」，故不再叠加 extraPadding(12dp)。
     // - 有曲目（迷你条占位）：迷你条 52 + 间距 8 + TabBar 占位 70 = 130dp（原 142dp）
     // - 无曲目：只留 TabBar 占位 64 + 6 = 70dp（原 82dp）
     // 这样滚到底时最后一行正好贴在悬浮 chrome 上沿，不再空出一大片。
+    // （chromeInset 随底栏抬升同步加入，否则最后一行会被底栏盖住。）
     val controller = LocalMusicController.current
     val playerState = controller?.state?.collectAsStateWithLifecycle()
     val currentTrackId = playerState?.value?.currentTrack?.id
+    val chromeInsetDp = with(appDensity) { chromeInsetPx.toDp() }
     val bottomClearance =
         if (currentTrackId != null) {
-            Layout.miniPlayerHeight + Layout.barSpacing + Layout.tabBarHeight + Layout.bottomMargin
+            Layout.miniPlayerHeight + Layout.barSpacing + Layout.tabBarHeight +
+                Layout.bottomMargin + chromeInsetDp
         } else {
-            Layout.tabBarHeight + Layout.bottomMargin
+            Layout.tabBarHeight + Layout.bottomMargin + chromeInsetDp
         }
 
     // 滑动镜片折射源（仅 API33+）：captureModifier 把「底栏背后那一小条」录进
     // lensLayer（GraphicsLayer，GPU 命令录制、零回读）。镜片（LiquidGlassLens）经
     // RenderEffect 在 GPU 上实时消费 lensLayer，与本帧合成同源——彻底消除此前的
     // toImageBitmap 回读导致的「烙旧帧 / 滑动卡顿」。几何解析必须在可组合作用域完成。
-    val density = LocalDensity.current
+    val density = appDensity
     val barLeftPx = with(density) { 12.dp.toPx() }.roundToInt()
-    val barTopPx = screenHeightPx - navInsetPx -
+    val barTopPx = screenHeightPx - chromeInsetPx -
         with(density) { Layout.bottomMargin.toPx() }.roundToInt() -
         with(density) { Layout.tabBarHeight.toPx() }.roundToInt()
     val barWidthPx = (screenWidthPx - with(density) { 24.dp.toPx() }).roundToInt()
@@ -485,12 +496,13 @@ private fun TabsScreen(
         // 收集播放状态以在有曲目时自动弹出；下滑可收起，切歌时自动重新弹出。
         // 弹出/收起带丝滑滑动动画（起播从底部滑入、收起向下滑出，官方客户端同款）。
         // navigationBarsPadding：edge-to-edge（targetSdk 35）下抬到系统手势栏之上，
-        // 否则底栏被手势栏压住，不悬浮、玻璃观感丢失。
+        // 否则底栏被手势栏压住，不悬浮、玻璃观感丢失。同样叠加 extraGestureBottom
+        // 保底（与下方 TabBar 容器一致），保证迷你条跟 TabBar 一起抬离手势热区。
         Box(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .navigationBarsPadding()
-                .padding(bottom = Layout.tabBarHeight + Layout.barSpacing),
+                .windowInsetsPadding(WindowInsets.navigationBars)
+                .padding(bottom = extraGestureBottom + Layout.tabBarHeight + Layout.barSpacing),
         ) {
             if (controller != null) {
                 var miniPlayerCollapsed by remember { mutableStateOf(false) }
@@ -548,10 +560,13 @@ private fun TabsScreen(
         }
 
         // navigationBarsPadding：抬到系统手势栏之上，底栏完整圆角与留白可见。
+        // 追加 extraGestureBottom 保底：inset≈0（隐藏手势条）的机型也至少留 22dp，
+        // 底栏不与「上滑回桌面」手势热区重叠（见上方 chromeInsetPx 注释）。
         Box(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .navigationBarsPadding(),
+                .windowInsetsPadding(WindowInsets.navigationBars)
+                .padding(bottom = extraGestureBottom),
         ) {
             // 真·磨砂背景（仅 API33+）：把整屏 behindLayer 平移到底栏位置后经 RenderEffect
             // 高斯模糊，裁成与 GlassBox 相同的圆角矩形，垫在悬浮底栏之下。背后内容实时

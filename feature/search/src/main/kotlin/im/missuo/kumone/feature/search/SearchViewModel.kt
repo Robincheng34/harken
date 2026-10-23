@@ -55,7 +55,12 @@ class SearchViewModel(
         if (_uiState.value.hotSearches.isNotEmpty() || _uiState.value.isLoadingHot) return
         scope.launch {
             _uiState.update { it.copy(isLoadingHot = true) }
+            // 兜底过滤 searchWord 为空白的条目（正常数据不应出现，出现则跳过，
+            // 避免渲染空行）；排名由 UI 按 index+1 重排，保持连续。
+            // 注：热搜第 3 条「空白」的真正根因是推广条目宽幅角标图把整行挤空，
+            // 已在 HotSearchBadge 修复（AsyncImage 加 size 约束），此处仅是兜底。
             val hot = runCatching { api.hotSearchDetail() }.getOrNull().orEmpty()
+                .filter { it.searchWord.isNotBlank() }
             _uiState.update { it.copy(hotSearches = hot, isLoadingHot = false) }
         }
     }

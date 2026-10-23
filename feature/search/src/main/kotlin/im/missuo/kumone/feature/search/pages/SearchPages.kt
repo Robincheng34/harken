@@ -474,9 +474,9 @@ private fun rememberBottomClearance(): Dp {
     val playerState by (controller?.state ?: remember { MutableStateFlow(PlayerState()) })
         .collectAsStateWithLifecycle()
     return if (playerState.currentTrack != null) {
-        Layout.fullChromeClearance
+        Layout.fullChromeClearance + Layout.bottomGestureInset()
     } else {
-        Layout.tabBarClearance
+        Layout.tabBarClearance + Layout.bottomGestureInset()
     }
 }
 

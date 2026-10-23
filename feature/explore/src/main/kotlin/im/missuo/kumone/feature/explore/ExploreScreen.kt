@@ -125,7 +125,7 @@ fun ExploreScreen(navController: NavHostController) {
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(
                     start = Layout.contentInset,
                     end = Layout.contentInset,
-                    top = 12.dp,
+                    top = 8.dp,
                     bottom = 8.dp,
                 ),
                 horizontalArrangement = Arrangement.spacedBy(20.dp),
@@ -138,7 +138,7 @@ fun ExploreScreen(navController: NavHostController) {
                     )
                 }
                 item(span = { GridItemSpan(maxLineSpan) }, key = "clearance") {
-                    Spacer(Modifier.height(Layout.fullChromeClearance))
+                    Spacer(Modifier.height(Layout.fullChromeClearance + Layout.bottomGestureInset()))
                 }
             }
         } else {
@@ -150,7 +150,7 @@ fun ExploreScreen(navController: NavHostController) {
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(
                     start = Layout.contentInset,
                     end = Layout.contentInset,
-                    top = 12.dp,
+                    top = 8.dp,
                     bottom = 8.dp,
                 ),
                 horizontalArrangement = Arrangement.spacedBy(16.dp),
@@ -189,7 +189,7 @@ fun ExploreScreen(navController: NavHostController) {
                 }
 
                 item(span = { GridItemSpan(maxLineSpan) }, key = "clearance") {
-                    Spacer(Modifier.height(Layout.fullChromeClearance))
+                    Spacer(Modifier.height(Layout.fullChromeClearance + Layout.bottomGestureInset()))
                 }
             }
         }
@@ -214,7 +214,7 @@ private fun ExploreHeader(
             categories = categories,
             selected = selected,
             onSelect = onSelect,
-            modifier = Modifier.padding(vertical = 8.dp),
+            modifier = Modifier.padding(vertical = 4.dp),
         )
     }
 }

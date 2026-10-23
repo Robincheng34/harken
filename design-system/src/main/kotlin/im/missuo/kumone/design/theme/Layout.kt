@@ -2,6 +2,10 @@
 
 package im.missuo.kumone.design.theme
 
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.navigationBars
+import androidx.compose.runtime.Composable
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
@@ -13,6 +17,9 @@ import androidx.compose.ui.unit.dp
  */
 object Layout {
 
+    /** 底部手势区保底净空：隐藏手势提示条的机型 navigationBars inset≈0，但
+     * 「上滑回桌面」手势热区仍在，底栏至少要抬离屏幕底边这个高度。 */
+    val minGestureClearance: Dp = 22.dp
     /** 页面左右内容缩进。 */
     val contentInset: Dp = 24.dp
 
@@ -55,6 +62,19 @@ object Layout {
     /** 迷你条 + TabBar 均可见时的内容净空。 */
     val fullChromeClearance: Dp =
         miniPlayerHeight + barSpacing + tabBarHeight + bottomMargin + extraPadding
+
+    /**
+     * 底栏底部相对屏幕底边的实际抬升（navigationBars inset 与 [minGestureClearance]
+     * 取大者）。列表尾部净空 = 静态 clearance + 此值，保证最后一行不被抬升后的
+     * 底栏盖住（隐藏手势条的机型 inset≈0 时取保底 22dp）。
+     */
+    @Composable
+    fun bottomGestureInset(): Dp {
+        val inset = with(LocalDensity.current) {
+            WindowInsets.navigationBars.getBottom(this).toDp()
+        }
+        return if (inset > minGestureClearance) inset else minGestureClearance
+    }
 
     /**
      * 横滑 shelf 的自适应卡宽（iOS `fittedShelfCardSize`）：

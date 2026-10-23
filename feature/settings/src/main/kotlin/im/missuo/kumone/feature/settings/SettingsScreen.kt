@@ -529,7 +529,7 @@ fun SettingsScreen(
                 )
             }
 
-            Column(modifier = Modifier.padding(Layout.fullChromeClearance)) {}
+            Column(modifier = Modifier.padding(Layout.fullChromeClearance + Layout.bottomGestureInset())) {}
         }
     }
 }

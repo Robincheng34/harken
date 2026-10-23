@@ -13,6 +13,7 @@
 
 package im.missuo.kumone.feature.player
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -102,6 +103,10 @@ fun SongInfoScreen(
     val toast = LocalToastState.current
     val isLoggedIn by LocalIsLoggedIn.current.collectAsStateWithLifecycle()
     val scope = rememberCoroutineScope()
+
+    // 系统返回手势（与专辑/歌手/歌单详情页同款）：必须显式接管——否则下方 Tab 页
+    // （如搜索页）的常驻 BackHandler 会抢走返回事件，导致百科页返回手势失效。
+    BackHandler(enabled = true) { onBack() }
 
     val followFailedMsg = stringResource(R.string.song_info_follow_failed)
     val loginRequiredMsg = stringResource(R.string.player_login_required)

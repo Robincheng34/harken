@@ -23,9 +23,10 @@ import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.displayCutoutPadding
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.MaterialTheme
@@ -226,11 +227,16 @@ fun GlassTopAppBar(
     tokens: GlassTokens = glassTokens(),
     contentColor: Color = MaterialTheme.colorScheme.onSurface,
 ) {
-    Column(modifier = modifier.displayCutoutPadding()) {
+    // 状态栏留白只做一次：M3 TopAppBar 默认 windowInsets 已含 statusBars，外层
+    // 若再 displayCutoutPadding 会双重叠加（真机顶部凭空多出 ~一个状态栏高度，
+    // 「发现页顶部留白过大」的根因）。改为外层 statusBarsPadding + TopAppBar
+    // windowInsets 置零，其余交给 TopAppBar 自身的 64dp 高度。
+    Column(modifier = modifier.statusBarsPadding()) {
         TopAppBar(
             title = title,
             navigationIcon = navigationIcon,
             actions = actions,
+            windowInsets = WindowInsets(0.dp),
             colors = TopAppBarDefaults.topAppBarColors(
                 containerColor = tokens.fill,
                 scrolledContainerColor = tokens.fill,

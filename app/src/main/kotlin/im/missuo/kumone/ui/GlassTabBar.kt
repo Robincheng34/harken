@@ -14,7 +14,6 @@ import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.PressInteraction
 import androidx.compose.foundation.layout.Arrangement
@@ -24,7 +23,6 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -50,10 +48,12 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.input.pointer.changedToDownIgnoreConsumed
+import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.positionChangedIgnoreConsumed
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import im.missuo.kumone.design.theme.AppAnimations
 import im.missuo.kumone.design.theme.GlassBox
@@ -90,30 +90,47 @@ fun GlassTabBar(
     var pressedTab by remember { mutableStateOf<AppTab?>(null) }
 
     val density = LocalDensity.current
-    val rowPaddingPx = with(density) { 8.dp.toPx() }
     val cellWidthPx = if (tabs.isEmpty()) 0f else rowWidthPx.toFloat() / tabs.size
     val pillIndex = tabs.indexOf(selected).coerceAtLeast(0)
     // 选中 Tab 对应的镜片左缘（底栏本地坐标，px）：松手/点击后弹簧滑向此处。
-    val targetX = if (cellWidthPx > 0f) rowPaddingPx + pillIndex * cellWidthPx else 0f
+    // 行无内边距，cell 与 weight(1f) 的 Tab 严格同宽，镜片与图标中心精确对齐。
+    val targetX = if (cellWidthPx > 0f) pillIndex * cellWidthPx else 0f
 
     // 镜片当前显示左缘（单一真值来源）：拖拽中 = 跟手位置，其余 = 弹簧动画值。
-    // 直接驱动 bottomBar 的 offset 与镜片 draw（零回读），逐帧刷新无需额外状态桥接。
+    // 镜片横向位置走 graphicsLayer{ translationX } 在绘制层平移（与 blob 拉伸同机制），
+    // 只重绘、不重组，亚像素丝滑；lensX 为 Float（非整数 snap），避免整像素跳变。
     var lensX by remember { mutableFloatStateOf(0f) }
     var isDragging by remember { mutableStateOf(false) }
     var initialized by remember { mutableStateOf(false) }
     val scope = rememberCoroutineScope()
 
     // 松手/点击后的弹簧收尾：临界阻尼（无过冲）、response 0.35 比 snappy(0.25) 更柔，
-    // 落位更丝滑。同一时刻只允许一个落位动画在跑，避免并发 animateFloat 互相打架抖动。
+    // 落位更丝滑。同一时刻只允许一个落位动画在跑，避免并发动画互相打架抖动。
     val settleSpec = AppAnimations.spring<Float>()
     var settleJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     fun animateLensTo(target: Float) {
         settleJob?.cancel()
         settleJob = scope.launch {
             // 从当前显示位置起动画，block 每帧写回 lensX（mutableFloatState），
-            // 驱动 offset 与镜片 draw；同一时刻仅一个落位动画在跑。
+            // 驱动 graphicsLayer translationX 与镜片 draw；同一时刻仅一个落位动画在跑。
             Animatable(lensX).animateTo(target, settleSpec) { lensX = value }
         }
+    }
+    // 把手指 x（Row 本地坐标）映射为镜片左缘并实时跟手，同时跨格即时切换选中项。
+    // 选格 = 手指所在 cell（floor(fx/cell)）：手指必须真正越过两格中线（即 cell 边界）
+    // 才切换——此前用 round(fx/cell) 导致手指刚过当前格中心就误切到下一格。
+    fun applyFinger(fx: Float) {
+        if (rowWidthPx <= 0 || tabs.isEmpty()) return
+        val cell = rowWidthPx / tabs.size.toFloat()
+        val left = (fx - cell / 2f).coerceIn(0f, rowWidthPx - cell)
+        lensX = left
+        val idx = (fx / cell).toInt().coerceIn(0, tabs.lastIndex)
+        val t = tabs[idx]
+        if (t != currentSelected) currentOnSelect(t)
+    }
+    // 松手：镜片落位到最近一格（选中项已随手势即时更新，这里仅驱动落位动画）。
+    fun finalizeDrag() {
+        isDragging = false
     }
     // 初次布局直接 snap（不从左边缘滑入）；其后选中项切换（非拖拽中）才弹簧收尾。
     LaunchedEffect(targetX, isDragging) {
@@ -186,7 +203,7 @@ fun GlassTabBar(
             Box(modifier = Modifier.matchParentSize()) {
                 Box(
                     modifier = Modifier
-                        .offset { IntOffset(lensX.roundToInt(), 0) }
+                        .graphicsLayer { translationX = lensX }
                         .width(cellWidthDp)
                         .fillMaxHeight(),
                 ) {
@@ -205,38 +222,39 @@ fun GlassTabBar(
         Row(
             modifier = Modifier
                 .fillMaxWidth()
-                .padding(horizontal = 8.dp)
                 .onSizeChanged { rowWidthPx = it.width }
                 .pointerInput(tabs, rowWidthPx) {
-                    // 把手指 x 映射到镜片左缘（逐像素跟手），越界即时切换选中项（iOS 同款）。
-                    detectHorizontalDragGestures(
-                        onDragStart = { isDragging = true },
-                        onHorizontalDrag = { change, _ ->
-                            change.consume()
-                            if (rowWidthPx > 0 && tabs.isNotEmpty()) {
-                                val cell = rowWidthPx.toFloat() / tabs.size
-                                val left = (change.position.x - cell / 2f)
-                                    .coerceIn(0f, rowWidthPx - cell)
-                                lensX = left
-                                val index = ((left - rowPaddingPx) / cell + 0.5f)
-                                    .roundToInt()
-                                    .coerceIn(0, tabs.lastIndex)
-                                val target = tabs[index]
-                                if (target != currentSelected) currentOnSelect(target)
+                    // 零阈值（zero-slop）横拖：手指一接触立刻跟手（消除 detectHorizontalDragGestures
+                    // 默认的 ~8dp 触摸死区），逐像素 1:1 贴着手指走，跨格即时切换选中项；
+                    // 松手后镜片弹簧收尾到最近一格。选中项随手势即时更新，内容同步跟随。
+                    // 使用公开 awaitPointerEventScope + AwaitPointerEventScope.awaitPointerEvent
+                    // （Compose 1.6 内部未暴露 awaitFirstDown，故用 changedToDown 取按下事件）。
+                    awaitPointerEventScope {
+                        while (true) {
+                            val downEvent = awaitPointerEvent()
+                            // IgnoreConsumed：子 TabItem 的 clickable 在 Main pass 先于本
+                            // Handler 消费 DOWN，若用 changedToDown()（检查消费位）会永远
+                            // 等不到按下事件，拖拽整体失效（真机踩坑）。
+                            val down = downEvent.changes
+                                .firstOrNull { it.changedToDownIgnoreConsumed() } ?: continue
+                            isDragging = true
+                            applyFinger(down.position.x)
+                            var dragging = true
+                            while (dragging) {
+                                val event = awaitPointerEvent()
+                                val change = event.changes.firstOrNull() ?: continue
+                                if (change.changedToUpIgnoreConsumed() || !change.pressed) {
+                                    dragging = false
+                                    break
+                                }
+                                if (change.positionChangedIgnoreConsumed()) {
+                                    change.consume()
+                                    applyFinger(change.position.x)
+                                }
                             }
-                        },
-                        onDragEnd = {
-                            if (rowWidthPx > 0 && tabs.isNotEmpty()) {
-                                val cell = rowWidthPx.toFloat() / tabs.size
-                                val index = ((lensX - rowPaddingPx) / cell + 0.5f)
-                                    .roundToInt()
-                                    .coerceIn(0, tabs.lastIndex)
-                                if (tabs[index] != currentSelected) currentOnSelect(tabs[index])
-                            }
-                            isDragging = false
-                        },
-                        onDragCancel = { isDragging = false },
-                    )
+                            finalizeDrag()
+                        }
+                    }
                 },
             horizontalArrangement = Arrangement.SpaceEvenly,
             verticalAlignment = Alignment.CenterVertically,

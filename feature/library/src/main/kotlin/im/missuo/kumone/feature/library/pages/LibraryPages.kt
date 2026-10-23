@@ -214,7 +214,11 @@ fun DailySongsScreen(
 
     // 底部净空：作为列表 footer 随内容滚动，替掉原 Scaffold 的常驻黑边。
     val bottomClearance =
-        if (playerState.currentTrack != null) Layout.fullChromeClearance else Layout.tabBarClearance
+        if (playerState.currentTrack != null) {
+            Layout.fullChromeClearance + Layout.bottomGestureInset()
+        } else {
+            Layout.tabBarClearance + Layout.bottomGestureInset()
+        }
 
     LaunchedEffect(Unit) {
         isLoading = true
@@ -305,7 +309,11 @@ fun RecentPlaysScreen(
     // 底部净空：作为列表 footer 随内容滚动（滚到底才出现），
     // 不再用 Scaffold 固定 bottomBar —— 那会在底部常驻一条 142dp 黑边。
     val bottomClearance =
-        if (playerState.currentTrack != null) Layout.fullChromeClearance else Layout.tabBarClearance
+        if (playerState.currentTrack != null) {
+            Layout.fullChromeClearance + Layout.bottomGestureInset()
+        } else {
+            Layout.tabBarClearance + Layout.bottomGestureInset()
+        }
 
     LaunchedEffect(week) {
         isLoading = true
@@ -528,7 +536,7 @@ fun FavoritesScreen(
                     staggered = true,
                 )
             }
-            Spacer(modifier = Modifier.height(Layout.fullChromeClearance))
+            Spacer(modifier = Modifier.height(Layout.fullChromeClearance + Layout.bottomGestureInset()))
         }
     }
 }
@@ -557,7 +565,11 @@ fun CloudScreen(
 
     // 底部净空：作为列表 footer 随内容滚动，替掉原 Scaffold 的常驻黑边。
     val bottomClearance =
-        if (playerState.currentTrack != null) Layout.fullChromeClearance else Layout.tabBarClearance
+        if (playerState.currentTrack != null) {
+            Layout.fullChromeClearance + Layout.bottomGestureInset()
+        } else {
+            Layout.tabBarClearance + Layout.bottomGestureInset()
+        }
 
     LaunchedEffect(Unit) {
         isLoading = true
@@ -671,7 +683,11 @@ fun DownloadedScreen(
 
     // 底部净空：作为列表 footer 随内容滚动（滚到底才出现），不再用常驻黑边。
     val bottomClearance =
-        if (playerState.currentTrack != null) Layout.fullChromeClearance else Layout.tabBarClearance
+        if (playerState.currentTrack != null) {
+            Layout.fullChromeClearance + Layout.bottomGestureInset()
+        } else {
+            Layout.tabBarClearance + Layout.bottomGestureInset()
+        }
 
     SubPageScaffold(
         title = stringResource(R.string.library_downloaded),

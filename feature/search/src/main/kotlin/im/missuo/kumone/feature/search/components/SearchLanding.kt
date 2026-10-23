@@ -46,6 +46,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -238,10 +239,15 @@ private fun HotSearchBadge(
     modifier: Modifier = Modifier,
 ) {
     if (!iconUrl.isNullOrBlank()) {
+        // 官方定制角标图：必须同时约束宽高——热搜推广条目的角标是宽幅 banner 图
+        // （如「用你的好品味赚点钱」），只给 height 时 Coil 按原始宽高比测量出
+        // 数百 dp 宽，把词条 Text(weight 1f) 挤成 0 宽、score 推出行外，
+        // 整行看起来就是空白（热搜榜第 3 条空白的真正根因）。
         AsyncImage(
             model = iconUrl,
             contentDescription = null,
-            modifier = modifier.height(14.dp),
+            contentScale = ContentScale.Fit,
+            modifier = modifier.size(14.dp),
         )
         return
     }

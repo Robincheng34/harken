@@ -25,16 +25,23 @@ import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.Icon
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.animation.core.Animatable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import im.missuo.kumone.design.theme.AppAnimations
 import im.missuo.kumone.design.theme.GlassChip
 import im.missuo.kumone.design.theme.bright
 import im.missuo.kumone.design.theme.glassTokens
 import im.missuo.kumone.net.lyrics.ParsedLyrics
+import kotlinx.coroutines.launch
 
 /**
  * 歌词面板。
@@ -66,6 +73,10 @@ fun LyricsPanel(
 ) {
     Column(modifier = modifier.fillMaxSize()) {
         // 顶部「歌曲百科」pill（官方歌词页入口，居中）。
+        // 液态玻璃纯透明（fill=Transparent，只留高光/描边），点击带液体弹回弹：
+        // 按下瞬间缩到 0.84，再以弹簧（bouncy）回弹到 1——水滴被按瘪后回弹的手感。
+        val liquidScope = rememberCoroutineScope()
+        val liquidScale = remember { Animatable(1f) }
         Box(
             modifier = Modifier
                 .fillMaxWidth()
@@ -73,9 +84,29 @@ fun LyricsPanel(
             contentAlignment = Alignment.Center,
         ) {
             GlassChip(
-                onClick = onSongInfo,
+                onClick = {
+                    liquidScope.launch {
+                        liquidScale.snapTo(0.84f)
+                        liquidScale.animateTo(1f, AppAnimations.bouncy())
+                    }
+                    onSongInfo()
+                },
                 shape = RoundedCornerShape(14.dp),
-                tokens = glassTokens().bright(),
+                // 纯透明液态玻璃：无填充、无投影，只留极淡顶部高光 + 发丝描边界定
+                // 玻璃轮廓（bright() 默认 0.55 alpha 白色泛光会把整颗药丸糊成灰白色，
+                // 不透明——必须同时压掉 specular）。
+                tokens = glassTokens().bright().copy(
+                    fill = Color.Transparent,
+                    specular = Brush.verticalGradient(
+                        listOf(Color.White.copy(alpha = 0.10f), Color.Transparent),
+                    ),
+                    borderLight = Color.White.copy(alpha = 0.32f),
+                    shadow = Color.Transparent,
+                ),
+                modifier = Modifier.graphicsLayer {
+                    scaleX = liquidScale.value
+                    scaleY = liquidScale.value
+                },
             ) {
                 Row(
                     verticalAlignment = Alignment.CenterVertically,
