@@ -43,12 +43,15 @@ import androidx.compose.ui.graphics.drawscope.translate
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
+import androidx.compose.ui.graphics.rememberGraphicsLayer
 import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.unit.dp
+import kotlin.math.roundToInt
 import kotlin.math.sqrt
 
 /** 横向拉长很小（1.08 倍）：IT之家 的镜片基本维持一个 Tab 宽，不做横向拉长。 */
@@ -91,9 +94,13 @@ fun LiquidGlassLens(
     val frostRadiusPx = frostRadiusDp.value * density
 
     if (Build.VERSION.SDK_INT >= 33 && backdrop != null) {
-        val blur = remember(frostRadiusPx) {
-            BlurEffect(frostRadiusPx, frostRadiusPx, TileMode.Clamp)
+        // 模糊在 0.5x 半分辨率中间层上执行：半径取全尺寸值的一半（层是半分辨率），
+        // 视觉模糊半径不变；模糊光栅像素量降为 1/4——真机 gfxinfo 复测确认全分辨率
+        // 模糊是 GPU 填充率大头，此为填充率优化的核心。
+        val frostHalfBlur = remember(frostRadiusPx) {
+            BlurEffect(frostRadiusPx * 0.5f, frostRadiusPx * 0.5f, TileMode.Clamp)
         }
+        val frostLayer = rememberGraphicsLayer()
         Box(modifier = modifier) {
             // 拉伸层（blob）：滑动速度驱动横向拉长 + 纵向微胀。graphicsLayer 块内逐帧
             // 读取 stretch（State），只触发重绘不触发重组。以镜片中心为锚点缩放。
@@ -109,18 +116,21 @@ fun LiquidGlassLens(
                         scaleY = 1f + STRETCH_MAX_Y * u + w
                     },
             ) {
-                // 下层：实时毛玻璃。修饰符顺序关键：clip 在外、graphicsLayer(BlurEffect)
-                // 在内——模糊先产出再被裁到圆角，不会溢出镜片边界。
+                // 下层：实时毛玻璃。修饰符顺序关键：clip 在外——模糊结果先在
+                // 0.5x 半分辨率中间层产出，再放大回 2x 绘制并被裁到圆角，
+                // 不会溢出镜片边界。消费端 graphicsLayer 不再挂全分辨率
+                // BlurEffect（模糊光栅像素量 1/4，见上方 frostHalfBlur 注释）。
                 //
                 // 采样变换推导（配合外层拉伸 sx）：最终可见内容放大率 = magnification(m)，
                 // 拉伸时采样窗口随之变宽（看到更多内容而非把模糊拉糊）。外层把绘制结果
                 // 再拉长 sx，故此处采样按 m/sx 预压缩，两层相乘净放大率恰为 m：
                 //   backdrop点p → 镜片内x = (p - 镜片中心在backdrop的x) * (m/sx) * sx + cell/2
+                // 采样在 record 块内以 scale(0.5) 包裹录入半分辨率中间层（注意块内
+                // this.size 已是半尺寸，镜片全尺寸 w/h 须在块外捕获）。
                 Box(
                     modifier = Modifier
                         .fillMaxSize()
                         .clip(RoundedCornerShape(cornerRadiusDp))
-                        .graphicsLayer { renderEffect = blur }
                         .drawWithContent {
                             val u = stretch()
                             val sx = 1f + STRETCH_MAX_X * u
@@ -135,22 +145,31 @@ fun LiquidGlassLens(
                             // captureModifier），图层 1px = 内容 2px：最内层放大回
                             // 2x（锚点=图层原点）映射回内容坐标系；外层
                             // scale(m/sqrt(sx)) 等既有几何逻辑坐标单位仍为内容像素，
-                            // 采样语义不变，只是采样源变为半分辨率层（GPU 填充率
-                            // ~1/4；模糊内容上采样视觉不可辨）。
-                            val cx = lensX() + size.width / 2f
-                            translate(size.width / 2f, size.height / 2f) {
-                                scale(
-                                    scaleX = m / sqrt(sx),
-                                    scaleY = m / sqrt(sy),
-                                    pivot = Offset.Zero,
-                                ) {
-                                    translate(-cx, -size.height / 2f) {
-                                        scale(2f, 2f, pivot = Offset.Zero) {
-                                            drawLayer(backdrop)
+                            // 采样语义不变，只是采样源变为半分辨率层。
+                            val w = size.width
+                            val h = size.height
+                            val cx = lensX() + w / 2f
+                            val halfW = (w / 2f).roundToInt().coerceAtLeast(1)
+                            val halfH = (h / 2f).roundToInt().coerceAtLeast(1)
+                            frostLayer.record(IntSize(halfW, halfH)) {
+                                scale(0.5f, 0.5f, pivot = Offset.Zero) {
+                                    translate(w / 2f, h / 2f) {
+                                        scale(
+                                            scaleX = m / sqrt(sx),
+                                            scaleY = m / sqrt(sy),
+                                            pivot = Offset.Zero,
+                                        ) {
+                                            translate(-cx, -h / 2f) {
+                                                scale(2f, 2f, pivot = Offset.Zero) {
+                                                    drawLayer(backdrop)
+                                                }
+                                            }
                                         }
                                     }
                                 }
                             }
+                            frostLayer.renderEffect = frostHalfBlur
+                            scale(2f, 2f, pivot = Offset.Zero) { drawLayer(frostLayer) }
                         },
                 )
                 // 上层：crisp 玻璃叠层（不模糊）——品牌 tint + 顶部高光 + 底部厚度暗影 +

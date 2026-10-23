@@ -55,6 +55,8 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
+import androidx.compose.ui.graphics.rememberGraphicsLayer
+import androidx.compose.ui.unit.IntSize
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.drawscope.scale
@@ -242,20 +244,29 @@ fun GlassTabBar(
     ) {
         val frostPx = with(density) { 18.dp.toPx() }
         if (backdrop != null && Build.VERSION.SDK_INT >= 33) {
-            // 磨砂层：把 KumoneApp 录制的「底栏背后条带」图层直接模糊铺满底栏。
-            // 图层以 0.5x 半分辨率录制（GPU 填充率优化，见 KumoneApp captureModifier），
-            // 此处放大回 2x 绘制：以图层原点为锚，几何与底栏本地坐标 1:1 对齐，无需平移。
-            // BlurEffect 半径仍为全尺寸像素值——模糊发生在放大后的全分辨率输出光栅上，
-            // 毛玻璃外观与原全分辨率录制时一致（模糊内容上采样不可辨）。
+            // 模糊在 0.5x 半分辨率中间层上执行（消费端不再挂全分辨率 BlurEffect）：
+            // backdrop 本身已是内容半分辨率层（KumoneApp captureModifier），1:1 录入
+            // 同尺寸中间层后模糊光栅像素量降为 1/4，绘制时放大回 2x；模糊半径取
+            // 全尺寸值的一半 → 视觉模糊观感不变（真机 gfxinfo 复测 GPU 7-9ms/帧的
+            // 根因即全分辨率模糊，此为填充率大头）。
+            val frostLayer = rememberGraphicsLayer()
+            val frostHalfBlur = remember(frostPx) {
+                BlurEffect(frostPx * 0.5f, frostPx * 0.5f, TileMode.Clamp)
+            }
+            // 磨砂层：把 KumoneApp 录制的「底栏背后条带」图层经半分辨率模糊铺满底栏。
+            // 图层坐标原点就是条带左上角，与底栏本地坐标对齐，无需平移。
             Box(
                 modifier = Modifier
                     .matchParentSize()
                     .clip(RoundedCornerShape(30.dp))
-                    .graphicsLayer {
-                        renderEffect = BlurEffect(frostPx, frostPx, TileMode.Clamp)
-                    }
                     .drawWithContent {
-                        scale(2f, 2f, pivot = Offset.Zero) { drawLayer(backdrop) }
+                        val halfW = (size.width / 2f).roundToInt().coerceAtLeast(1)
+                        val halfH = (size.height / 2f).roundToInt().coerceAtLeast(1)
+                        frostLayer.record(IntSize(halfW, halfH)) {
+                            drawLayer(backdrop)
+                        }
+                        frostLayer.renderEffect = frostHalfBlur
+                        scale(2f, 2f, pivot = Offset.Zero) { drawLayer(frostLayer) }
                     },
             )
             Box(
