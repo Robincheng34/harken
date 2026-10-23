@@ -22,17 +22,18 @@ object NeteaseCrypto {
     private const val WEAPI_PRESET_KEY = "0CoJUm6Qyw8W8jud"
     private const val WEAPI_IV = "0102030405060708"
 
-    // ⚠️ 线上协议常量，禁止随品牌改名：WEAPI_SECRET_KEY 与下面的 WEAPI_ENC_SEC_KEY
-    // 是配对的（encSecKey = RSA(reverse(secretKey))，服务端会解出 secretKey 再解 params）。
-    // 改了 key 而不重算 encSecKey，所有 /weapi/ 请求服务端解密失败（2026-10-23 真机踩坑）。
-    private const val WEAPI_SECRET_KEY = "kumone2026abcDEF"
+    // weapi 客户端自选 secretKey，与下面的 WEAPI_ENC_SEC_KEY 配对：
+    // encSecKey = RSA(reverse(secretKey))（裸 RSA，exp 010001，网易公开 1024-bit 模数）。
+    // 改 secretKey 必须同步重算 encSecKey，否则所有 /weapi/ 请求服务端解密失败。
+    // 2026-10-23 由旧 secretKey 改为 harken2026abcDEF（品牌迁移收尾）。
+    private const val WEAPI_SECRET_KEY = "harken2026abcDEF"
 
-    /** Precomputed `RSA(reverse("kumone2026abcDEF"))` under the public weapi key. */
+    /** Precomputed `RSA(reverse("harken2026abcDEF"))` under the public weapi key. */
     private const val WEAPI_ENC_SEC_KEY =
-        "38cef2efdbcc1cfd6a44d81620dae5d23091f50ef27e01a1b1bb7e998e0fde2d" +
-            "7ab6002a9e79a3c195f661cbde80e21e6245997b11b54d28407115822f95d447" +
-            "7cc06b5a77de46fab6568410abf1229abef81b4c8588f386149010d190bb0b04" +
-            "f064be330bd877a4d4b99514febbdb4335b10744b13d9f7ee24d314d6e62cdc9"
+        "d81f45ea484c193575512ecbef2799713bc7db00c779f5d4f2d85f0a3cf047de" +
+        "cb33dbeeef38171e5d4980c5b40d183c3c7fbdf8d9df376b78b8baac13a47397" +
+        "2d450b7690c1022966a0247cf65345560795553f079d0a444963d0bb371cbe09" +
+        "3b65e9cffcaa0496f8ef3c3dbec042fe358f303bcc2659cd972fb492ca608e0c"
 
     private const val EAPI_KEY = "e82ckenh8dichen8"
 

@@ -229,7 +229,7 @@ class NeteaseClientTest {
     private companion object {
         const val PRESET_KEY = "0CoJUm6Qyw8W8jud"
         const val IV = "0102030405060708"
-        const val SECRET_KEY = "kumone2026abcDEF" // 协议常量，与 NeteaseCrypto 配对，勿改名
+        const val SECRET_KEY = "harken2026abcDEF" // 与 NeteaseCrypto.WEAPI_SECRET_KEY 配对
         const val EAPI_KEY = "e82ckenh8dichen8"
     }
 }
