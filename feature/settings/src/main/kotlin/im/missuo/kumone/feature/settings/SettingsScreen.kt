@@ -72,6 +72,7 @@ import androidx.compose.material3.Slider
 import androidx.compose.material3.TextButton
 import androidx.compose.material3.OutlinedTextField
 import androidx.compose.ui.graphics.Brush
+import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import coil.compose.AsyncImage
@@ -876,7 +877,7 @@ private fun ThemeGalleryCard(
                 .background(
                     pack.color2?.let { c2 ->
                         Brush.linearGradient(listOf(Color(pack.color), Color(c2)))
-                    } ?: Brush.linearGradient(listOf(Color(pack.color))),
+                    } ?: SolidColor(Color(pack.color)),
                 )
                 .border(
                     width = if (selected) 3.dp else 1.dp,

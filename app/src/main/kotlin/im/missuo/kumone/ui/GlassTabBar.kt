@@ -182,14 +182,17 @@ fun GlassTabBar(
         label = "lensEdge",
     )
 
-    // 底栏本体：保持透明（不引入背景色），仅保留极淡玻璃高光/发丝描边作边界定义；
-    // 选中镜片自带毛玻璃与高光，无需底栏填充兜底。透明底栏让内容自然透出。
+    // 底栏本体：完全透明（不引入背景色、不加高光）。addSpecular=false 是必须的：
+    // 浅色主题默认 specular 是 white@0.6，铺在「我的」页深红底上会糊出一层粉白，
+    // 与选中镜片（毛玻璃+淡白填充）形成「条身一个色、镜片另一个色」的两种颜色。
+    // 关掉高光后条身与页面完全同色，只剩发丝边 + 选中镜片一个亮面材质。
     GlassBox(
         shape = RoundedCornerShape(22.dp),
         tokens = glassTokens(strong = false).copy(
             fill = Color.Transparent,
             shadow = Color.Transparent,
         ),
+        addSpecular = false,
         addShadow = false,
         modifier = modifier
             .fillMaxWidth()
