@@ -106,7 +106,10 @@ fun ToplistShelf(
                     text = item.name,
                     style = MaterialTheme.typography.titleMedium,
                     color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 1,
+                    maxLines = 2,
+                    // minLines = 2：与推荐歌单/雷达歌单卡片保持同样的两行文字块，
+                    // 三类 shelf 卡片等高 → 分区之间的视觉间距才能完全等距。
+                    minLines = 2,
                     overflow = TextOverflow.Ellipsis,
                     modifier = Modifier.width(Layout.cardSize),
                 )

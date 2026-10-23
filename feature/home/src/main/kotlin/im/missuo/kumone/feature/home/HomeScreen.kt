@@ -218,12 +218,11 @@ fun HomeScreen(
                                             imageUrl = Formatters.resizedImageURL(radar.coverURL, 384),
                                             contentDescription = radar.title,
                                             title = radar.title,
-                                            subtitle = radar.subtitle,
+                                            // 不显示「华语/欧美私人雷达」这类小字
+                                            subtitle = null,
                                             size = Layout.cardSize,
                                             onPlay = { onPlaylist(radar.id) },
                                             onClick = { navController.navigate(playlistDetailRoute(radar.id)) },
-                                            // 雷达歌单的 subtitle 可能缺失 → 固定预留一行
-                                            reserveSubtitleLine = true,
                                         )
                                     }
                                 }

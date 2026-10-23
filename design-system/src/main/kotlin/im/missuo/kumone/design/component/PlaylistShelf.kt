@@ -50,15 +50,13 @@ fun PlaylistShelf(
                 imageUrl = Formatters.resizedImageURL(playlist.coverURL, 384),
                 contentDescription = playlist.name,
                 title = playlist.name,
-                subtitle = playlist.copywriter,
+                // 不显示 copywriter 小字（用户要求：推荐歌单下方的小字去掉）
+                subtitle = null,
                 size = Layout.cardSize,
                 playCount = playlist.playCount,
                 onPlay = onPlay?.let { callback -> { callback(playlist.id) } },
                 onClick = { onOpen(playlist.id) },
                 modifier = Modifier.staggeredAppearance(index = index, enabled = staggered),
-                // copywriter 可能为空 → 固定预留副标题行，保证整行等高（否则横滑时
-                // 行高变化会让下方分区跳动）
-                reserveSubtitleLine = true,
             )
         }
     }
