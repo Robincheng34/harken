@@ -15,9 +15,9 @@
 //     GlassTabBar 的逐帧速度环计算（70ms 低通），经 draw-time graphicsLayer 应用，
 //     零重组。拉伸同时放大采样窗口（采样区按 1/sx 预压缩），拉长时看到更多内容而非糊成一团。
 //
-// 玻璃观感（品牌 tint + 顶部高光 + 底部暗影 + 发丝描边 + 按压光学轮廓）由上层 crisp
-// 叠层绘制，不随模糊糊化。底栏本体仍是普通半透明玻璃（录屏确认 IT之家/酷安底栏本体
-// 均不模糊，只有选中镜片是毛玻璃）。
+// 玻璃观感（中性玻璃填充 + 顶部高光 + 底部暗影 + 中性发丝描边 + 按压光学轮廓）由上层
+// crisp 叠层绘制，不随模糊糊化，且不染品牌色（避免红色描边/填充）。底栏本体保持透明、
+// 普通半透明玻璃（录屏确认 IT之家/酷安底栏本体均不模糊，只有选中镜片是毛玻璃）。
 //
 // 安全约束：BlurEffect 仅 API 33+ 可用，相关调用被 SDK_INT>=33 守卫；API<33 或无背后层
 // 回落纯 Canvas 半透明药丸，零回归。
@@ -62,7 +62,8 @@ private const val STRETCH_MAX_Y = 0.15f
  * @param backdrop 底栏背后内容的 live [GraphicsLayer]（折射源，由 KumoneApp 的
  *   captureModifier 持续录制，与本帧合成同源，无回读、无滞后）。为 null 时回落 Canvas 兜底。
  * @param lensX 镜片在底栏本地坐标系中的 X 位置（px），每帧读取；镜片滑动时逐帧变化。
- * @param tint 品牌色（选中态 primary）。
+ * @param tint 预留品牌色（当前镜片观感保持中性玻璃，不染品牌色——避免红色描边/填充，
+ *   选中态由 Tab 图标本身着色）。保留参数以便未来按主题注入。
  * @param edgeHighlight 边缘光学轮廓强度：按压 1f，其余 0f。
  * @param magnification 镜片内内容的放大倍率（近似真透镜；录屏校准约 1.15）。
  * @param stretch 拉伸进度 0..1（由 GlassTabBar 按滑动速度逐帧驱动）：0=静止常规药丸，
@@ -141,9 +142,9 @@ fun LiquidGlassLens(
                         .drawWithContent {
                             val px = this.size
                             val r = CornerRadius(cornerRadiusPx)
-                            // 品牌 tint：静止淡、按压深。
+                            // 中性玻璃填充（不染品牌色，避免红色调）：静止淡、按压略深。
                             drawRoundRect(
-                                color = tint.copy(alpha = 0.14f + 0.12f * edgeHighlight),
+                                color = Color.White.copy(alpha = 0.10f + 0.08f * edgeHighlight),
                                 topLeft = Offset.Zero,
                                 size = px,
                                 cornerRadius = r,
@@ -176,10 +177,11 @@ fun LiquidGlassLens(
                                 size = px,
                                 cornerRadius = r,
                             )
-                            // 发丝描边：玻璃轮廓（按压时更亮，浮现 iOS 式光学轮廓）。
+                            // 发丝描边：中性玻璃轮廓（按压时更亮，浮现 iOS 式光学轮廓），
+                            // 不染品牌色——去掉红色描边。
                             val hairline = 1.dp.toPx()
                             drawRoundRect(
-                                color = tint.copy(alpha = 0.45f + 0.35f * edgeHighlight),
+                                color = Color.White.copy(alpha = 0.5f + 0.30f * edgeHighlight),
                                 topLeft = Offset(hairline / 2f, hairline / 2f),
                                 size = Size(px.width - hairline, px.height - hairline),
                                 cornerRadius = CornerRadius(cornerRadiusPx),
@@ -190,27 +192,27 @@ fun LiquidGlassLens(
             }
         }
     } else {
-        // Canvas 兜底：半透明圆角矩形 + 柔光 + 1px 发丝描边，保持既有选中观感。
+        // Canvas 兜底：中性半透明圆角矩形 + 柔光 + 1px 发丝描边（不染品牌色）。
         Box(
             modifier = modifier.then(
                 Modifier.drawWithContent {
                     val px = this.size
                     val radius = cornerRadiusPx
                     drawRoundRect(
-                        color = tint.copy(alpha = 0.16f),
+                        color = Color.White.copy(alpha = 0.12f),
                         topLeft = Offset.Zero,
                         size = px,
                         cornerRadius = CornerRadius(radius),
                     )
                     drawRoundRect(
-                        color = tint.copy(alpha = 0.10f),
+                        color = Color.White.copy(alpha = 0.08f),
                         topLeft = Offset(px.width * 0.18f, px.height * 0.12f),
                         size = Size(px.width * 0.64f, px.height * 0.76f),
                         cornerRadius = CornerRadius(radius * 0.8f),
                     )
                     val hairline = 1.dp.toPx()
                     drawRoundRect(
-                        color = tint.copy(alpha = 0.5f),
+                        color = Color.White.copy(alpha = 0.5f),
                         topLeft = Offset(hairline / 2f, hairline / 2f),
                         size = Size(px.width - hairline, px.height - hairline),
                         cornerRadius = CornerRadius(radius),

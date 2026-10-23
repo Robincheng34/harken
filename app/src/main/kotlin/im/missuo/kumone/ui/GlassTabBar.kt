@@ -2,10 +2,10 @@
 //
 // 玻璃质感底部 TabBar（架构文档 §3 `ui/GlassTabBar.kt` 移植 + 滑动镜片重做）。
 //
-// 液态玻璃：strong 玻璃药丸托底（半透明填充 + 顶部高光 + 发丝描边 + 柔和投影），
-// 选中态为「滑动液态玻璃镜片」——IT之家/酷安同款：镜片在 Tab 之间连续滑动
-// （临界阻尼弹簧收尾），折射源为 live GraphicsLayer，经 BlurEffect（GPU RenderEffect）
-// 实时毛玻璃化、随镜片位置（lensX）逐帧平移对齐（见 LiquidGlassLens），零回读、无滞后。
+// 液态玻璃：底栏本体保持透明（不引入背景色），选中态为「滑动液态玻璃镜片」——
+// IT之家/酷安同款：镜片在 Tab 之间连续跟手滑动（临界阻尼弹簧收尾），折射源为 live
+// GraphicsLayer，经 BlurEffect（GPU RenderEffect）实时毛玻璃化、随镜片位置（lensX）
+// 逐帧平移对齐（见 LiquidGlassLens），零回读、无滞后。
 
 package im.missuo.kumone.ui
 
@@ -47,6 +47,7 @@ import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.input.pointer.pointerInput
@@ -79,10 +80,9 @@ fun GlassTabBar(
     tabs: List<AppTab> = AppTab.entries,
     backdrop: GraphicsLayer? = null,
 ) {
-    // 底栏横拖（iOS `GlassTabBar` 的 DragGesture）：手指横拖时按落点在 Tab 行内的
-    // 相对位置**实时**切换选中项（跟手），而不是松手才跳一格。
-    // rememberUpdatedState：拖拽过程中 selected 会变，若把它作为 pointerInput 的 key
-    // 会导致手势被重启、拖到一半断掉；用最新的状态值读取即可。
+    // 底栏横拖（iOS `GlassTabBar` 的 DragGesture）：手指横拖时镜片**逐像素跟手**滑动
+    // （1:1 跟踪手指，而非松手才跳一格），高度灵敏；越过 Tab 边界即时切换选中项
+    // （内容同步跟随），松手后镜片弹簧收尾到最近一格。
     val currentSelected by rememberUpdatedState(selected)
     val currentOnSelect by rememberUpdatedState(onSelect)
     var rowWidthPx by remember { mutableStateOf(0) }
@@ -93,17 +93,43 @@ fun GlassTabBar(
     val rowPaddingPx = with(density) { 8.dp.toPx() }
     val cellWidthPx = if (tabs.isEmpty()) 0f else rowWidthPx.toFloat() / tabs.size
     val pillIndex = tabs.indexOf(selected).coerceAtLeast(0)
-    // 滑动镜片位置（底栏本地坐标，px）：随选中 Tab 弹簧滑动（酷安/IT之家同款手感，
-    // 临界阻尼无可见过冲——snappy 弹簧比 bouncy 更贴近 IT之家 62 阻尼的丝滑观感）。
-    val lensX by animateFloatAsState(
-        targetValue = if (cellWidthPx > 0f) rowPaddingPx + pillIndex * cellWidthPx else 0f,
-        animationSpec = AppAnimations.snappy(),
-        label = "lensSlide",
-    )
+    // 选中 Tab 对应的镜片左缘（底栏本地坐标，px）：松手/点击后弹簧滑向此处。
+    val targetX = if (cellWidthPx > 0f) rowPaddingPx + pillIndex * cellWidthPx else 0f
+
+    // 镜片当前显示左缘（单一真值来源）：拖拽中 = 跟手位置，其余 = 弹簧动画值。
+    // 直接驱动 bottomBar 的 offset 与镜片 draw（零回读），逐帧刷新无需额外状态桥接。
+    var lensX by remember { mutableFloatStateOf(0f) }
+    var isDragging by remember { mutableStateOf(false) }
+    var initialized by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    // 松手/点击后的弹簧收尾：临界阻尼（无过冲）、response 0.35 比 snappy(0.25) 更柔，
+    // 落位更丝滑。同一时刻只允许一个落位动画在跑，避免并发 animateFloat 互相打架抖动。
+    val settleSpec = AppAnimations.spring<Float>()
+    var settleJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
+    fun animateLensTo(target: Float) {
+        settleJob?.cancel()
+        settleJob = scope.launch {
+            // 从当前显示位置起动画，block 每帧写回 lensX（mutableFloatState），
+            // 驱动 offset 与镜片 draw；同一时刻仅一个落位动画在跑。
+            Animatable(lensX).animateTo(target, settleSpec) { lensX = value }
+        }
+    }
+    // 初次布局直接 snap（不从左边缘滑入）；其后选中项切换（非拖拽中）才弹簧收尾。
+    LaunchedEffect(targetX, isDragging) {
+        if (!isDragging && cellWidthPx > 0f) {
+            if (!initialized) {
+                lensX = targetX
+                initialized = true
+            } else {
+                animateLensTo(targetX)
+            }
+        }
+    }
 
     // 拉伸进度（0..1）：液态玻璃 blob —— 滑动速度越快镜片被拉得越长（IT之家/酷安真机
     // 录屏校准：滑动中 blob 覆盖 1.5~2 个 Tab，停稳回缩成常规药丸），这是「液态」手感
-    // 的最大来源。独立逐帧循环从 lensX 取速度（70ms 低通顺化起落），写入
+    // 的最大来源。独立逐帧循环从 lensX 取速度（低通顺化起落），写入
     // mutableFloatState 供镜片 draw-time 读取（零重组）；动画帧流停止后循环仍在跑，
     // 保证回缩尾巴能收敛到 0，不会把拉伸「冻」在半路。
     val lensStretch = remember { mutableFloatStateOf(0f) }
@@ -117,11 +143,12 @@ fun GlassTabBar(
                 if (!prevX.isNaN() && prevT > 0L) {
                     val dt = (frameTime - prevT) / 1_000_000_000f
                     if (dt > 0f) {
-                        // 参考速度 = 7 个 cell/秒：单格弹簧滑动峰值速度大约映射到 u≈1。
+                        // 参考速度 = 5 个 cell/秒（低于此前 7）：更跟手、blob 更易触发。
                         val v = abs(x - prevX) / dt
-                        val target = (v / (cellWidthPx * 7f)).coerceIn(0f, 1f)
+                        val target = (v / (cellWidthPx * 5f)).coerceIn(0f, 1f)
                         val cur = lensStretch.floatValue
-                        var next = cur + (target - cur) * (dt * 14f).coerceAtMost(1f)
+                        // 低通系数 18（此前 14）：响应更快、收得更利落。
+                        var next = cur + (target - cur) * (dt * 18f).coerceAtMost(1f)
                         if (next < 0.002f) next = 0f
                         if (next != cur) lensStretch.floatValue = next
                     }
@@ -138,15 +165,15 @@ fun GlassTabBar(
         label = "lensEdge",
     )
 
-    // strong 玻璃（浅色 White@0.82 / 深色 0x232327@0.72，MiniPlayer 同款）：
-    // 底栏悬浮在内容之上，普通 0.6 填充会被明亮封面穿透、图标对比不足；
-    // strong 托底既保住玻璃通透感，又让图标在任何背景上都清晰精致。
-    // 注：此前「完全透明 + 依赖底下真·磨砂层」的方案在一加 7T Pro (API33) 上
-    // 因 RenderEffect(BlurEffect)+drawLayer 合成错误而翻车（错误碎片压过图标），
-    // 故玻璃观感改由材质自身承担，不依赖 RenderEffect。
+    // 底栏本体：保持透明（不引入背景色），仅保留极淡玻璃高光/发丝描边作边界定义；
+    // 选中镜片自带毛玻璃与高光，无需底栏填充兜底。透明底栏让内容自然透出。
     GlassBox(
         shape = RoundedCornerShape(22.dp),
-        tokens = glassTokens(strong = true),
+        tokens = glassTokens(strong = false).copy(
+            fill = Color.Transparent,
+            shadow = Color.Transparent,
+        ),
+        addShadow = false,
         modifier = modifier
             .fillMaxWidth()
             .padding(start = 12.dp, end = 12.dp, bottom = Layout.bottomMargin)
@@ -181,18 +208,34 @@ fun GlassTabBar(
                 .padding(horizontal = 8.dp)
                 .onSizeChanged { rowWidthPx = it.width }
                 .pointerInput(tabs, rowWidthPx) {
-                    // 把手指 x 映射到等宽的 Tab 单元，越过边界即时切换（iOS 同款）。
+                    // 把手指 x 映射到镜片左缘（逐像素跟手），越界即时切换选中项（iOS 同款）。
                     detectHorizontalDragGestures(
+                        onDragStart = { isDragging = true },
                         onHorizontalDrag = { change, _ ->
                             change.consume()
                             if (rowWidthPx > 0 && tabs.isNotEmpty()) {
                                 val cell = rowWidthPx.toFloat() / tabs.size
-                                val index = (change.position.x / cell).toInt()
+                                val left = (change.position.x - cell / 2f)
+                                    .coerceIn(0f, rowWidthPx - cell)
+                                lensX = left
+                                val index = ((left - rowPaddingPx) / cell + 0.5f)
+                                    .roundToInt()
                                     .coerceIn(0, tabs.lastIndex)
                                 val target = tabs[index]
                                 if (target != currentSelected) currentOnSelect(target)
                             }
                         },
+                        onDragEnd = {
+                            if (rowWidthPx > 0 && tabs.isNotEmpty()) {
+                                val cell = rowWidthPx.toFloat() / tabs.size
+                                val index = ((lensX - rowPaddingPx) / cell + 0.5f)
+                                    .roundToInt()
+                                    .coerceIn(0, tabs.lastIndex)
+                                if (tabs[index] != currentSelected) currentOnSelect(tabs[index])
+                            }
+                            isDragging = false
+                        },
+                        onDragCancel = { isDragging = false },
                     )
                 },
             horizontalArrangement = Arrangement.SpaceEvenly,
@@ -228,7 +271,7 @@ private fun TabItem(
     onPressedChange: (Boolean) -> Unit = {},
 ) {
     val scope = rememberCoroutineScope()
-    val scale = remember { Animatable(1f) }
+    val scale = remember { androidx.compose.animation.core.Animatable(1f) }
     // 同一 InteractionSource 供 clickable 与按压态监听共用（避免重复创建导致状态错位）。
     val interactionSource = remember { MutableInteractionSource() }
 
