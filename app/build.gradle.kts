@@ -1,9 +1,22 @@
+import java.util.Properties
+
 plugins {
     alias(libs.plugins.android.application)
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose.compiler)
     alias(libs.plugins.kotlin.serialization)
 }
+
+// 发布签名（可选）：签名材料在仓库根 keystore.properties + harken-release.jks，
+// 两者均不入 git（见 .gitignore）。文件不存在（如他人 clone 源码）时
+// 不创建 signingConfig，release 输出未签名 APK、仍可正常构建。
+val keystoreProperties = Properties().apply {
+    val propsFile = rootProject.file("keystore.properties")
+    if (propsFile.isFile) {
+        propsFile.inputStream().use { load(it) }
+    }
+}
+val hasReleaseSigning = keystoreProperties["storeFile"] != null
 
 android {
     namespace = "com.rc.harken"
@@ -17,17 +30,31 @@ android {
         versionName = "1.0.0"
     }
 
+    signingConfigs {
+        if (hasReleaseSigning) {
+            create("release") {
+                storeFile = rootProject.file(keystoreProperties["storeFile"] as String)
+                storePassword = keystoreProperties["storePassword"] as String
+                keyAlias = keystoreProperties["keyAlias"] as String
+                keyPassword = keystoreProperties["keyPassword"] as String
+            }
+        }
+    }
+
     buildTypes {
         debug {
             isMinifyEnabled = false
         }
         release {
-            isMinifyEnabled = true
-            isShrinkResources = true
+            // 本项目尚未维护完整 R8 规则，release 关闭混淆/收缩，保证功能一致。
+            isMinifyEnabled = false
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro",
             )
+            if (hasReleaseSigning) {
+                signingConfig = signingConfigs.getByName("release")
+            }
         }
     }
 
