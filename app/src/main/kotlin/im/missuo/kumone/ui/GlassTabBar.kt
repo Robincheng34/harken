@@ -12,6 +12,7 @@ package im.missuo.kumone.ui
 import android.os.Build
 import androidx.compose.animation.animateColorAsState
 import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -112,7 +113,9 @@ fun GlassTabBar(
 
     // 松手/点击后的弹簧收尾：临界阻尼（无过冲）、response 0.35 比 snappy(0.25) 更柔，
     // 落位更丝滑。同一时刻只允许一个落位动画在跑，避免并发动画互相打架抖动。
-    val settleSpec = AppAnimations.spring<Float>()
+    // 落位弹簧：dampingRatio 0.8（轻微过冲）+ 较高刚度 —— 像液体被甩到位后轻轻
+    // 忽悠一下再停住（IT之家 同款落位手感），而不是硬邦邦地刹住。
+    val settleSpec = spring<Float>(dampingRatio = 0.8f, stiffness = 420f)
     var settleJob by remember { mutableStateOf<kotlinx.coroutines.Job?>(null) }
     fun animateLensTo(target: Float) {
         settleJob?.cancel()
@@ -166,12 +169,14 @@ fun GlassTabBar(
                 if (!prevX.isNaN() && prevT > 0L) {
                     val dt = (frameTime - prevT) / 1_000_000_000f
                     if (dt > 0f) {
-                        // 参考速度 = 5 个 cell/秒（低于此前 7）：更跟手、blob 更易触发。
+                        // 参考速度 = 3.2 个 cell/秒：手一快就能看到明显拉伸（液态感更足）。
                         val v = abs(x - prevX) / dt
-                        val target = (v / (cellWidthPx * 5f)).coerceIn(0f, 1f)
+                        val target = (v / (cellWidthPx * 3.2f)).coerceIn(0f, 1f)
                         val cur = lensStretch.floatValue
-                        // 低通系数 18（此前 14）：响应更快、收得更利落。
-                        var next = cur + (target - cur) * (dt * 18f).coerceAtMost(1f)
+                        // 非对称低通：起速快（28）、回落慢（10）——blob 被甩出去后带一点
+                        // 黏滞感再收回去，像液体而不是橡皮筋；纯对称系数会显得太「弹」。
+                        val k = if (target > cur) 28f else 10f
+                        var next = cur + (target - cur) * (dt * k).coerceAtMost(1f)
                         if (next < 0.002f) next = 0f
                         if (next != cur) lensStretch.floatValue = next
                     }

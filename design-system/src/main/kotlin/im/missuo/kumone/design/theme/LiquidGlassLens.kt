@@ -49,12 +49,13 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import kotlin.math.sqrt
 
-/** 拉伸时横向最大拉长（u=1 时镜片宽变为 1.5 倍，对照录屏 blob 覆盖 1.5~2 Tab）。 */
-private const val STRETCH_MAX_X = 0.5f
+/** 拉伸时横向最大拉长（u=1 时镜片宽变为 1.8 倍，对照录屏 blob 覆盖 1.5~2 Tab）。 */
+private const val STRETCH_MAX_X = 0.8f
 
 /** 拉伸时纵向微胀（液滴感；上限受采样窗口约束，见 draw 处推导）。 */
-private const val STRETCH_MAX_Y = 0.15f
+private const val STRETCH_MAX_Y = 0.24f
 
 /**
  * 液态玻璃选中标尺。
@@ -79,8 +80,8 @@ fun LiquidGlassLens(
     lensX: () -> Float,
     modifier: Modifier = Modifier,
     cornerRadiusDp: Dp = 30.dp,
-    frostRadiusDp: Dp = 18.dp,
-    magnification: Float = 1.15f,
+    frostRadiusDp: Dp = 8.dp,
+    magnification: Float = 1.28f,
     stretch: () -> Float = { 0f },
 ) {
     val density = LocalDensity.current.density
@@ -119,12 +120,17 @@ fun LiquidGlassLens(
                             val u = stretch()
                             val sx = 1f + STRETCH_MAX_X * u
                             val sy = 1f + STRETCH_MAX_Y * u
+                            // 液态感关键：拉伸时镜片内的内容也「跟着被拉长」（水感），
+                            // 而不是保持固定放大率只是外框变宽。故采样只按 sqrt 预压缩：
+                            // 净内容拉伸 = sqrt(sx)，画面随 blob 一起流动，同时不至于糊成一团。
+                            // 另外运动中额外放大 10%，制造「被挤压鼓起」的液体观感。
+                            val m = magnification + 0.10f * u
                             // 采样锚点 = 镜片中心在 backdrop 坐标系中的位置。
                             val cx = lensX() + size.width / 2f
                             translate(size.width / 2f, size.height / 2f) {
                                 scale(
-                                    scaleX = magnification / sx,
-                                    scaleY = magnification / sy,
+                                    scaleX = m / sqrt(sx),
+                                    scaleY = m / sqrt(sy),
                                     pivot = Offset.Zero,
                                 ) {
                                     translate(-cx, -size.height / 2f) {
@@ -148,7 +154,7 @@ fun LiquidGlassLens(
                             drawRoundRect(
                                 brush = Brush.verticalGradient(
                                     colors = listOf(
-                                        Color.White.copy(alpha = 0.10f + 0.06f * edgeHighlight),
+                                        Color.White.copy(alpha = 0.18f + 0.10f * edgeHighlight),
                                         Color.White.copy(alpha = 0.0f),
                                     ),
                                     startY = 0f,
@@ -157,6 +163,16 @@ fun LiquidGlassLens(
                                 topLeft = Offset.Zero,
                                 size = px,
                                 cornerRadius = r,
+                            )
+                            // 玻璃边缘：一道极淡的白色发丝边，让 blob 的形状「看得见」——
+                            // 液态拉伸全靠这条边被拉长才读得出来（不铺填充，所以不是白块）。
+                            val hairline = 1.dp.toPx()
+                            drawRoundRect(
+                                color = Color.White.copy(alpha = 0.16f + 0.12f * edgeHighlight),
+                                topLeft = Offset(hairline / 2f, hairline / 2f),
+                                size = Size(px.width - hairline, px.height - hairline),
+                                cornerRadius = CornerRadius(cornerRadiusPx),
+                                style = Stroke(width = hairline),
                             )
                         },
                 )
