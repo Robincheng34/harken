@@ -131,6 +131,12 @@ fun LiquidGlassLens(
                             // 另外运动中额外放大 10%，制造「被挤压鼓起」的液体观感。
                             val m = magnification + 0.10f * u
                             // 采样锚点 = 镜片中心在 backdrop 坐标系中的位置。
+                            // 折射源图层以 0.5x 半分辨率录制（见 KumoneApp
+                            // captureModifier），图层 1px = 内容 2px：最内层放大回
+                            // 2x（锚点=图层原点）映射回内容坐标系；外层
+                            // scale(m/sqrt(sx)) 等既有几何逻辑坐标单位仍为内容像素，
+                            // 采样语义不变，只是采样源变为半分辨率层（GPU 填充率
+                            // ~1/4；模糊内容上采样视觉不可辨）。
                             val cx = lensX() + size.width / 2f
                             translate(size.width / 2f, size.height / 2f) {
                                 scale(
@@ -139,7 +145,9 @@ fun LiquidGlassLens(
                                     pivot = Offset.Zero,
                                 ) {
                                     translate(-cx, -size.height / 2f) {
-                                        drawLayer(backdrop)
+                                        scale(2f, 2f, pivot = Offset.Zero) {
+                                            drawLayer(backdrop)
+                                        }
                                     }
                                 }
                             }

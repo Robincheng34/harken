@@ -61,7 +61,6 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.material3.pulltorefresh.PullToRefreshState
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.painterResource
 import im.missuo.kumone.design.component.CoverCard
@@ -113,9 +112,10 @@ fun HomeScreen(
     // 内容自动停在空隙位、完成后回弹。
     val density = LocalDensity.current
     val pullGapDp = 96.dp
-    val contentOffsetPx = with(density) {
-        (ptrState.distanceFraction.coerceIn(0f, 1f) * pullGapDp.toPx()).roundToInt()
-    }
+    // 性能（首页竖滑掉帧治理）：不在此处组合期读取 ptrState.distanceFraction——
+    // 组合期读取会让每次拖拽进度变化都重组整个 HomeScreen（含 LazyColumn 全部
+    // item）。改为下方 offset {} / graphicsLayer {} lambda 内 draw 期读取，零重组。
+    val pullGapPx = with(density) { pullGapDp.toPx() }
 
     LaunchedEffect(isLoggedIn) { viewModel.load(isLoggedIn) }
 
@@ -153,16 +153,29 @@ fun HomeScreen(
                     KumoneAppIconIndicator(
                         state = ptrState,
                         isRefreshing = uiState.isRefreshing,
+                        pullGapPx = pullGapPx,
                         modifier = Modifier
                             .align(Alignment.TopCenter)
-                            .offset { IntOffset(0, contentOffsetPx / 2) },
+                            .offset {
+                                IntOffset(
+                                    0,
+                                    (ptrState.distanceFraction.coerceIn(0f, 1f) * pullGapPx / 2f)
+                                        .roundToInt(),
+                                )
+                            },
                     )
                 },
                 content = {
                     LazyColumn(
                         modifier = Modifier
                             .fillMaxSize()
-                            .offset { IntOffset(0, contentOffsetPx) },
+                            .offset {
+                                IntOffset(
+                                    0,
+                                    (ptrState.distanceFraction.coerceIn(0f, 1f) * pullGapPx)
+                                        .roundToInt(),
+                                )
+                            },
                         contentPadding = PaddingValues(vertical = Layout.sectionSpacing),
                         // 分区间距统一（原 bug：LazyColumn 的 12dp 会与各 shelf 自带的上下
                         // 内边距叠加，而各 shelf 内部留白并不一致——HomeShelf 系底部 6dp、
@@ -178,8 +191,9 @@ fun HomeScreen(
                         verticalArrangement = Arrangement.spacedBy(Layout.sectionSpacing),
                     ) {
                         // 功能卡（仅登录态；iOS `if account.isLoggedIn`）。
+                        // contentType：复用池按分区类型分桶，滚动回收重组更省（性能治理）。
                         if (isLoggedIn) {
-                            item(key = "feature-cards") {
+                            item(key = "feature-cards", contentType = "feature-cards") {
                                 FunctionCards(
                                     onDaily = { navController.navigate(DAILY_SONGS_ROUTE) },
                                     onFM = { commands?.startFM() },
@@ -194,7 +208,7 @@ fun HomeScreen(
                         }
 
                         if (uiState.recommendPlaylists.isNotEmpty()) {
-                            item(key = "recommend") {
+                            item(key = "recommend", contentType = "shelf") {
                                 PlaylistShelf(
                                     title = stringResource(R.string.home_recommend_playlists),
                                     items = uiState.recommendPlaylists.take(12), // iOS: prefix(12)
@@ -206,13 +220,14 @@ fun HomeScreen(
                         }
 
                         if (uiState.radarPlaylists.isNotEmpty()) {
-                            item(key = "radar") {
+                            item(key = "radar", contentType = "shelf") {
                                 HomeShelf(
                                     title = stringResource(R.string.home_radar_playlists),
                                 ) {
                                     itemsIndexed(
                                         uiState.radarPlaylists,
                                         key = { _, radar -> radar.id },
+                                        contentType = { _, _ -> "playlist-card" },
                                     ) { _, radar ->
                                         CoverCard(
                                             imageUrl = Formatters.resizedImageURL(radar.coverURL, 384),
@@ -230,7 +245,7 @@ fun HomeScreen(
                         }
 
                         if (uiState.toplists.isNotEmpty()) {
-                            item(key = "toplists") {
+                            item(key = "toplists", contentType = "shelf") {
                                 ToplistShelf(
                                     title = stringResource(R.string.home_toplists),
                                     items = uiState.toplists,
@@ -240,7 +255,7 @@ fun HomeScreen(
                         }
 
                         if (uiState.newAlbums.isNotEmpty()) {
-                            item(key = "new-albums") {
+                            item(key = "new-albums", contentType = "shelf") {
                                 NewAlbumShelf(
                                     items = uiState.newAlbums,
                                     onOpen = { navController.navigate(albumDetailRoute(it)) },
@@ -250,7 +265,7 @@ fun HomeScreen(
                         }
 
                         if (uiState.artists.isNotEmpty()) {
-                            item(key = "artists") {
+                            item(key = "artists", contentType = "shelf") {
                                 ArtistShelf(
                                     items = uiState.artists,
                                     onOpen = { navController.navigate(artistDetailRoute(it)) },
@@ -260,7 +275,7 @@ fun HomeScreen(
 
                         // 底部悬浮 chrome 净空：有迷你播放条时 = 迷你条 52 + 间距 8 + TabBar 64 + 6 + 12；
                         // 无曲目时迷你条不占位，只需 TabBar 净空，否则列表末尾悬着 60dp 死白。
-                        item(key = "clearance") {
+                        item(key = "clearance", contentType = "spacer") {
                             Spacer(Modifier.height(bottomClearance))
                         }
                     }
@@ -332,32 +347,46 @@ private fun HomeSkeletonShelf() {
 /**
  * 自定义下拉刷新指示器：仿网易云音乐官方——下拉时顶部出现 App 金色螺旋图标，
  * 随拖拽进度旋转，刷新时持续旋转。基于 Material3 [PullToRefreshBox] 的 indicator 槽位。
+ *
+ * 性能（首页竖滑掉帧治理）：
+ *  - 无限旋转过渡（[rememberInfiniteTransition]）仅在「正在刷新」时组合——空闲 /
+ *    拖拽态不启动任何帧循环，不逐帧 invalidate；非刷新态角度由拖拽进度驱动并停在
+ *    当前值。
+ *  - alpha / 旋转 / 位移全部在 graphicsLayer / offset lambda 内 draw 期读取
+ *    distanceFraction：拖拽进度变化只触发重绘，零重组。
+ *
+ * @param pullGapPx 拖拽空隙总高（px），与外层内容位移共用，指示器位移为其一半。
  */
 @Composable
 private fun KumoneAppIconIndicator(
     state: PullToRefreshState,
     isRefreshing: Boolean,
+    pullGapPx: Float,
     modifier: Modifier = Modifier,
 ) {
-    val infiniteTransition = rememberInfiniteTransition(label = "refreshSpin")
-    val spin by infiniteTransition.animateFloat(
-        initialValue = 0f,
-        targetValue = 360f,
-        animationSpec = infiniteRepeatable(
-            animation = tween(900, easing = LinearEasing),
-            repeatMode = RepeatMode.Restart,
-        ),
-        label = "spin",
-    )
-    val distanceFraction = state.distanceFraction.coerceIn(0f, 1f)
+    val spin = if (isRefreshing) {
+        val infiniteTransition = rememberInfiniteTransition(label = "refreshSpin")
+        infiniteTransition.animateFloat(
+            initialValue = 0f,
+            targetValue = 360f,
+            animationSpec = infiniteRepeatable(
+                animation = tween(900, easing = LinearEasing),
+                repeatMode = RepeatMode.Restart,
+            ),
+            label = "spin",
+        ).value
+    } else {
+        0f
+    }
     Image(
         painter = painterResource(R.drawable.ic_app_logo),
         contentDescription = null,
         modifier = modifier
             .size(32.dp)
-            .alpha(distanceFraction)
             .graphicsLayer {
-                rotationZ = if (isRefreshing) spin else distanceFraction * 360f
+                val f = state.distanceFraction.coerceIn(0f, 1f)
+                alpha = f
+                rotationZ = if (isRefreshing) spin else f * 360f
             },
     )
 }

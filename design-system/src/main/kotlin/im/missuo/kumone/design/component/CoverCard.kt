@@ -26,10 +26,12 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.painter.ColorPainter
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -123,6 +125,11 @@ private fun CoverArtwork(
     onClick: (() -> Unit)?,
 ) {
     val shape = RoundedCornerShape(8.dp) // iOS: Theme.Radius.standard
+    // 性能：placeholder Painter 用 remember(color) 缓存——首页每个封面卡滚动重组时
+    // 都 new 一个 ColorPainter 会产生大量短命对象（Painter 内部持有 Paint）。
+    // 注意 colorScheme 读取须在组合期完成，remember 计算块内只做 Painter 构造。
+    val placeholderColor = MaterialTheme.colorScheme.surfaceVariant
+    val placeholder = remember(placeholderColor) { ColorPainter(placeholderColor) }
     Box(
         modifier = Modifier
             .then(if (size != null) Modifier.size(size) else Modifier.fillMaxWidth().aspectRatio(1f))
@@ -136,9 +143,7 @@ private fun CoverArtwork(
             modifier = Modifier
                 .matchParentSize()
                 .clip(shape),
-            placeholder = androidx.compose.ui.graphics.painter.ColorPainter(
-                MaterialTheme.colorScheme.surfaceVariant,
-            ),
+            placeholder = placeholder,
         )
         // iOS: strokeBorder(.primary.opacity(0.08), lineWidth: 0.5)
         Box(

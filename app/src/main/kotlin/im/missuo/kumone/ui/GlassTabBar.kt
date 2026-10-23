@@ -56,6 +56,8 @@ import androidx.compose.ui.graphics.TileMode
 import androidx.compose.ui.graphics.layer.GraphicsLayer
 import androidx.compose.ui.graphics.layer.drawLayer
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.ui.input.pointer.changedToDownIgnoreConsumed
 import androidx.compose.ui.input.pointer.changedToUpIgnoreConsumed
 import androidx.compose.ui.input.pointer.pointerInput
@@ -241,7 +243,10 @@ fun GlassTabBar(
         val frostPx = with(density) { 18.dp.toPx() }
         if (backdrop != null && Build.VERSION.SDK_INT >= 33) {
             // 磨砂层：把 KumoneApp 录制的「底栏背后条带」图层直接模糊铺满底栏。
-            // 图层坐标原点就是条带左上角，与底栏本地坐标 1:1 对齐，无需平移。
+            // 图层以 0.5x 半分辨率录制（GPU 填充率优化，见 KumoneApp captureModifier），
+            // 此处放大回 2x 绘制：以图层原点为锚，几何与底栏本地坐标 1:1 对齐，无需平移。
+            // BlurEffect 半径仍为全尺寸像素值——模糊发生在放大后的全分辨率输出光栅上，
+            // 毛玻璃外观与原全分辨率录制时一致（模糊内容上采样不可辨）。
             Box(
                 modifier = Modifier
                     .matchParentSize()
@@ -249,7 +254,9 @@ fun GlassTabBar(
                     .graphicsLayer {
                         renderEffect = BlurEffect(frostPx, frostPx, TileMode.Clamp)
                     }
-                    .drawWithContent { drawLayer(backdrop) },
+                    .drawWithContent {
+                        scale(2f, 2f, pivot = Offset.Zero) { drawLayer(backdrop) }
+                    },
             )
             Box(
                 modifier = Modifier

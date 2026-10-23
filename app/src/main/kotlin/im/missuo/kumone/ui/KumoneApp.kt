@@ -56,6 +56,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.positionInRoot
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.drawscope.translate
+import androidx.compose.ui.graphics.drawscope.scale
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.width
@@ -429,9 +430,19 @@ private fun TabsScreen(
             // 搬运、零回读；内容变化即重录（等价 IT之家 isDirty 重录语义）。镜片
             // 经 RenderEffect 直接消费该 layer（见 LiquidGlassLens），无需画回。
             if (barWidthPx > 0 && barHeightPx > 0) {
-                lensLayer.record(IntSize(barWidthPx, barHeightPx)) {
-                    translate(-barLeftPx.toFloat(), -barTopPx.toFloat()) {
-                        this@drawWithContent.drawContent()
+                // 性能优化（首页竖滑掉帧治理）：以 0.5x 半分辨率录制折射源图层
+                // （1440×220px 条带 → 720×110px 层），record 写入与下游 BlurEffect
+                // 采样的 GPU 填充率开销约降为 1/4。record 块内先 scale(0.5) 包住
+                // 内容平移，几何映射 = 内容点 p → 层内 0.5*(p - barLeft/Top)。
+                // 消费端（GlassTabBar 磨砂层 / LiquidGlassLens 镜片）绘制时统一
+                // 放大回 2x；BlurEffect 半径保持全尺寸像素值不变——模糊发生在
+                // 放大回全分辨率后的输出光栅上，毛玻璃观感不变。磨砂/镜片内容
+                // 本身是模糊图像，半分辨率上采样在视觉上不可辨。
+                lensLayer.record(IntSize(barWidthPx / 2, barHeightPx / 2)) {
+                    scale(0.5f, 0.5f, pivot = Offset.Zero) {
+                        translate(-barLeftPx.toFloat(), -barTopPx.toFloat()) {
+                            this@drawWithContent.drawContent()
+                        }
                     }
                 }
             }
