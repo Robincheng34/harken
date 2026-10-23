@@ -21,9 +21,13 @@ object NeteaseCrypto {
 
     private const val WEAPI_PRESET_KEY = "0CoJUm6Qyw8W8jud"
     private const val WEAPI_IV = "0102030405060708"
-    private const val WEAPI_SECRET_KEY = "harken2026abcDEF"
 
-    /** Precomputed `RSA(reverse("harken2026abcDEF"))` under the public weapi key. */
+    // ⚠️ 线上协议常量，禁止随品牌改名：WEAPI_SECRET_KEY 与下面的 WEAPI_ENC_SEC_KEY
+    // 是配对的（encSecKey = RSA(reverse(secretKey))，服务端会解出 secretKey 再解 params）。
+    // 改了 key 而不重算 encSecKey，所有 /weapi/ 请求服务端解密失败（2026-10-23 真机踩坑）。
+    private const val WEAPI_SECRET_KEY = "kumone2026abcDEF"
+
+    /** Precomputed `RSA(reverse("kumone2026abcDEF"))` under the public weapi key. */
     private const val WEAPI_ENC_SEC_KEY =
         "38cef2efdbcc1cfd6a44d81620dae5d23091f50ef27e01a1b1bb7e998e0fde2d" +
             "7ab6002a9e79a3c195f661cbde80e21e6245997b11b54d28407115822f95d447" +

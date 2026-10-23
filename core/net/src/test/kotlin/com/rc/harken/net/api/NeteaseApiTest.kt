@@ -432,7 +432,8 @@ class NeteaseApiTest {
     private companion object {
         const val WEAPI_PRESET_KEY = "0CoJUm6Qyw8W8jud"
         const val WEAPI_IV = "0102030405060708"
-        const val WEAPI_SECRET_KEY = "harken2026abcDEF"
+        // 与 NeteaseCrypto.WEAPI_SECRET_KEY 保持一致（协议常量，禁止随品牌改名）。
+        const val WEAPI_SECRET_KEY = "kumone2026abcDEF"
         const val EAPI_KEY = "e82ckenh8dichen8"
     }
 }

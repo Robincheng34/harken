@@ -4,7 +4,9 @@
 // `qa-verify/golden.js` (Node.js `crypto`), directly from the Swift source
 // `harken/Sources/Harken/Core/API/NeteaseCrypto.swift`:
 //   weapi = AES-128-CBC(presetKey "0CoJUm6Qyw8W8jud", IV "0102030405060708")
-//           -> base64 -> AES-128-CBC("harken2026abcDEF", same IV) -> base64
+//           -> base64 -> AES-128-CBC("kumone2026abcDEF", same IV) -> base64
+//           （注："kumone2026abcDEF" 是 weapi 线上协议常量（与预计算 RSA 配对），
+//             不属于品牌字样，品牌迁移时已还原并禁止再改）
 //   eapi  = AES-128-ECB("e82ckenh8dichen8") over
 //           "nobody{apiPath}use{text}md5forencrypt" md5 digest,
 //           emitted as UPPERCASE hex
