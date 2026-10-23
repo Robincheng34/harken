@@ -46,6 +46,8 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.draw.drawWithContent
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.BlurEffect
@@ -205,6 +207,9 @@ fun GlassTabBar(
         addSpecular = false,
         addBorder = false,
         addShadow = true,
+        // 关键：不裁剪内容 —— 选中镜片要「上下溢出」到导航栏之外（IT之家 同款），
+        // 裁到 shape 内就永远看不到溢出效果。
+        clipContent = false,
         modifier = modifier
             .fillMaxWidth()
             .padding(start = 12.dp, end = 12.dp, bottom = Layout.bottomMargin)
@@ -217,6 +222,7 @@ fun GlassTabBar(
             Box(
                 modifier = Modifier
                     .matchParentSize()
+                    .clip(RoundedCornerShape(30.dp))
                     .graphicsLayer {
                         renderEffect = BlurEffect(frostPx, frostPx, TileMode.Clamp)
                     }
@@ -225,6 +231,7 @@ fun GlassTabBar(
             Box(
                 modifier = Modifier
                     .matchParentSize()
+                    .clip(RoundedCornerShape(30.dp))
                     .background(Color.White.copy(alpha = 0.05f)),
             )
         } else {
@@ -238,12 +245,33 @@ fun GlassTabBar(
         // 选中镜片 = 纯透明液态玻璃（毛玻璃 + 放大折射 + 滑动拉伸），不带白色填充；
         // 只有极淡的顶部反光描出玻璃存在感，随手指逐像素跟手。
         if (cellWidthPx > 0f) {
+            // 竖向比导航栏高出 22%，上下各溢出一半。注意父 Box 必须用默认 TopStart
+            // 对齐：用 contentAlignment=Center 的话子项先从居中位置摆放、再叠加
+            // translationX=lensX，位置会整体偏移（真机踩坑）。
+            val lensHeightDp = Layout.tabBarHeight * 1.22f
+            val lensOverflowPx = with(density) {
+                (lensHeightDp - Layout.tabBarHeight).toPx()
+            }
+            // 左右各内缩 5dp：贴死条子的圆角端会连成一片，看起来不像独立的一块。
+            val lensInsetPx = with(density) { 5.dp.toPx() }
             Box(modifier = Modifier.matchParentSize()) {
                 Box(
                     modifier = Modifier
-                        .graphicsLayer { translationX = lensX }
-                        .width(cellWidthDp)
-                        .fillMaxHeight(),
+                        .graphicsLayer {
+                            translationX = lensX + lensInsetPx
+                            // 上移溢出量的一半 → 上下溢出均分
+                            translationY = -lensOverflowPx / 2f
+                        }
+                        .width(cellWidthDp - 10.dp)
+                        .height(lensHeightDp)
+                        // 柔和投影：白底页面上镜片与背景同色，只能靠投影看出它「探出条外」。
+                        .shadow(
+                            elevation = 6.dp,
+                            shape = RoundedCornerShape(26.dp),
+                            clip = false,
+                            ambientColor = Color.Black.copy(alpha = 0.10f),
+                            spotColor = Color.Black.copy(alpha = 0.14f),
+                        ),
                 ) {
                     LiquidGlassLens(
                         backdrop = backdrop,

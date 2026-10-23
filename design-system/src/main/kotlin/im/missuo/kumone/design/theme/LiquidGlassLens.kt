@@ -51,11 +51,11 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import kotlin.math.sqrt
 
-/** 拉伸时横向最大拉长（u=1 时镜片宽变为 1.8 倍，对照录屏 blob 覆盖 1.5~2 Tab）。 */
-private const val STRETCH_MAX_X = 0.8f
+/** 横向拉长很小（1.08 倍）：IT之家 的镜片基本维持一个 Tab 宽，不做横向拉长。 */
+private const val STRETCH_MAX_X = 0.08f
 
-/** 拉伸时纵向微胀（液滴感；上限受采样窗口约束，见 draw 处推导）。 */
-private const val STRETCH_MAX_Y = 0.24f
+/** 纵向膨胀：滑动时镜片再「探出」一点（液体被挤高），这是液态感的主要来源。 */
+private const val STRETCH_MAX_Y = 0.12f
 
 /**
  * 液态玻璃选中标尺。

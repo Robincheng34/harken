@@ -123,6 +123,12 @@ fun GlassBox(
     addSpecular: Boolean = true,
     addBorder: Boolean = true,
     addShadow: Boolean = true,
+    /**
+     * 是否把内容裁到 [shape] 内。默认 true（玻璃容器语义）。置 false 时内容可以
+     * 溢出容器边界——底栏的选中镜片需要「上下超出导航栏」（IT之家 同款）就用它，
+     * 此时填充/高光/描边须自行关闭，否则未裁剪的底色会跟着溢出。
+     */
+    clipContent: Boolean = true,
     contentAlignment: Alignment = Alignment.TopStart,
     content: @Composable BoxScope.() -> Unit,
 ) {
@@ -135,7 +141,7 @@ fun GlassBox(
                     Modifier
                 },
             )
-            .clip(shape)
+            .then(if (clipContent) Modifier.clip(shape) else Modifier)
             .drawWithContent {
                 // 1) 半透明填充（vibrancy 磨砂感）。
                 drawRect(color = tokens.fill)
