@@ -248,10 +248,6 @@ fun GlassTabBar(
             // 竖向比导航栏高出 22%，上下各溢出一半。注意父 Box 必须用默认 TopStart
             // 对齐：用 contentAlignment=Center 的话子项先从居中位置摆放、再叠加
             // translationX=lensX，位置会整体偏移（真机踩坑）。
-            val lensHeightDp = Layout.tabBarHeight * 1.22f
-            val lensOverflowPx = with(density) {
-                (lensHeightDp - Layout.tabBarHeight).toPx()
-            }
             // 左右各内缩 5dp：贴死条子的圆角端会连成一片，看起来不像独立的一块。
             val lensInsetPx = with(density) { 5.dp.toPx() }
             Box(modifier = Modifier.matchParentSize()) {
@@ -259,11 +255,13 @@ fun GlassTabBar(
                     modifier = Modifier
                         .graphicsLayer {
                             translationX = lensX + lensInsetPx
-                            // 上移溢出量的一半 → 上下溢出均分
-                            translationY = -lensOverflowPx / 2f
+                            // 竖向用 scaleY 从中心放大（而不是加高盒子）：盒子保持条高、
+                            // 天然与条垂直居中，上下溢出严格对称；加高盒子会被父约束/
+                            // 投影裁剪，且容易算偏（真机实测偏上 25px）。
+                            scaleY = 1.22f
                         }
                         .width(cellWidthDp - 10.dp)
-                        .height(lensHeightDp)
+                        .fillMaxHeight()
                         // 柔和投影：白底页面上镜片与背景同色，只能靠投影看出它「探出条外」。
                         .shadow(
                             elevation = 6.dp,

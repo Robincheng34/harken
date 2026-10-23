@@ -136,7 +136,16 @@ fun GlassBox(
         modifier = modifier
             .then(
                 if (addShadow) {
-                    Modifier.shadow(22.dp, shape, spotColor = tokens.shadow, ambientColor = tokens.shadow)
+                    // clip = false 必须显式写：Modifier.shadow 的默认 clip 是
+                    // (elevation > 0.dp)，会顺带把内容裁到 shape 内——底栏镜片要
+                    // 溢出条外时就被投影悄悄裁掉了（真机踩坑：requiredHeight 也白搭）。
+                    Modifier.shadow(
+                        elevation = 22.dp,
+                        shape = shape,
+                        clip = false,
+                        spotColor = tokens.shadow,
+                        ambientColor = tokens.shadow,
+                    )
                 } else {
                     Modifier
                 },
