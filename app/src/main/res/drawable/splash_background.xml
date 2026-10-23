@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 冷启动窗口背景：纯黑垫底 + 品牌启动图（与 Compose 启动层同一资产，
+     消除窗口背景 → 首帧之间的白屏/跳变）。 -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@android:color/black" />
+    <item>
+        <bitmap
+            android:src="@drawable/splash_brand"
+            android:gravity="fill" />
+    </item>
+</layer-list>

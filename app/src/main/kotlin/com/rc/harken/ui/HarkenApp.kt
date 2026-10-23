@@ -12,11 +12,14 @@
 package com.rc.harken.ui
 
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.isSystemInDarkTheme
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
@@ -63,6 +66,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.res.painterResource
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.toIntSize
@@ -88,7 +93,9 @@ import com.rc.harken.design.composition.LocalUpdateRepository
 import com.rc.harken.design.navigation.Destinations
 import com.rc.harken.design.theme.AppAnimations
 import com.rc.harken.design.theme.Layout
+import com.rc.harken.design.theme.MotionEnterEasing
 import com.rc.harken.design.theme.HarkenTheme
+import com.rc.harken.R
 import com.rc.harken.di.AppGraph
 import com.rc.harken.di.LoginState
 import com.rc.harken.feature.detail.detailGraph
@@ -193,6 +200,21 @@ private const val FROST_ENABLED = false
 private const val TAG_LENS = "LiquidGlassLens"
 
 /**
+ * 启动层停留时长（ms）：品牌图静止展示的窗口，期间正常初始化（AppGraph 等）
+ * 照常进行，不做任何人为阻塞之外的多等。
+ */
+private const val SPLASH_HOLD_MILLIS = 950L
+
+/**
+ * 启动层淡出时长（ms）：同一个动画进度反向驱动首页内容进场
+ * （alpha 0→1、scale 0.94→1），保证品牌图 → 首页无跳变。
+ */
+private const val SPLASH_FADE_MILLIS = 450
+
+/** 首页内容进场的起始缩放（随启动层淡出恢复到 1f）。 */
+private const val SPLASH_CONTENT_MIN_SCALE = 0.94f
+
+/**
  * 应用根。由 [MainActivity] 调用，包裹主题与全部 CompositionLocal。
  */
 @Composable
@@ -295,12 +317,43 @@ private fun AppContent(graph: AppGraph) {
     // LocalOpenNowPlaying 必须在本作用域提供（overlayNav 在此创建）；
     // 迷你播放条等入口经它打开全屏播放页，与起播钩子同一导航函数。
     CompositionLocalProvider(LocalOpenNowPlaying provides openNowPlaying) {
-        Box(modifier = Modifier.fillMaxSize()) {
-            TabsScreen(
-                overlayNav = overlayNav,
-                tabs = visibleTabs,
-                settings = storedSettings,
+        // ── 品牌启动层 + 首页过渡 ──
+        // splashProgress: 0（启动层完全可见）→ 1（完全退场）。单个 Animatable
+        // 同时反向驱动两侧：启动层 alpha = 1 - p（expo-out 缓动淡出），
+        // 首页内容 alpha = p、scale = 0.94 + 0.06p（同步放大进场），两端进度
+        // 互补所以视觉上无缝、无跳变。动画结束后启动层从组合中移除，不再驻留。
+        val splashProgress = remember { Animatable(0f) }
+        var splashVisible by remember { mutableStateOf(true) }
+        LaunchedEffect(Unit) {
+            delay(SPLASH_HOLD_MILLIS)
+            splashProgress.animateTo(
+                targetValue = 1f,
+                animationSpec = tween(durationMillis = SPLASH_FADE_MILLIS, easing = MotionEnterEasing),
             )
+            // 淡出完成才移除启动层（避免中途移除造成闪帧）。
+            splashVisible = false
+        }
+        // 过渡结束后整体摘掉 graphicsLayer（alpha=1 / scale=1 本就无操作，
+        // 移除可让常驻渲染路径零开销）。
+        val contentModifier = if (splashVisible) {
+            Modifier.graphicsLayer {
+                alpha = splashProgress.value
+                val scale = SPLASH_CONTENT_MIN_SCALE +
+                    (1f - SPLASH_CONTENT_MIN_SCALE) * splashProgress.value
+                scaleX = scale
+                scaleY = scale
+            }
+        } else {
+            Modifier
+        }
+
+        Box(modifier = Modifier.fillMaxSize()) {
+            Box(modifier = Modifier.fillMaxSize().then(contentModifier)) {
+                TabsScreen(
+                    overlayNav = overlayNav,
+                    tabs = visibleTabs,
+                    settings = storedSettings,
+                )
 
             // 覆盖层：详情 / 登录 / 全屏播放 / 设置 / P1。
             // 转场统一取自 AppAnimations：进场淡入+轻微上滑（expo-out）、出场淡出、
@@ -326,9 +379,38 @@ private fun AppContent(graph: AppGraph) {
                 playerGraph(overlayNav)
             }
 
-            // 进程级 Toast 中心。
-            ToastCenter(state = toastState)
+                // 进程级 Toast 中心。
+                ToastCenter(state = toastState)
+            }
+
+            // 品牌启动层：盖在全部内容之上，与启动图窗口背景同资产衔接，
+            // 淡出结束后（splashVisible=false）从组合中移除。
+            if (splashVisible) {
+                SplashLayer(splashAlpha = 1f - splashProgress.value)
+            }
         }
+    }
+}
+
+/**
+ * 品牌启动层：黑底 + 品牌启动图（与冷启动 windowBackground 同一张
+ * `splash_brand` 资产，ContentScale.Crop 铺满），整层随 [splashAlpha] 淡出。
+ * 纯展示层：不拦截事件之外的行为，无状态。
+ */
+@Composable
+private fun SplashLayer(splashAlpha: Float) {
+    Box(
+        modifier = Modifier
+            .fillMaxSize()
+            .graphicsLayer { this.alpha = splashAlpha }
+            .background(Color.Black),
+    ) {
+        Image(
+            painter = painterResource(R.drawable.splash_brand),
+            contentDescription = null,
+            contentScale = ContentScale.Crop,
+            modifier = Modifier.fillMaxSize(),
+        )
     }
 }
 

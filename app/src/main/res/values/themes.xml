@@ -6,4 +6,12 @@
         <item name="android:navigationBarColor">@android:color/transparent</item>
         <item name="android:windowBackground">@color/harken_background</item>
     </style>
+
+    <!-- 冷启动主题：windowBackground 用品牌启动图（黑底），消除白屏。
+         MainActivity.onCreate 在 super 之前 setTheme(Theme.Harken) 切回正常主题，
+         Compose 启动层（HarkenApp 内）负责品牌图 → 首页的无缝过渡。 -->
+    <style name="Theme.Harken.Launch" parent="Theme.Harken">
+        <item name="android:windowBackground">@drawable/splash_background</item>
+        <item name="android:windowFullscreen">true</item>
+    </style>
 </resources>
