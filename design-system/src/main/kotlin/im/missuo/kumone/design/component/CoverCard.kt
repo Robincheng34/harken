@@ -62,6 +62,15 @@ fun CoverCard(
     playCount: Int = 0,
     onPlay: (() -> Unit)? = null,
     onClick: (() -> Unit)? = null,
+    /**
+     * 是否为副标题预留固定一行（即使 subtitle 为空也占位）。
+     *
+     * 背景：卡片放在 `LazyRow` 里时，行高 = 当前可见卡片的最大高度。若同一行里有的卡片
+     * 有 copywriter、有的没有（高一行），横向滑动使新卡片进入组合时行高就会变，
+     * 父级 `LazyColumn` 中它下方的分区会整体跳动（用户反馈「滑动推荐歌单时下面的
+     * 雷达/排行榜跳动」）。置 true 让每个卡片高度一致，行高恒定。
+     */
+    reserveSubtitleLine: Boolean = false,
 ) {
     Column(
         modifier = modifier.then(
@@ -83,16 +92,19 @@ fun CoverCard(
                 style = MaterialTheme.typography.titleMedium,
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 2,
+                // minLines = 2：单行标题也占两行，保证同一行卡片等高
+                minLines = 2,
                 overflow = TextOverflow.Ellipsis,
                 modifier = if (size != null) Modifier.size(width = size, height = Dp.Unspecified) else Modifier,
             )
         }
-        if (!subtitle.isNullOrEmpty()) {
+        if (!subtitle.isNullOrEmpty() || reserveSubtitleLine) {
             Text(
-                text = subtitle,
+                text = subtitle.orEmpty(),
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 maxLines = 1,
+                minLines = 1,
                 overflow = TextOverflow.Ellipsis,
                 modifier = if (size != null) Modifier.size(width = size, height = Dp.Unspecified) else Modifier,
             )

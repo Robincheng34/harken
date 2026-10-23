@@ -222,6 +222,8 @@ fun HomeScreen(
                                             size = Layout.cardSize,
                                             onPlay = { onPlaylist(radar.id) },
                                             onClick = { navController.navigate(playlistDetailRoute(radar.id)) },
+                                            // 雷达歌单的 subtitle 可能缺失 → 固定预留一行
+                                            reserveSubtitleLine = true,
                                         )
                                     }
                                 }

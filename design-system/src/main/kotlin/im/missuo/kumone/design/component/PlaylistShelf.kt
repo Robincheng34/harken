@@ -56,6 +56,9 @@ fun PlaylistShelf(
                 onPlay = onPlay?.let { callback -> { callback(playlist.id) } },
                 onClick = { onOpen(playlist.id) },
                 modifier = Modifier.staggeredAppearance(index = index, enabled = staggered),
+                // copywriter 可能为空 → 固定预留副标题行，保证整行等高（否则横滑时
+                // 行高变化会让下方分区跳动）
+                reserveSubtitleLine = true,
             )
         }
     }
