@@ -15,6 +15,8 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.PaddingValues
+import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
@@ -37,18 +39,17 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.rc.harken.design.theme.BrandGradient
 import com.rc.harken.feature.login.LoginUiState
 import com.rc.harken.feature.login.LoginViewModel
 import com.rc.harken.feature.login.R
 
-/**
- * 短信验证码登录表单。
- *
- * @param uiState 登录页状态（手机号 / 验证码 / 冷却 / 进行中标志）。
- * @param viewModel 交互入口（发送验证码 / 登录）。
- */
+/** 「获取验证码」按钮槽宽:手机号 / 验证码两行输入框共用同一右边界。 */
+private val SEND_SLOT_DP: Dp = 88.dp
+
+/** 短信验证码登录表单。 */
 @Composable
 fun SmsCodeSection(
     uiState: LoginUiState,
@@ -83,41 +84,37 @@ fun SmsCodeSection(
             )
         }
 
-        // 手机号（+86 前缀）。
+        // 手机号（+86 前缀收进框内）。两行输入框同宽：右侧都留出与
+        // 「获取验证码」按钮等宽的槽位（SEND_SLOT_DP），左右边缘对齐。
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Text(
-                text = "+86",
-                style = MaterialTheme.typography.bodyLarge,
-                color = MaterialTheme.colorScheme.onSurface,
-            )
-            Box(
-                modifier = Modifier
-                    .width(1.dp)
-                    .height(20.dp)
-                    .background(MaterialTheme.colorScheme.outlineVariant),
-            )
             OutlinedTextField(
                 value = uiState.phone,
                 onValueChange = viewModel::setPhone,
+                prefix = {
+                    Text(
+                        text = "+86",
+                        style = MaterialTheme.typography.bodyLarge,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                },
                 placeholder = { Text(stringResource(R.string.login_sms_phone)) },
                 singleLine = true,
                 keyboardOptions = KeyboardOptions(
                     keyboardType = KeyboardType.Phone,
                     imeAction = ImeAction.Next,
                 ),
-                modifier = Modifier.fillMaxWidth(),
+                modifier = Modifier.weight(1f),
             )
+            Spacer(modifier = Modifier.width(SEND_SLOT_DP))
         }
 
         // 验证码 + 获取按钮（冷却倒计时）。
         Row(
             modifier = Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(10.dp),
         ) {
             OutlinedTextField(
                 value = uiState.code,
@@ -133,6 +130,8 @@ fun SmsCodeSection(
             TextButton(
                 onClick = viewModel::sendSmsCode,
                 enabled = uiState.canSendSmsCode,
+                modifier = Modifier.width(SEND_SLOT_DP),
+                contentPadding = PaddingValues(horizontal = 4.dp),
             ) {
                 when {
                     uiState.smsSending -> CircularProgressIndicator(
