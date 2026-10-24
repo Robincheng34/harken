@@ -3,6 +3,12 @@
 package com.rc.harken.design.theme
 
 import androidx.compose.animation.EnterTransition
+import androidx.compose.animation.core.FastOutLinearInEasing
+import androidx.compose.animation.core.LinearOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.ui.graphics.TransformOrigin
 import androidx.compose.animation.ExitTransition
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.SpringSpec
@@ -98,23 +104,33 @@ object AppAnimations {
     // ── 转场工厂：NavHost / AnimatedVisibility 统一取用 ──────────────────────
 
     /**
-     * 覆盖层页面进场：淡入 + 自下而上的轻微位移（1/10 屏），
-     * expo-out 入场，与 iOS 模态页的纵深感一致。
+     * 覆盖层页面进场:官方网易云 Activity 转场(逆向 style k/b2 + anim c)。
+     * 底部中心缩放 0.9→1.0(220ms decelerate)+ 淡入(150ms decelerate)。
      */
     fun navEnter(): EnterTransition =
-        fadeIn(animationSpec = enter()) +
-            slideInVertically(animationSpec = enter()) { it / 10 }
+        fadeIn(animationSpec = tween(150, easing = LinearOutSlowInEasing)) +
+            scaleIn(
+                animationSpec = tween(220, easing = LinearOutSlowInEasing),
+                initialScale = 0.9f,
+                transformOrigin = TransformOrigin(0.5f, 1f),
+            )
 
-    /** 覆盖层页面离场：纯淡出（ease-in，220ms），不与进场抢占注意力。 */
-    fun navExit(): ExitTransition = fadeOut(animationSpec = exit())
+    /** 覆盖层页面离场:官方 anim f——镜像缩回 0.9 + 淡出(accelerate_quad)。 */
+    fun navExit(): ExitTransition =
+        fadeOut(animationSpec = tween(150, easing = FastOutLinearInEasing)) +
+            scaleOut(
+                animationSpec = tween(220, easing = LinearOutSlowInEasing),
+                targetScale = 0.9f,
+                transformOrigin = TransformOrigin(0.5f, 1f),
+            )
 
-    /** 返回（pop）进场：纯淡入。 */
-    fun navPopEnter(): EnterTransition = fadeIn(animationSpec = enter())
+    /** 返回(pop)进场:官方 anim k——纯淡入 150ms(decelerate_quad)。 */
+    fun navPopEnter(): EnterTransition =
+        fadeIn(animationSpec = tween(150, easing = LinearOutSlowInEasing))
 
-    /** 返回（pop）离场：淡出 + 轻微下滑，与进场互为镜像。 */
+    /** 返回(pop)离场:官方 anim l——纯淡出 150ms(accelerate_quad)。 */
     fun navPopExit(): ExitTransition =
-        fadeOut(animationSpec = exit()) +
-            slideOutVertically(animationSpec = exit()) { it / 10 }
+        fadeOut(animationSpec = tween(150, easing = FastOutLinearInEasing))
 
     /** 第 [index] 个入场元素的延迟毫秒（上限 [MAX_STAGGER_DELAY_MILLIS]）。 */
     fun staggerDelayMillis(index: Int): Long =
