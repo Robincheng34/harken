@@ -24,6 +24,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
+import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.SegmentedButton
@@ -37,6 +38,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.dp
@@ -92,8 +94,8 @@ fun LoginSheetContent(
         // 标题「登录网易云音乐」（iOS `title3.weight(.semibold)`）。
         Text(
             text = stringResource(R.string.login_title),
-            style = MaterialTheme.typography.titleLarge,
-            color = MaterialTheme.colorScheme.onSurface,
+            fontSize = 18.sp,
+            color = Color(0xFF283248),
         )
 
         // 登录方式分段选择（iOS segmented Picker，宽 220 居中）。
@@ -149,7 +151,7 @@ private fun QrSection(
         Text(
             text = stringResource(R.string.login_qr_subtitle),
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = Color(0x99283248),
         )
 
         val qrUrl = uiState.qrUrl
@@ -166,12 +168,15 @@ private fun QrSection(
         Text(
             text = statusText(uiState),
             style = MaterialTheme.typography.bodyMedium,
-            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            color = Color(0x99283248),
             textAlign = TextAlign.Center,
         )
 
         if (uiState.status == LoginStatus.Expired || uiState.status == LoginStatus.Error) {
-            Button(onClick = { viewModel.startQrLogin() }) {
+            Button(
+                onClick = { viewModel.startQrLogin() },
+                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEC4141), contentColor = Color.White),
+            ) {
                 Icon(imageVector = Icons.Filled.Refresh, contentDescription = null)
                 Spacer(modifier = Modifier.height(4.dp))
                 Text(text = stringResource(R.string.login_qr_refresh))
