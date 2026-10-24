@@ -19,6 +19,9 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.asPaddingValues
+import androidx.compose.foundation.layout.statusBars
 import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -176,7 +179,13 @@ fun HomeScreen(
                                         .roundToInt(),
                                 )
                             },
-                        contentPadding = PaddingValues(vertical = Layout.sectionSpacing),
+                        contentPadding = PaddingValues(
+                            // 顶部 = 状态栏高度 + 额外 12dp:原实现无 statusBarsPadding,
+                            // 「推荐歌单」标题直接顶进状态栏下缘,观感拥挤(用户反馈)。
+                            top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() +
+                                12.dp,
+                            bottom = Layout.sectionSpacing,
+                        ),
                         // 分区间距统一（原 bug：LazyColumn 的 12dp 会与各 shelf 自带的上下
                         // 内边距叠加，而各 shelf 内部留白并不一致——HomeShelf 系底部 6dp、
                         // PlaylistShelf / ToplistShelf 底部 0dp——导致实际视觉间隔出现
