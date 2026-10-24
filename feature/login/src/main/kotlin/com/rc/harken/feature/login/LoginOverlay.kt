@@ -53,16 +53,19 @@ fun LoginOverlay(
                 ),
         )
 
-        // 底部卡片。
+        // 底部卡片：贴底对齐（背景直落到屏幕底，只圆上角）；内容行保持
+        // 在底栏 chrome 条之上（chrome 绘制在本覆盖层之上会拦截该区域触摸）。
         Column(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
-                .padding(horizontal = 16.dp)
                 .widthIn(max = 380.dp)
                 .fillMaxWidth()
-                .padding(bottom = Layout.tabBarClearance + Layout.bottomGestureInset() + 4.dp)
-                .background(MaterialTheme.colorScheme.surface.copy(alpha = 0.97f), RoundedCornerShape(28.dp))
-                .padding(vertical = 8.dp),
+                .background(
+                    MaterialTheme.colorScheme.surface.copy(alpha = 0.97f),
+                    RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
+                )
+                .padding(vertical = 8.dp)
+                .padding(bottom = Layout.tabBarClearance + Layout.bottomGestureInset()),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             LoginSheetContent(
