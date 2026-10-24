@@ -3,7 +3,7 @@
 // 登录面板（T17 `LoginSheet.kt`：扫码 / 短信验证码双通道）。
 //
 // 以 ModalBottomSheet 承载登录内容：顶部「登录网易云音乐」标题 + 居中分段选择器
-// 切换「扫码登录 / 手机验证码」，下方为 QR / SMS 分区，底部「取消」按钮。
+// 切换「扫码登录 / 手机验证码」，下方为 QR / SMS 分区，关闭走 scrim 点击或系统返回。
 // 布局 1:1 对照 iOS `LoginSheet.swift`（限宽 320、分段 Picker 宽 220、title3 semibold）。
 // 登录成功（803 或短信登录）经 [onConfirmed] 回调上抛，由宿主写入登录态并关闭。
 
@@ -20,19 +20,16 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
+
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material3.Button
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.SegmentedButton
 import androidx.compose.material3.SegmentedButtonDefaults
 import androidx.compose.material3.SingleChoiceSegmentedButtonRow
 import androidx.compose.material3.Text
-import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -46,27 +43,10 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rc.harken.design.composition.LocalNeteaseApi
-import com.rc.harken.design.theme.glassTokens
 import com.rc.harken.feature.login.components.QrCodeView
 import com.rc.harken.feature.login.components.SmsCodeSection
 
-/** 登录面板（含 ModalBottomSheet 承载，限宽 320 对照 iOS）。 */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun LoginSheet(
-    onDismiss: () -> Unit,
-    onConfirmed: () -> Unit = {},
-) {
-    ModalBottomSheet(
-        onDismissRequest = onDismiss,
-        containerColor = glassTokens().fill,
-        contentColor = MaterialTheme.colorScheme.onSurface,
-    ) {
-        LoginSheetContent(onConfirmed = onConfirmed, onDismiss = onDismiss)
-    }
-}
-
-/** 登录内容（不含 ModalBottomSheet，便于复用）。布局 1:1 对照 iOS `LoginSheet`。 */
+/** 登录内容（不含弹层承载，宿主见 [LoginOverlay]）。布局 1:1 对照 iOS `LoginSheet`。 */
 @Composable
 fun LoginSheetContent(
     onConfirmed: () -> Unit = {},
@@ -100,12 +80,11 @@ fun LoginSheetContent(
         onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
-    // 限宽 320（iOS `.frame(width: 320)`）：宽屏/折叠屏上居中，手机屏幕占满。
+    // 宽度交给卡片容器（LoginOverlay 限宽 380 居中），这里只负责内边距。
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .widthIn(320.dp)
-            .padding(horizontal = 24.dp, vertical = 16.dp),
+            .padding(horizontal = 24.dp, vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.spacedBy(16.dp),
     ) {
@@ -150,16 +129,8 @@ fun LoginSheetContent(
             LoginMode.SMS -> SmsCodeSection(uiState = uiState, viewModel = viewModel)
         }
 
-        Spacer(modifier = Modifier.height(4.dp))
-
-        // 「取消」按钮（iOS `Button("取消")`，12.5sp 次级样式）。
-        TextButton(onClick = onDismiss) {
-            Text(
-                text = stringResource(R.string.login_cancel),
-                fontSize = 12.5.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
+        // 「取消」按钮已移除:卡片底部被常驻底栏 chrome 覆盖,按钮点击永远到不了
+        // (2026-10-24 真机实测「假取消」)。关闭走 scrim 点击 / 系统返回。
     }
 }
 
@@ -182,11 +153,11 @@ private fun QrSection(
 
         val qrUrl = uiState.qrUrl
         if (qrUrl != null) {
-            QrCodeView(content = qrUrl, sizeDp = 208)
+            QrCodeView(content = qrUrl, sizeDp = 192)
         } else {
             Box(
                 modifier = Modifier
-                    .size(208.dp)
+                    .size(192.dp)
                     .fillMaxWidth(),
             )
         }

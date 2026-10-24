@@ -23,7 +23,7 @@ fun NavGraphBuilder.loginGraph(navController: NavHostController) {
         // CompositionLocal.current 只能在 @Composable 上下文读取：先在此读出，
         // 再闭包传入非 Composable 的 onConfirmed 回调。
         val onLoginConfirmed = LocalOnLoginConfirmed.current
-        LoginSheet(
+        LoginOverlay(
             onDismiss = { navController.popBackStack() },
             onConfirmed = { onLoginConfirmed?.invoke() },
         )

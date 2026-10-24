@@ -58,7 +58,7 @@ fun SmsCodeSection(
     Column(
         modifier = modifier
             .fillMaxWidth()
-            .padding(horizontal = 28.dp),
+            .padding(horizontal = 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
         // 风控提示（iOS smsSection 顶部警告条）。
