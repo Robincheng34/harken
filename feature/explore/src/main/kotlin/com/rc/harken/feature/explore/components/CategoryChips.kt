@@ -11,8 +11,9 @@ package com.rc.harken.feature.explore.components
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
+import androidx.compose.foundation.gestures.awaitEachGesture
+import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectDragGesturesAfterLongPress
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsPressedAsState
@@ -32,11 +33,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
+import androidx.compose.ui.input.pointer.PointerEventPass
+import androidx.compose.ui.input.pointer.positionChangeIgnoreConsumed
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import kotlin.math.abs
 import androidx.compose.ui.unit.sp
 import com.rc.harken.design.theme.AppAnimations
 import com.rc.harken.design.component.staggeredAppearance
@@ -66,16 +70,34 @@ fun CategoryChips(
         modifier = modifier
             .horizontalScroll(scrollState)
             .pointerInput(Unit) {
-                // 长按后可像底栏一样横向拖动 chips(拖动量 1:1 映射滚动)。
-                detectDragGesturesAfterLongPress(
-                    onDragStart = { },
-                    onDragEnd = { },
-                    onDragCancel = { },
-                    onDrag = { change, dragAmount ->
-                        change.consume()
-                        scrollState.dispatchRawDelta(-dragAmount.x)
-                    },
-                )
+                // 按下后横向位移超过 touch slop 即滚动 chips(与底栏一致的跟手体验):
+                // 在 Initial pass 消费移动事件,优先于 HorizontalPager 的切页检测;
+                // 几乎无位移的短按仍交给胶囊的 clickable(正常切换分类)。
+                awaitEachGesture {
+                    awaitFirstDown(
+                        requireUnconsumed = false,
+                        pass = PointerEventPass.Initial,
+                    )
+                    var overSlop = 0f
+                    var dragging = false
+                    while (true) {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        val change = event.changes.firstOrNull() ?: break
+                        if (!change.pressed) break
+                        if (!change.isConsumed) {
+                            overSlop += change.positionChangeIgnoreConsumed().x
+                            if (!dragging && abs(overSlop) > viewConfiguration.touchSlop) {
+                                dragging = true
+                            }
+                            if (dragging) {
+                                change.consume()
+                                scrollState.dispatchRawDelta(
+                                    -change.positionChangeIgnoreConsumed().x,
+                                )
+                            }
+                        }
+                    }
+                }
             }
             .padding(vertical = 2.dp),
         horizontalArrangement = Arrangement.spacedBy(10.dp),
