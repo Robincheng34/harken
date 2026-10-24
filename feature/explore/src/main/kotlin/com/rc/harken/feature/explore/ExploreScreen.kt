@@ -57,7 +57,10 @@ import kotlinx.coroutines.launch
  * @param navController 覆盖层导航控制器，用于跳转歌单详情。
  */
 @Composable
-fun ExploreScreen(navController: NavHostController) {
+fun ExploreScreen(
+    navController: NavHostController,
+    title: String = stringResource(R.string.explore_title),
+) {
     val api = LocalNeteaseApi.current
         ?: error("LocalNeteaseApi 必须在 HarkenApp 提供")
     val commands = LocalPlaybackCommands.current
@@ -115,6 +118,7 @@ fun ExploreScreen(navController: NavHostController) {
             categories = uiState.categories,
             selected = uiState.selectedCategory,
             onSelect = { viewModel.select(it) },
+            title = title,
         )
         if (uiState.selectedCategory == CATEGORY_TOPLISTS) {
             // iOS: ToplistGrid(toplists:).padding(.horizontal, contentInset)
@@ -205,10 +209,11 @@ private fun ExploreHeader(
     categories: List<String>,
     selected: String,
     onSelect: (String) -> Unit,
+    title: String,
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
         GlassTopAppBar(
-            title = { Text(text = stringResource(R.string.explore_title)) },
+            title = { Text(text = title) },
             expandedHeight = 52.dp,
         )
         CategoryChips(
