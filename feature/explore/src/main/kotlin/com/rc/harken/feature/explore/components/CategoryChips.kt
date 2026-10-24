@@ -68,6 +68,7 @@ fun CategoryChips(
     )
     Row(
         modifier = modifier
+            .padding(start = sideMargin, end = sideMargin)
             .horizontalScroll(scrollState)
             .pointerInput(Unit) {
                 // 按下后横向位移超过 touch slop 即滚动 chips(与底栏一致的跟手体验):
@@ -103,8 +104,6 @@ fun CategoryChips(
         horizontalArrangement = Arrangement.spacedBy(10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        // iOS 边缘留白：max(0, contentInset - spacing)。
-        Spacer(Modifier.width(sideMargin))
         categories.forEachIndexed { index, category ->
             CategoryChip(
                 label = stringResource(categoryLabelRes(category)),
@@ -114,7 +113,8 @@ fun CategoryChips(
                 modifier = Modifier.staggeredAppearance(index = index % 10),
             )
         }
-        Spacer(Modifier.width(sideMargin))
+        // 尾部不再放 Spacer:外层 start/end padding 已提供 10dp 边距,
+        // 行内再加会与 spacedBy 叠加(此前胶囊比下方网格右移 10dp 的根因)。
     }
 }
 
