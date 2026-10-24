@@ -46,6 +46,37 @@ class ExploreViewModel(
         loadMore()
     }
 
+    /** 下拉刷新 / 重按 Tab 触发:清空当前分类数据并重新走完整加载。 */
+    private val _isRefreshing = MutableStateFlow(false)
+    val isRefreshing: StateFlow<Boolean> = _isRefreshing.asStateFlow()
+
+    fun refresh() {
+        if (_isRefreshing.value) return
+        _isRefreshing.value = true
+        // 取消在途加载,清空当前分类数据与分页游标,再走一次 loadMore
+        // (它按 selectedCategory 分支取数,游标已在下方重置)。
+        loadJob?.cancel()
+        _uiState.update {
+            it.copy(
+                playlists = emptyList(),
+                toplists = emptyList(),
+                hasMore = true,
+                error = null,
+                isLoading = false,
+            )
+        }
+        offset = 0
+        highQualityBefore = 0L
+        scope.launch {
+            try {
+                loadMore()
+                loadJob?.join()
+            } finally {
+                _isRefreshing.value = false
+            }
+        }
+    }
+
     /**
      * 切换分类（iOS `select(_:)`）：相同分类且已有数据时忽略；否则重置列表与
      * 分页游标并重新加载。

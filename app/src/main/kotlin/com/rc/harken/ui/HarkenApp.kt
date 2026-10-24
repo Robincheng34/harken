@@ -436,7 +436,10 @@ private fun TabsScreen(
     ) { tabs.size }
     // 点击药丸 / 子页请求切 tab：更新选中态并把 Pager 平滑翻到对应页
     // （animateScrollToPage：点击切 Tab 有跟手过渡动画；原 scrollToPage 是瞬间硬切）。
+    // 首页 Tab 重按触发刷新的计数器(重按已选中的「首页」时递增)。
+    var homeRefreshTick by remember { mutableStateOf(0) }
     val onSelectTab: (AppTab) -> Unit = { tab ->
+        if (tab == AppTab.HOME && tab == selectedTab) homeRefreshTick++
         selectedTab = tab
         scope.launch { pagerState.animateScrollToPage(tabs.indexOf(tab)) }
     }
@@ -567,7 +570,11 @@ private fun TabsScreen(
                     // 首页/发现内容互换(用户要求):首页 Tab 展示原发现页内容
                     //(分类胶囊+歌单流),发现 Tab 展示原首页内容(推荐歌单/排行榜/
                     // 新碟上架/推荐歌手等分区)。
-                    AppTab.HOME -> ExploreScreen(navController = overlayNav, showTopBar = false)
+                    AppTab.HOME -> ExploreScreen(
+                        navController = overlayNav,
+                        showTopBar = false,
+                        refreshTrigger = homeRefreshTick,
+                    )
                     AppTab.EXPLORE -> HomeScreen(
                         navController = overlayNav,
                         bottomClearance = bottomClearance,

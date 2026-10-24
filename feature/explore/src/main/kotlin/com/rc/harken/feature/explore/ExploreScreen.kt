@@ -24,8 +24,10 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.material3.CircularProgressIndicator
+import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Text
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.pulltorefresh.PullToRefreshBox
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.derivedStateOf
@@ -59,9 +61,11 @@ import kotlinx.coroutines.launch
  * @param navController 覆盖层导航控制器，用于跳转歌单详情。
  */
 @Composable
+@OptIn(ExperimentalMaterial3Api::class)
 fun ExploreScreen(
     navController: NavHostController,
     showTopBar: Boolean = true,
+    refreshTrigger: Int = 0,
 ) {
     val api = LocalNeteaseApi.current
         ?: error("LocalNeteaseApi 必须在 HarkenApp 提供")
@@ -75,6 +79,12 @@ fun ExploreScreen(
         onDispose { viewModel.cancel() }
     }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+    val isRefreshing by viewModel.isRefreshing.collectAsStateWithLifecycle()
+
+    // 底栏重按「首页」触发刷新(计数器递增即刷新一次)。
+    LaunchedEffect(refreshTrigger) {
+        if (refreshTrigger > 0) viewModel.refresh()
+    }
 
     LaunchedEffect(Unit) { viewModel.load() }
 
@@ -115,6 +125,11 @@ fun ExploreScreen(
     // 顶部结构重做：玻璃顶栏（「发现」标题，M3 TopAppBar 自带状态栏 insets）
     // + 固定分类胶囊行（不随内容滚走），下方内容各自滚动 —— 对齐 App 的液态玻璃
     // 设计语言，且任何分类下都不会与系统状态栏重叠（旧实现仅排行榜分支有留白）。
+    // 下拉刷新:刷新当前分类数据(触发位:下拉 / 底栏重按「首页」)。
+    PullToRefreshBox(
+        isRefreshing = isRefreshing,
+        onRefresh = { viewModel.refresh() },
+    ) {
     Column(modifier = Modifier.fillMaxSize()) {
         ExploreHeader(
             categories = uiState.categories,
@@ -204,6 +219,7 @@ fun ExploreScreen(
                 }
             }
         }
+    }
     }
 }
 
