@@ -78,7 +78,6 @@ import com.rc.harken.design.composition.LocalPlaybackCommands
 import com.rc.harken.design.composition.LocalToastState
 import com.rc.harken.design.theme.Layout
 import com.rc.harken.feature.home.components.ArtistShelf
-import com.rc.harken.feature.home.components.FunctionCards
 import com.rc.harken.feature.home.components.CategoryGridSection
 import com.rc.harken.feature.home.components.HomeShelf
 import com.rc.harken.feature.home.components.NewAlbumShelf
@@ -123,7 +122,6 @@ fun HomeScreen(
 
     LaunchedEffect(isLoggedIn) { viewModel.load(isLoggedIn) }
 
-    val comingSoon = stringResource(R.string.home_coming_soon)
     val onPlaylist: (Long) -> Unit = { id ->
         scope.launch { commands?.playPlaylist(id) }
     }
@@ -200,23 +198,6 @@ fun HomeScreen(
                         // （不含分区间距），末 item 为纯净空 Spacer，均不会出现双倍间距。
                         verticalArrangement = Arrangement.spacedBy(Layout.sectionSpacing),
                     ) {
-                        // 功能卡（仅登录态；iOS `if account.isLoggedIn`）。
-                        // contentType：复用池按分区类型分桶，滚动回收重组更省（性能治理）。
-                        if (isLoggedIn) {
-                            item(key = "feature-cards", contentType = "feature-cards") {
-                                FunctionCards(
-                                    onDaily = { navController.navigate(DAILY_SONGS_ROUTE) },
-                                    onFM = { commands?.startFM() },
-                                    onHeartbeat = { toast.show(comingSoon) }, // P1（T30）开放
-                                    dailyCover = uiState.dailyFirstCover,
-                                    // 三张功能卡（每日推荐 / 私人漫游 / 心动漫游）整体下移：
-                                    // 原 8dp 贴顶；配合下方去掉行自带 6dp 竖直内边距，
-                                    // 卡片顶部距列表顶部净增 10dp。
-                                    modifier = Modifier.padding(top = 24.dp),
-                                )
-                            }
-                        }
-
                         // 分类宫格(官方音乐首页同款 2×4,登录/游客态都展示)。
                         item(key = "category-grid", contentType = "category-grid") {
                             CategoryGridSection(
