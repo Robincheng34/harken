@@ -38,7 +38,7 @@ fun PlaylistShelf(
     staggered: Boolean = false,
     modifier: Modifier = Modifier,
 ) {
-    SectionHeader(title = title)
+    SectionHeader(title = title, showChevron = true)
     if (items.isEmpty()) return
     LazyRow(
         modifier = modifier.fillMaxWidth(),

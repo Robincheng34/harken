@@ -30,7 +30,7 @@ object Layout {
      * 各 shelf 内部不再自带上下 padding，相邻分区的间隔完全由列表统一提供，
      * 从而保证任意两个相邻分区的视觉间隔完全一致。
      */
-    val sectionSpacing: Dp = 24.dp
+    val sectionSpacing: Dp = 18.dp
 
     /** 封面卡基准尺寸（横滑 shelf 自适应前的基准）。 */
     val cardSize: Dp = 160.dp

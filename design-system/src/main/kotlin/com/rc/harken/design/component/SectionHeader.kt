@@ -7,6 +7,7 @@ import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowForward
 import androidx.compose.material3.Icon
@@ -28,6 +29,7 @@ import androidx.compose.ui.unit.dp
 @Composable
 fun SectionHeader(
     title: String,
+    showChevron: Boolean = false,
     actionLabel: String? = null,
     onAction: (() -> Unit)? = null,
     modifier: Modifier = Modifier,
@@ -45,6 +47,17 @@ fun SectionHeader(
             fontWeight = FontWeight.Bold,
             color = MaterialTheme.colorScheme.onSurface,
         )
+        // 官方音乐首页同款:分区标题后的「>」箭头(无动作,纯视觉引导)。
+        if (showChevron) {
+            Icon(
+                imageVector = Icons.AutoMirrored.Filled.ArrowForward,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.onSurface,
+                modifier = Modifier
+                    .padding(start = 4.dp)
+                    .size(16.dp),
+            )
+        }
         if (actionLabel != null && onAction != null) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,

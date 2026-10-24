@@ -209,6 +209,7 @@ private fun ExploreHeader(
     Column(modifier = Modifier.fillMaxWidth()) {
         GlassTopAppBar(
             title = { Text(text = stringResource(R.string.explore_title)) },
+            expandedHeight = 52.dp,
         )
         CategoryChips(
             categories = categories,

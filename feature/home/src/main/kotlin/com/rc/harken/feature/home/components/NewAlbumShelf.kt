@@ -46,7 +46,7 @@ fun NewAlbumShelf(
         // 左缘与 HomeShelf 统一：不再给 SectionHeader 额外叠 contentInset（那会让
         // 标题文字落在 40dp、与其他分区的 16dp 分成两档），标题沿用 SectionHeader
         // 自带的 16dp 水平内边距，与首张卡左缘对齐到同一条竖线。
-        SectionHeader(title = stringResource(R.string.home_new_albums))
+        SectionHeader(title = stringResource(R.string.home_new_albums), showChevron = true)
         // 卡宽与其他分区（推荐歌单/排行榜 160dp）一致:自适应卡宽在 411dp 屏上
         // 只给 ~113dp(3-4 张/行),与相邻分区的 2 张/行节奏冲突,用户反馈
         // 「新碟上架和其他分区卡片大小不一、空白别扭」。

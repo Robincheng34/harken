@@ -24,6 +24,8 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxScope
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.WindowInsetsSides
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.statusBarsPadding
@@ -45,6 +47,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.StrokeCap
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
 /**
@@ -239,6 +242,7 @@ fun GlassTopAppBar(
     modifier: Modifier = Modifier,
     navigationIcon: @Composable () -> Unit = {},
     actions: @Composable androidx.compose.foundation.layout.RowScope.() -> Unit = {},
+    expandedHeight: Dp = 64.dp,
     tokens: GlassTokens = glassTokens(),
     contentColor: Color = MaterialTheme.colorScheme.onSurface,
 ) {
@@ -252,6 +256,7 @@ fun GlassTopAppBar(
             navigationIcon = navigationIcon,
             actions = actions,
             windowInsets = WindowInsets(0.dp),
+            modifier = Modifier.height(expandedHeight),
             colors = TopAppBarDefaults.topAppBarColors(
                 containerColor = tokens.fill,
                 scrolledContainerColor = tokens.fill,

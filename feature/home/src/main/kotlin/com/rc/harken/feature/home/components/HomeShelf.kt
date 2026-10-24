@@ -46,7 +46,7 @@ internal fun HomeShelf(
     Column(
         modifier = modifier.fillMaxWidth(),
     ) {
-        SectionHeader(title = title)
+        SectionHeader(title = title, showChevron = true)
         LazyRow(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(16.dp),
