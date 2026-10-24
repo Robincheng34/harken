@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
@@ -59,7 +60,7 @@ import kotlinx.coroutines.launch
 @Composable
 fun ExploreScreen(
     navController: NavHostController,
-    title: String = stringResource(R.string.explore_title),
+    showTopBar: Boolean = true,
 ) {
     val api = LocalNeteaseApi.current
         ?: error("LocalNeteaseApi 必须在 HarkenApp 提供")
@@ -118,7 +119,7 @@ fun ExploreScreen(
             categories = uiState.categories,
             selected = uiState.selectedCategory,
             onSelect = { viewModel.select(it) },
-            title = title,
+            showTopBar = showTopBar,
         )
         if (uiState.selectedCategory == CATEGORY_TOPLISTS) {
             // iOS: ToplistGrid(toplists:).padding(.horizontal, contentInset)
@@ -209,13 +210,22 @@ private fun ExploreHeader(
     categories: List<String>,
     selected: String,
     onSelect: (String) -> Unit,
-    title: String,
+    showTopBar: Boolean,
 ) {
     Column(modifier = Modifier.fillMaxWidth()) {
-        GlassTopAppBar(
-            title = { Text(text = title) },
-            expandedHeight = 52.dp,
-        )
+        if (showTopBar) {
+            GlassTopAppBar(
+                title = { Text(text = stringResource(R.string.explore_title)) },
+                expandedHeight = 52.dp,
+            )
+        } else {
+            // 无顶栏模式(首页 Tab):状态栏避让 + 受控 12dp 间距,内容整体上移。
+            Spacer(
+                modifier = Modifier
+                    .statusBarsPadding()
+                    .height(12.dp),
+            )
+        }
         CategoryChips(
             categories = categories,
             selected = selected,

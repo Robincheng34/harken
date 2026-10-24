@@ -567,7 +567,7 @@ private fun TabsScreen(
                     // 首页/发现内容互换(用户要求):首页 Tab 展示原发现页内容
                     //(分类胶囊+歌单流),发现 Tab 展示原首页内容(推荐歌单/排行榜/
                     // 新碟上架/推荐歌手等分区)。
-                    AppTab.HOME -> ExploreScreen(navController = overlayNav, title = "首页")
+                    AppTab.HOME -> ExploreScreen(navController = overlayNav, showTopBar = false)
                     AppTab.EXPLORE -> HomeScreen(
                         navController = overlayNav,
                         bottomClearance = bottomClearance,
