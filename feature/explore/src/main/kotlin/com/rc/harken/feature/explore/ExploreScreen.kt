@@ -155,8 +155,12 @@ fun ExploreScreen(
                 state = playlistGridState,
                 modifier = Modifier.weight(1f),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                    start = 10.dp,
-                    end = 10.dp,
+                    start = Layout.adaptiveSideMargin(
+                        androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp,
+                    ),
+                    end = Layout.adaptiveSideMargin(
+                        androidx.compose.ui.platform.LocalConfiguration.current.screenWidthDp,
+                    ),
                     top = 8.dp,
                     bottom = 8.dp,
                 ),

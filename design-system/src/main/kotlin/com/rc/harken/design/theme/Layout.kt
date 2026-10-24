@@ -96,6 +96,13 @@ object Layout {
         return maxOf(1.dp, total / visibleCount)
     }
 
+    /**
+     * 自适应左右边距:按屏宽(dp)的 2.4% 计算,钳制在 8..16dp。
+     * 密度归一化后所有机型 dp 宽一致,此比例保证不同屏宽设备上边距随屏宽等比缩放。
+     */
+    fun adaptiveSideMargin(screenWidthDp: Int): Dp =
+        (screenWidthDp * 0.024f).dp.coerceIn(8.dp, 16.dp)
+
     /** Dp 整除向上取整（避免引入 Float 精度问题的小工具）。 */
     private fun ceilDiv(numerator: Dp, denominator: Dp): Int {
         val n = numerator.value
