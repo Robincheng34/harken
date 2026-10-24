@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.grid.GridItemSpan
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
@@ -148,13 +149,14 @@ fun ExploreScreen(
             }
         } else {
             // iOS: CardGrid { CoverCardBody(...) } + 底部加载态 / 触发位。
+            // 左右白边 10dp(用户反馈原 24dp 过宽,内容应向两边扩展)。
             LazyVerticalGrid(
-                columns = GridCells.Adaptive(minSize = 140.dp), // 架构文档 T19：minWidth 140dp
+                columns = GridCells.Adaptive(minSize = 140.dp),
                 state = playlistGridState,
                 modifier = Modifier.weight(1f),
                 contentPadding = androidx.compose.foundation.layout.PaddingValues(
-                    start = Layout.contentInset,
-                    end = Layout.contentInset,
+                    start = 10.dp,
+                    end = 10.dp,
                     top = 8.dp,
                     bottom = 8.dp,
                 ),
@@ -180,7 +182,7 @@ fun ExploreScreen(
                     item(span = { GridItemSpan(maxLineSpan) }, key = "loading") {
                         Box(
                             modifier = Modifier
-                                .fillMaxSize()
+                                .fillMaxWidth()
                                 .padding(vertical = 20.dp),
                             contentAlignment = Alignment.Center,
                         ) {
@@ -250,3 +252,4 @@ private fun ToplistRowItem(
         modifier = Modifier.fillMaxWidth(),
     )
 }
+
