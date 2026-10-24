@@ -183,7 +183,7 @@ fun HomeScreen(
                             // 顶部 = 状态栏高度 + 额外 12dp:原实现无 statusBarsPadding,
                             // 「推荐歌单」标题直接顶进状态栏下缘,观感拥挤(用户反馈)。
                             top = WindowInsets.statusBars.asPaddingValues().calculateTopPadding() +
-                                12.dp,
+                                4.dp,
                             bottom = Layout.sectionSpacing,
                         ),
                         // 分区间距统一（原 bug：LazyColumn 的 12dp 会与各 shelf 自带的上下
