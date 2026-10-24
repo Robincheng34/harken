@@ -65,7 +65,7 @@ fun LoginOverlay(
                     RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),
                 )
                 .padding(vertical = 8.dp)
-                .padding(bottom = Layout.tabBarClearance + Layout.bottomGestureInset()),
+                .padding(bottom = Layout.bottomGestureInset() + 8.dp),
             horizontalAlignment = Alignment.CenterHorizontally,
         ) {
             LoginSheetContent(
