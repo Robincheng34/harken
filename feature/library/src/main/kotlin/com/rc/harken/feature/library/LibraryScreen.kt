@@ -39,6 +39,8 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -91,14 +93,17 @@ import com.rc.harken.design.composition.LocalPlaybackCommands
 import com.rc.harken.design.navigation.Destinations
 import com.rc.harken.design.theme.Layout
 import com.rc.harken.feature.library.pages.playRecordKey
+import com.rc.harken.net.api.NeteaseApi
 import com.rc.harken.net.model.AlbumSummary
 import com.rc.harken.net.model.Formatters
 import com.rc.harken.net.model.PlaylistSummary
 import com.rc.harken.net.model.Track
+import com.rc.harken.player.PlaybackCommands
 import com.rc.harken.playback.PlayContext
 import com.rc.harken.playback.PlaySource
 import com.rc.harken.player.PlayerState
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 
 /** 我的页 Tab 起始路由（与 `:app` `Routes.LIBRARY` 的字符串契约）。 */
@@ -320,43 +325,68 @@ private fun LoggedInContent(
     // 音乐页签子分类：0 近期 / 1 创建 / 2 收藏 / 3 专辑。
     var musicTab by rememberSaveable { mutableStateOf(0) }
 
-    Column(
-        modifier = modifier
-            .fillMaxWidth()
-            .verticalScroll(rememberScrollState()),
+    // 近期列表本地隐藏键池：删过的近期曲目在同一次 App 生命周期内保持隐藏
+    // （同「最近播放」页）。
+    val api = LocalNeteaseApi.current ?: error("LocalNeteaseApi 必须在 HarkenApp 提供")
+    val commands = LocalPlaybackCommands.current
+    val scope = rememberCoroutineScope()
+    val hiddenKeys by PlayRecordHideStore.hiddenKeys.collectAsStateWithLifecycle()
+    val visibleTracks = remember(uiState.recentTracks, hiddenKeys) {
+        uiState.recentTracks.filter { playRecordKey(it) !in hiddenKeys }
+    }
+    val createdWithLiked = listOfNotNull(uiState.likedSongs) + uiState.createdPlaylists
+
+    // 整页 LazyColumn：原实现是 verticalScroll + 近期列表 forEach 全量组合，
+    // 播放记录积累到数百条时一进页面就全部渲染（每条带封面加载），首帧与滚动
+    // 都会卡。改 Lazy 后近期曲目按需组合；其余页签内容量有限（几十条），作为
+    // 单个 item 块原样保留。
+    LazyColumn(
+        modifier = modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        ProfileSection(uiState = uiState, onChangeBackground = onChangeBackground)
-        Spacer(Modifier.height(16.dp))
-        QuickEntriesRow(onNavigate = onNavigate)
-        Spacer(Modifier.height(18.dp))
-        LibraryTabRow(selected = selectedTab, onSelect = { selectedTab = it })
+        item(key = "profile") { ProfileSection(uiState = uiState, onChangeBackground = onChangeBackground) }
+        item(key = "entries") {
+            Spacer(Modifier.height(16.dp))
+            QuickEntriesRow(onNavigate = onNavigate)
+            Spacer(Modifier.height(18.dp))
+            LibraryTabRow(selected = selectedTab, onSelect = { selectedTab = it })
+        }
 
         when (selectedTab) {
             0 -> {
                 // 我喜欢的音乐（specialType==5）由 ViewModel 排除在 createdPlaylists 之外，
                 // 这里把它拼回创建列表首位，并让「创建 N」计数一并包含它。
-                val createdWithLiked = listOfNotNull(uiState.likedSongs) + uiState.createdPlaylists
-                MusicSubTabsRow(
-                    selected = musicTab,
-                    createdCount = createdWithLiked.size,
-                    subscribedCount = uiState.subscribedPlaylists.size,
-                    albumCount = uiState.likedAlbums.size,
-                    onSelect = { musicTab = it },
-                    onMore = { onNavigate(Destinations.LIBRARY_DRAWER) },
-                )
+                item(key = "subtabs") {
+                    MusicSubTabsRow(
+                        selected = musicTab,
+                        createdCount = createdWithLiked.size,
+                        subscribedCount = uiState.subscribedPlaylists.size,
+                        albumCount = uiState.likedAlbums.size,
+                        onSelect = { musicTab = it },
+                        onMore = { onNavigate(Destinations.LIBRARY_DRAWER) },
+                    )
+                }
                 when (musicTab) {
-                    0 -> RecentContent(uiState = uiState, onNavigate = onNavigate, guard = guard)
-                    1 -> PlaylistRows(playlists = createdWithLiked, onNavigate = onNavigate)
-                    2 -> PlaylistRows(playlists = uiState.subscribedPlaylists, onNavigate = onNavigate)
-                    else -> AlbumRows(albums = uiState.likedAlbums, onNavigate = onNavigate)
+                    0 -> items(visibleTracks, key = { playRecordKey(it) }) { track ->
+                        RecentTrackRow(
+                            track = track,
+                            visibleTracks = visibleTracks,
+                            guard = guard,
+                            api = api,
+                            commands = commands,
+                            scope = scope,
+                        )
+                    }
+                    1 -> item { PlaylistRows(playlists = createdWithLiked, onNavigate = onNavigate) }
+                    2 -> item { PlaylistRows(playlists = uiState.subscribedPlaylists, onNavigate = onNavigate) }
+                    else -> item { AlbumRows(albums = uiState.likedAlbums, onNavigate = onNavigate) }
                 }
             }
-            1 -> EmptyHint(text = "暂无播客内容")
-            else -> EmptyHint(text = "暂无笔记")
+            1 -> item { EmptyHint(text = "暂无播客内容") }
+            else -> item { EmptyHint(text = "暂无笔记") }
         }
 
-        Spacer(Modifier.height(bottomClearance))
+        item(key = "clearance") { Spacer(Modifier.height(bottomClearance)) }
     }
 }
 
@@ -652,63 +682,59 @@ private fun MusicSubTabsRow(
 // MARK: - 列表内容
 
 /**
- * 近期：仅展示最近播放曲目（recentTracks 已是纯播放记录，不含我喜欢的音乐）。
- * 点击近期曲目直接播放（不再跳转最近播放页）。单曲左滑删除，复用「最近播放」页
- * 同一套方案：组合键（曲名|歌手|时长）本地隐藏 + 自编删除接口兜底；隐藏键池进程级，
- * 同一次 App 生命周期内删除不再回弹。
+ * 近期列表的单行（LoggedInContent 的 LazyColumn `items` 逐行调用）。
+ *
+ * 点击直接播放（不再跳转最近播放页）；左滑删除走「最近播放」页同一套方案：
+ * 组合键（曲名|歌手|时长）本地隐藏 + 自编删除接口兜底。列表以 [visibleTracks]
+ * 过滤隐藏行并作为播放队列来源。
+ *
+ * ⚠️ 行 key 必须用组合键（见 LoggedInContent 的 `items(key = playRecordKey)`）：
+ * 按位置复用会让删除一行后下方各行接管上一行的滑动偏移，渲染出幽灵红色删除块。
  */
 @Composable
-private fun RecentContent(uiState: LibraryUiState, onNavigate: (String) -> Unit, guard: Boolean = false) {
-    val api = LocalNeteaseApi.current ?: error("LocalNeteaseApi 必须在 HarkenApp 提供")
-    val commands = LocalPlaybackCommands.current
-    val scope = rememberCoroutineScope()
-    // 本地隐藏键池：删过的近期曲目在同一次 App 生命周期内保持隐藏（同「最近播放」页）。
-    val hiddenKeys by PlayRecordHideStore.hiddenKeys.collectAsStateWithLifecycle()
-    val visibleTracks = remember(uiState.recentTracks, hiddenKeys) {
-        uiState.recentTracks.filter { playRecordKey(it) !in hiddenKeys }
-    }
+private fun RecentTrackRow(
+    track: Track,
+    visibleTracks: List<Track>,
+    guard: Boolean,
+    api: NeteaseApi,
+    commands: PlaybackCommands?,
+    scope: CoroutineScope,
+) {
     Column(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 2.dp),
     ) {
-        visibleTracks.forEach { track ->
-            // key() 防滑动状态错位复用（同 TrackListView 的 key 教训）：普通 Column 的
-            // forEach 按位置复用组合状态，删除一行后下方各行会上移接管上一行的
-            // 滑动偏移——若该状态恰处「已滑出」位置，就会渲染出幽灵红色删除块。
-            // 按组合键 key 住每一行后，列表收缩时各行的滑动状态各归其主，互不串位。
-            key(playRecordKey(track)) {
-                SwipeToDeleteRow(
-                    guard = guard,
-                    onPlay = {
-                        // 直接起播但不自动进全屏播放页：迷你播放条浮现、停留在「我的」页。
-                        scope.launch {
-                            commands?.playFrom(
-                                tracks = visibleTracks,
-                                startTrackId = track.id,
-                                source = PlaySource.NONE,
-                                context = PlayContext.recents,
-                                openPlayer = false,
-                            )
-                        }
-                    },
-                    onDelete = {
-                        PlayRecordHideStore.hide(playRecordKey(track))
-                        scope.launch { runCatching { api.deletePlayRecord(track.id) } }
-                    },
-                    // 透明内容模式（contentBackground = null）：行不铺底色、与「我的」页
-                    // 红色渐变完全无缝（铺固定红色会在渐变上显出一条一条的色块）；
-                    // 红色删除条为右锚定随滑动展开，露出观感与最近播放页一致。
-                    contentBackground = null,
-                ) {
-                    // onClick 置空：点击已由 SwipeToDeleteRow 的 detectTapGestures 处理。
-                    ListRow(
-                        coverUrl = track.album.picUrl,
-                        title = track.name,
-                        subtitle = track.artistNames,
-                        onClick = {},
+        SwipeToDeleteRow(
+            guard = guard,
+            onPlay = {
+                // 直接起播但不自动进全屏播放页：迷你播放条浮现、停留在「我的」页。
+                scope.launch {
+                    commands?.playFrom(
+                        tracks = visibleTracks,
+                        startTrackId = track.id,
+                        source = PlaySource.NONE,
+                        context = PlayContext.recents,
+                        openPlayer = false,
                     )
                 }
-            }
+            },
+            onDelete = {
+                PlayRecordHideStore.hide(playRecordKey(track))
+                scope.launch { runCatching { api.deletePlayRecord(track.id) } }
+            },
+            // 透明内容模式（contentBackground = null）：行不铺底色、与「我的」页
+            // 红色渐变完全无缝（铺固定红色会在渐变上显出一条一条的色块）；
+            // 红色删除条为右锚定随滑动展开，露出观感与最近播放页一致。
+            contentBackground = null,
+        ) {
+            // onClick 置空：点击已由 SwipeToDeleteRow 的 detectTapGestures 处理。
+            ListRow(
+                coverUrl = track.album.picUrl,
+                title = track.name,
+                subtitle = track.artistNames,
+                onClick = {},
+            )
         }
     }
 }

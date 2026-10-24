@@ -6,37 +6,42 @@ import android.content.Context
 import androidx.room.Database
 import androidx.room.Room
 import androidx.room.RoomDatabase
+import androidx.room.migration.Migration
+import androidx.sqlite.db.SupportSQLiteDatabase
 
 /**
  * Harken 本地缓存数据库（P1）。
  *
- * 退出登录时**保留**本库（架构文档 §9 假设 5）：播放历史与红心缓存属于
- * 本地数据，不随账号清除。
+ * 退出登录时**保留**本库（架构文档 §9 假设 5）：下载清单属于本地数据，
+ * 不随账号清除。
+ *
+ * v3：删除从未接线的 liked_songs / play_history 两张表（规划中的「离线红心 /
+ * 离线播放历史」最终全部走服务端接口，两张表自建库起从未写入过）。走正式
+ * Migration 而非破坏性迁移，保住用户已下载歌曲的清单记录。
  */
-// v2 升级（新增 downloaded_songs 表）走 fallbackToDestructiveMigration()：
-// 仅开发版用户，会清空现有播放历史 / 红心缓存，可接受。
 @Database(
     entities = [
-        PlayHistoryEntity::class,
-        LikedSongEntity::class,
         DownloadedSongEntity::class,
     ],
-    version = 2,
+    version = 3,
     exportSchema = true,
 )
 abstract class HarkenDatabase : RoomDatabase() {
-
-    abstract fun playHistoryDao(): PlayHistoryDao
-
-    abstract fun likedSongDao(): LikedSongDao
 
     abstract fun downloadedSongDao(): DownloadedSongDao
 
     companion object {
         fun build(context: Context): HarkenDatabase =
             Room.databaseBuilder(context, HarkenDatabase::class.java, DATABASE_NAME)
-                .fallbackToDestructiveMigration()
+                .addMigrations(MIGRATION_2_3)
                 .build()
+
+        private val MIGRATION_2_3 = object : Migration(2, 3) {
+            override fun migrate(db: SupportSQLiteDatabase) {
+                db.execSQL("DROP TABLE IF EXISTS liked_songs")
+                db.execSQL("DROP TABLE IF EXISTS play_history")
+            }
+        }
 
         private const val DATABASE_NAME = "harken-cache.db"
     }
