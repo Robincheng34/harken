@@ -3,13 +3,21 @@
 package com.rc.harken
 
 import android.content.pm.PackageManager
+import androidx.compose.runtime.CompositionLocalProvider
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
+import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.unit.Density
 import com.rc.harken.di.AppGraph
 import com.rc.harken.ui.HarkenApp
+
+/** 设计基准宽（与主流 6.7" 机型一致；密度按屏宽换算到该值）。 */
+private const val DESIGN_WIDTH_DP = 411f
 
 /**
  * 单 Activity 宿主：edge-to-edge + Compose 内容（`HarkenApp`）。
@@ -29,7 +37,20 @@ class MainActivity : ComponentActivity() {
         requestNotificationPermissionIfNeeded()
         val graph = AppGraph.get(this)
         setContent {
-            HarkenApp(graph = graph)
+            // 屏幕宽度适配（今日头条方案）:同物理宽度的设备因出厂密度档位不同
+            // （如 OnePlus 7T Pro 3.5x=411dp vs vivo V2408A 4.0x=360dp），固定 dp
+            // 布局在窄 dp 屏上会整体偏大（卡片/间距观感放大 ~14%）。按屏宽重算
+            // 密度，把设计宽统一到 DESIGN_WIDTH_DP，全 App 在所有设备上渲染
+            // 比例一致；sp 走系统 fontScale 不受影响。
+            val density = LocalDensity.current
+            val screenWidthPx = LocalConfiguration.current.screenWidthDp * density.density
+            val adapted = Density(
+                density = (screenWidthPx / DESIGN_WIDTH_DP).coerceIn(2f, 6f),
+                fontScale = density.fontScale,
+            )
+            CompositionLocalProvider(LocalDensity provides adapted) {
+                HarkenApp(graph = graph)
+            }
         }
     }
 
