@@ -102,17 +102,8 @@ fun ToplistShelf(
                         )
                     }
                 }
-                Text(
-                    text = item.name,
-                    style = MaterialTheme.typography.titleMedium,
-                    color = MaterialTheme.colorScheme.onSurface,
-                    maxLines = 2,
-                    // minLines = 2：与推荐歌单/雷达歌单卡片保持同样的两行文字块，
-                    // 三类 shelf 卡片等高 → 分区之间的视觉间距才能完全等距。
-                    minLines = 2,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.width(Layout.cardSize),
-                )
+                // 榜单名不再在卡片下方重复:封面图内已渲染榜名(服务端图),
+                // 下方再来一遍同名标签显得整块发空(用户反馈「排行榜空白别扭」)。
             }
         }
     }
