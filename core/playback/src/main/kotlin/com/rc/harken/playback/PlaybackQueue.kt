@@ -269,12 +269,22 @@ class PlaybackQueue {
     private fun restoreListedOrder() {
         val currentTrack = current()
         queue = listedOrder
-        currentIndex = if (currentTrack == null) {
-            -1
-        } else {
-            listedOrder.indexOfFirst { it.id == currentTrack.id }.coerceAtLeast(0)
+        if (currentTrack == null) {
+            currentIndex = -1
+            currentOverride = null
+            return
         }
-        currentOverride = null
+        val index = listedOrder.indexOfFirst { it.id == currentTrack.id }
+        if (index >= 0) {
+            currentIndex = index
+            currentOverride = null
+        } else {
+            // 当前曲是 play-next 插播曲（不在 listedOrder 中）：保留 currentOverride、
+            // currentIndex=-1（队列暂无当前位，插播曲播完后 advance 从队首继续）。
+            // 原实现 coerceAtLeast(0) 把不存在的索引钳到 0 并清掉 override——队列
+            // 高亮指向第一首而实际发声的是插播曲，下一次 advance 直接跳过插播曲。
+            currentIndex = -1
+        }
     }
 
     private fun shuffleWithCurrentFirst(tracks: List<Track>, start: Track): List<Track> {

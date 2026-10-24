@@ -19,6 +19,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -32,11 +33,63 @@ class HomeViewModel(
     private val _uiState: MutableStateFlow<HomeUiState> = MutableStateFlow(HomeUiState())
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
+    /**
+     * 上次成功发起加载时的登录态（null = 从未发起过加载）。
+     *
+     * 「已加载则跳过」守卫必须连同登录态一起判断：登录前后首页内容不同
+     * （登录态追加每日推荐头部 + 雷达歌单）。原实现只看内容非空——未登录时
+     * 先打开过首页，登录成功回首页直接 return，雷达歌单/个性化推荐永不加载；
+     * 反向登出则残留上一账号的推荐数据。
+     */
+    private var lastLoadLoggedIn: Boolean? = null
 
-    /** 加载（登录态变化时由 UI 重新触发；已加载则跳过，iOS `if case .loaded`）。 */
+    /**
+     * 是否有 load 正在途。
+     *
+     * ⚠️ 不能直接用 `uiState.isLoading` 做这个判断：`HomeUiState.isLoading`
+     * 初始值是 **true**（骨架优先的默认态，表示「尚未加载」而非「正在加载」），
+     * 拿它当「加载中」守卫会把首次加载整个挡掉——首页永久骨架屏
+     * （2026-10-24 真机踩坑）。
+     */
+    @Volatile
+    private var loadInFlight = false
+
+    /**
+     * 在途加载期间到达的、与在途目标不同的登录态请求。
+     *
+     * 登录态翻转常发生在首屏请求途中（bootstrap 慢于首帧）：此时 `load` 会被
+     * loadInFlight 挡掉，若不记下补跑，首页就停在非当前登录态的内容（雷达
+     * 缺失/推荐残留）——即本次要修的问题本身。
+     */
+    private var pendingLoadLoggedIn: Boolean? = null
+
+    /** 加载（登录态变化时由 UI 重新触发；已加载且登录态未变则跳过，iOS `if case .loaded`）。 */
     fun load(loggedIn: Boolean) {
-        if (_uiState.value.isLoading.not() && _uiState.value.isLoaded()) return
+        if (loadInFlight) {
+            if (loggedIn != lastLoadLoggedIn) pendingLoadLoggedIn = loggedIn
+            return
+        }
+        if (_uiState.value.isLoaded() && lastLoadLoggedIn == loggedIn) return
+        lastLoadLoggedIn = loggedIn
+        loadInFlight = true
         scope.launch {
+            try {
+                loadSuspend(loggedIn)
+                // 在途期间登录态又变了：按最新登录态补一轮，保证内容与登录态一致。
+                while (true) {
+                    val pending = pendingLoadLoggedIn ?: break
+                    if (pending == lastLoadLoggedIn) break
+                    pendingLoadLoggedIn = null
+                    lastLoadLoggedIn = pending
+                    loadSuspend(pending)
+                }
+            } finally {
+                loadInFlight = false
+            }
+        }
+    }
+
+    private suspend fun loadSuspend(loggedIn: Boolean) = coroutineScope {
             _uiState.update { it.copy(isLoading = true, error = null) }
             val recommend = async {
                 runCatching {
@@ -78,17 +131,19 @@ class HomeViewModel(
                     error = if (recommendList.isEmpty() && albumList.isEmpty()) "网络连接失败" else null,
                 )
             }
-        }
     }
-
     /** 重开（错误态重试）。 */
     fun reload(loggedIn: Boolean) {
-        _uiState.update { it.copy(isLoading = true) }
+        // 置空登录态标记强制 load 真正重跑（错误态重试可能带部分已加载数据）。
+        lastLoadLoggedIn = null
         load(loggedIn)
     }
 
     /** 下拉刷新：保留当前内容，后台重新拉全量数据（失败静默、不闪骨架）。 */
     fun refresh(loggedIn: Boolean) {
+        // 刷新用的是当前登录态，同步标记保持一致（否则登录后先刷新再切 Tab
+        // 会误触发一次 load）。
+        lastLoadLoggedIn = loggedIn
         scope.launch {
             _uiState.update { it.copy(isRefreshing = true) }
             // 与 load() 相同的并发拉取逻辑（复用同一组 api 调用，失败分支静默）。

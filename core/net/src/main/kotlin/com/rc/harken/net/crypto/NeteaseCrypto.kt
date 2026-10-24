@@ -23,9 +23,17 @@ object NeteaseCrypto {
     private const val WEAPI_IV = "0102030405060708"
 
     // weapi 客户端自选 secretKey，与下面的 WEAPI_ENC_SEC_KEY 配对：
-    // encSecKey = RSA(reverse(secretKey))（裸 RSA，exp 010001，网易公开 1024-bit 模数）。
+    // encSecKey = RSA(reverse(secretKey))（裸 RSA，exp 010001，模数 N 见
+    // workbuddy 2026-10-23 记录，末段 …3ece0462db0a22b8e7）。
     // 改 secretKey 必须同步重算 encSecKey，否则所有 /weapi/ 请求服务端解密失败。
     // 2026-10-23 由旧 secretKey 改为 harken2026abcDEF（品牌迁移收尾）。
+    //
+    // ⚠️ 重算自校验（2026-10-24）：用旧 secretKey `kumone2026abcDEF` 跑同一模型，
+    // 必须精确复现旧常量 38cef2ef…62cdc9。注意两点历史教训：
+    // ① 网上流传的 1024-bit 截断写法与本项目验证用的 N 末段不同，用错 N 复算
+    //    出「不匹配」会被误判成「模型错误」（2026-10-24 评审误报根因）；
+    // ② 服务端把 encSecKey 当十六进制整数解析，前导零不影响数值——但仓库约定
+    //    恒写 256 hex 位（`[0-9a-f]{256}` 测试断言），重算后须 PadLeft 到 256。
     private const val WEAPI_SECRET_KEY = "harken2026abcDEF"
 
     /** Precomputed `RSA(reverse("harken2026abcDEF"))` under the public weapi key. */

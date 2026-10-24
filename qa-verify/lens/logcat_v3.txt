@@ -1,3 +1,0 @@
---------- beginning of main
-10-15 11:35:44.722 19818 19818 I LiquidGlassLens: behind capture: 1440x287
-10-15 11:35:44.741 19818 19818 I LiquidGlassLens: lens shader created for 434x168

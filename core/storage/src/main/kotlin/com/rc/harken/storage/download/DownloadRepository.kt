@@ -19,6 +19,7 @@ import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.firstOrNull
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import java.io.File
@@ -59,6 +60,9 @@ class DownloadRepository(
     /** 内存索引：播放时 [localUri] 是 O(1) 不查 DB（key = "${trackId}_$level"）。 */
     private val index = ConcurrentHashMap<String, DownloadedSongEntity>()
 
+    /** 在途下载的按 key 互斥锁（见 [download]）：防并发下载同曲目交错写坏 .part。 */
+    private val inFlightLocks = ConcurrentHashMap<String, kotlinx.coroutines.sync.Mutex>()
+
     init {
         // 预热内存索引：取首帧即可，后续 upsert/delete 会同步进 index。
         scope.launch {
@@ -95,150 +99,168 @@ class DownloadRepository(
      * 发起下载（fire-and-forget）。实际落盘工作在 [scope]（进程级 IO）上执行，与 UI
      * 生命周期解耦：离开播放页不会中断下载，也不会因协程取消删掉已落盘文件。进度与
      * 终态通过 [bus] 下发，供 UI 做 toast。
+     *
+     * 同一曲目并发去重：[index.containsKey] 检查与写入之间没有原子性，两个并发
+     * download 会同时通过查重、交错写同一个 `.part` 文件导致文件损坏。按 key
+     * 挂互斥锁，已有在途下载时按「已存在」处理。
      */
     fun download(track: Track, level: String) {
         val key = "${track.id}_$level"
         scope.launch {
-            if (index.containsKey(key)) {
+            val inFlight = inFlightLocks.computeIfAbsent(key) { Mutex() }
+            if (!inFlight.tryLock()) {
                 _bus.emit(DownloadStatus.AlreadyExists(track.id, level, track.name))
                 return@launch
             }
-            _bus.emit(DownloadStatus.Started(track.id, level, track.name))
-            var partFile: File? = null
             try {
-                // 1) 取真实下载直链。
-                val data = try {
-                    api.songURL(listOf(track.id), level).firstOrNull()
-                } catch (e: Exception) {
-                    Log.e(TAG, "songURL 失败: ${track.name}", e)
+                downloadLocked(track, level, key)
+            } finally {
+                inFlight.unlock()
+                inFlightLocks.remove(key, inFlight)
+            }
+        }
+    }
+
+    private suspend fun downloadLocked(track: Track, level: String, key: String) {
+        if (index.containsKey(key)) {
+            _bus.emit(DownloadStatus.AlreadyExists(track.id, level, track.name))
+            return
+        }
+        _bus.emit(DownloadStatus.Started(track.id, level, track.name))
+        var partFile: File? = null
+        try {
+            // 1) 取真实下载直链。
+            val data = try {
+                api.songURL(listOf(track.id), level).firstOrNull()
+            } catch (e: Exception) {
+                Log.e(TAG, "songURL 失败: ${track.name}", e)
+                _bus.emit(
+                    DownloadStatus.Failed(
+                        track.id, level, track.name,
+                        "无法获取下载地址：${e.message}",
+                    ),
+                )
+                return
+            }
+            if (data == null) {
+                _bus.emit(
+                    DownloadStatus.Failed(track.id, level, track.name, "无法获取下载地址"),
+                )
+                return
+            }
+            // 跨模块公有属性无法智能转换为非空，用 elvis + return 取得非空 url。
+            val downloadUrl = data.url ?: run {
+                _bus.emit(
+                    DownloadStatus.Failed(track.id, level, track.name, "无法获取下载地址"),
+                )
+                return
+            }
+            // 2) 拒绝试听片段：否则会存 30 秒试听当整曲。
+            if (data.freeTrialInfo != null) {
+                _bus.emit(
+                    DownloadStatus.Failed(
+                        track.id, level, track.name,
+                        "该歌曲为试听片段，无法下载",
+                    ),
+                )
+                return
+            }
+
+            // 3) 带 UA + Referer 直连 CDN（缺任一会 403）。
+            val ext = data.type?.takeIf { it.isNotBlank() } ?: "mp3"
+            val finalFile = File(dir, "${track.id}_$level.$ext")
+            partFile = File(dir, "$key.part")
+
+            val client = OkHttpClient.Builder()
+                .connectTimeout(30, TimeUnit.SECONDS)
+                .readTimeout(60, TimeUnit.SECONDS)
+                .build()
+            val request = Request.Builder()
+                .url(downloadUrl)
+                .header("User-Agent", userAgent)
+                .header("Referer", "https://music.163.com")
+                .build()
+
+            Log.d(TAG, "开始下载：${track.name} ($level) -> $downloadUrl")
+            client.newCall(request).execute().use { response ->
+                if (!response.isSuccessful || response.body == null) {
+                    Log.e(TAG, "下载失败 HTTP ${response.code}: ${track.name}")
                     _bus.emit(
                         DownloadStatus.Failed(
                             track.id, level, track.name,
-                            "无法获取下载地址：${e.message}",
+                            "下载失败：HTTP ${response.code}",
                         ),
                     )
-                    return@launch
+                    return
                 }
-                if (data == null) {
-                    _bus.emit(
-                        DownloadStatus.Failed(track.id, level, track.name, "无法获取下载地址"),
-                    )
-                    return@launch
-                }
-                // 跨模块公有属性无法智能转换为非空，用 elvis + return 取得非空 url。
-                val downloadUrl = data.url ?: run {
-                    _bus.emit(
-                        DownloadStatus.Failed(track.id, level, track.name, "无法获取下载地址"),
-                    )
-                    return@launch
-                }
-                // 2) 拒绝试听片段：否则会存 30 秒试听当整曲。
-                if (data.freeTrialInfo != null) {
-                    _bus.emit(
-                        DownloadStatus.Failed(
-                            track.id, level, track.name,
-                            "该歌曲为试听片段，无法下载",
-                        ),
-                    )
-                    return@launch
-                }
-
-                // 3) 带 UA + Referer 直连 CDN（缺任一会 403）。
-                val ext = data.type?.takeIf { it.isNotBlank() } ?: "mp3"
-                val finalFile = File(dir, "${track.id}_$level.$ext")
-                partFile = File(dir, "$key.part")
-
-                val client = OkHttpClient.Builder()
-                    .connectTimeout(30, TimeUnit.SECONDS)
-                    .readTimeout(60, TimeUnit.SECONDS)
-                    .build()
-                val request = Request.Builder()
-                    .url(downloadUrl)
-                    .header("User-Agent", userAgent)
-                    .header("Referer", "https://music.163.com")
-                    .build()
-
-                Log.d(TAG, "开始下载：${track.name} ($level) -> $downloadUrl")
-                client.newCall(request).execute().use { response ->
-                    if (!response.isSuccessful || response.body == null) {
-                        Log.e(TAG, "下载失败 HTTP ${response.code}: ${track.name}")
-                        _bus.emit(
-                            DownloadStatus.Failed(
-                                track.id, level, track.name,
-                                "下载失败：HTTP ${response.code}",
-                            ),
-                        )
-                        return@launch
-                    }
-                    val total = response.body!!.contentLength()
-                    var lastEmit = 0L
-                    response.body!!.byteStream().use { input ->
-                        FileOutputStream(partFile).use { out ->
-                            val buffer = ByteArray(8192)
-                            var read: Int
-                            var bytes = 0L
-                            while (input.read(buffer).also { read = it } != -1) {
-                                out.write(buffer, 0, read)
-                                bytes += read
-                                if (total > 0 && bytes - lastEmit >= PROGRESS_STEP) {
-                                    lastEmit = bytes
-                                    _bus.emit(
-                                        DownloadStatus.Progress(
-                                            track.id, level, track.name, bytes, total,
-                                        ),
-                                    )
-                                }
+                val total = response.body!!.contentLength()
+                var lastEmit = 0L
+                response.body!!.byteStream().use { input ->
+                    FileOutputStream(partFile).use { out ->
+                        val buffer = ByteArray(8192)
+                        var read: Int
+                        var bytes = 0L
+                        while (input.read(buffer).also { read = it } != -1) {
+                            out.write(buffer, 0, read)
+                            bytes += read
+                            if (total > 0 && bytes - lastEmit >= PROGRESS_STEP) {
+                                lastEmit = bytes
+                                _bus.emit(
+                                    DownloadStatus.Progress(
+                                        track.id, level, track.name, bytes, total,
+                                    ),
+                                )
                             }
                         }
                     }
                 }
+            }
 
-                // 4) 落盘完成：改名提交，避免 .part 被误判为已下载。
-                if (!partFile.renameTo(finalFile)) {
-                    partFile.delete()
-                    Log.e(TAG, "文件整理失败：${track.name}")
-                    _bus.emit(
-                        DownloadStatus.Failed(
-                            track.id, level, track.name,
-                            "下载完成但文件整理失败",
-                        ),
-                    )
-                    return@launch
-                }
-
-                val entity = DownloadedSongEntity(
-                    id = key,
-                    trackId = track.id,
-                    level = level,
-                    fileName = finalFile.name,
-                    title = track.name,
-                    artist = track.artistNames,
-                    album = track.album.name,
-                    albumPicUrl = track.album.picUrl,
-                    durationMS = track.durationMS,
-                    sizeBytes = finalFile.length(),
-                    downloadedAt = System.currentTimeMillis(),
-                )
-                db.downloadedSongDao().upsert(entity)
-                index[key] = entity
-                Log.i(
-                    TAG,
-                    "下载完成：${track.name} ($level) -> ${finalFile.absolutePath}, " +
-                        "${finalFile.length()}B",
-                )
-                _bus.emit(DownloadStatus.Completed(track.id, level, track.name))
-            } catch (e: Exception) {
-                // 含 CancellationException（进程级 scope 几乎不会被取消，仅防御）。
-                partFile?.delete()
-                Log.e(TAG, "下载异常：${track.name}", e)
-                if (e is kotlinx.coroutines.CancellationException) throw e
+            // 4) 落盘完成：改名提交，避免 .part 被误判为已下载。
+            if (!partFile.renameTo(finalFile)) {
+                partFile.delete()
+                Log.e(TAG, "文件整理失败：${track.name}")
                 _bus.emit(
                     DownloadStatus.Failed(
                         track.id, level, track.name,
-                        e.message ?: "下载失败",
+                        "下载完成但文件整理失败",
                     ),
                 )
+                return
             }
+
+            val entity = DownloadedSongEntity(
+                id = key,
+                trackId = track.id,
+                level = level,
+                fileName = finalFile.name,
+                title = track.name,
+                artist = track.artistNames,
+                album = track.album.name,
+                albumPicUrl = track.album.picUrl,
+                durationMS = track.durationMS,
+                sizeBytes = finalFile.length(),
+                downloadedAt = System.currentTimeMillis(),
+            )
+            db.downloadedSongDao().upsert(entity)
+            index[key] = entity
+            Log.i(
+                TAG,
+                "下载完成：${track.name} ($level) -> ${finalFile.absolutePath}, " +
+                    "${finalFile.length()}B",
+            )
+            _bus.emit(DownloadStatus.Completed(track.id, level, track.name))
+        } catch (e: Exception) {
+            // 含 CancellationException（进程级 scope 几乎不会被取消，仅防御）。
+            partFile?.delete()
+            Log.e(TAG, "下载异常：${track.name}", e)
+            if (e is kotlinx.coroutines.CancellationException) throw e
+            _bus.emit(
+                DownloadStatus.Failed(
+                    track.id, level, track.name,
+                    e.message ?: "下载失败",
+                ),
+            )
         }
     }
 

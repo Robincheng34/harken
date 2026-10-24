@@ -277,9 +277,12 @@ fun GlassTabBar(
             )
         } else {
             // API<33 / 无折射源兜底：普通半透明玻璃（无模糊能力）。
+            // 必须与上方分支一样 clip 圆角：外层 GlassBox 为让镜片上下溢出设了
+            // clipContent=false 且填充透明，这里不裁剪会在 30dp 圆角外露出直角色块。
             Box(
                 modifier = Modifier
                     .matchParentSize()
+                    .clip(RoundedCornerShape(30.dp))
                     .background(glassTokens().fill),
             )
         }
@@ -415,9 +418,12 @@ private fun TabItem(
 
     // 按压态：监听 InteractionSource 的 Press 事件并上报（滑动镜片的
     // edgeHighlight 在底栏层统一驱动：按下浮现玻璃光学轮廓，松手归零）。
-    val isPressed by interactionSource.interactions
-        .map { it is PressInteraction.Press }
-        .collectAsState(initial = false)
+    // Flow 用 remember 固定实例：interactions 是每次访问重建的冷 Flow，直接收集
+    // 会在每次重组时取消重启收集，重启间隙发出的 Press/Release 事件会丢
+    // （Release 丢失 → edgeHighlight 高亮卡住直到下次按压）。
+    val isPressed by remember(interactionSource) {
+        interactionSource.interactions.map { it is PressInteraction.Press }
+    }.collectAsState(initial = false)
     LaunchedEffect(isPressed) { onPressedChange(isPressed) }
 
     // 图标在上、文案在下的纵向布局（Column；曾误改为 Box 导致图标与文字重合）。

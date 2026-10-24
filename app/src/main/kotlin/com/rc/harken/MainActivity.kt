@@ -2,6 +2,8 @@
 
 package com.rc.harken
 
+import android.content.pm.PackageManager
+import android.os.Build
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
@@ -24,9 +26,24 @@ class MainActivity : ComponentActivity() {
         setTheme(R.style.Theme_Harken)
         super.onCreate(savedInstanceState)
         enableEdgeToEdge()
+        requestNotificationPermissionIfNeeded()
         val graph = AppGraph.get(this)
         setContent {
             HarkenApp(graph = graph)
+        }
+    }
+
+    /**
+     * Android 13+ 通知属运行时权限：不申请则媒体通知被静默抑制——锁屏/通知栏/
+     * 蓝牙表盘的播放控制入口全部消失（vivo 这类激进后台管控的 ROM 还会因此
+     * 更早冻结进程）。launch 时请求一次；用户拒绝后由系统管理「不再询问」。
+     */
+    private fun requestNotificationPermissionIfNeeded() {
+        if (Build.VERSION.SDK_INT < 33) return
+        val granted = checkSelfPermission(android.Manifest.permission.POST_NOTIFICATIONS) ==
+            PackageManager.PERMISSION_GRANTED
+        if (!granted) {
+            requestPermissions(arrayOf(android.Manifest.permission.POST_NOTIFICATIONS), 1)
         }
     }
 }

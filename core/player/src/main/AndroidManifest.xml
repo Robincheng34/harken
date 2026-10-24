@@ -2,6 +2,10 @@
 <!-- :core:player — the media session service declaration merges into :app. -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 
+    <!-- 播放期 WAKE_LOCK：ExoPlayer setWakeMode(C.WAKE_MODE_LOCAL) 要求，
+         息屏流式播放不断流。 -->
+    <uses-permission android:name="android.permission.WAKE_LOCK" />
+
     <application>
         <service
             android:name=".PlayerService"

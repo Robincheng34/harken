@@ -449,7 +449,10 @@ fun NowPlayingScreen(
                                 showTranslation = settings.showTranslation,
                                 verbatimLyrics = settings.verbatimLyrics,
                                 isScrubbing = uiState.isLyricsScrubbing,
-                                onSeekTo = { seconds -> controller.seekTo((seconds * 1000).toLong()) },
+                                onSeekTo = { seconds ->
+                                    viewModel.markInteraction()
+                                    controller.seekTo((seconds * 1000).toLong())
+                                },
                                 onScrubbingChange = viewModel::setLyricsScrubbing,
                                 onSongInfo = { track?.id?.let { onOpenSongInfo(it) } },
                                 modifier = Modifier.fillMaxSize(),
@@ -505,6 +508,10 @@ fun NowPlayingScreen(
                 Spacer(modifier = Modifier.height(20.dp))
 
                 // 4. 控制条：进度 + 音质标签 + 单行五键
+                // 各命令回调里显式 markInteraction：控件位于指针屏障的下层兄弟
+                // 之后命中，被子控件消费的点击/拖动到不了屏障（屏障只收未被消费
+                // 的事件）——不在这些热路径补记的话，操作播放/进度条 5 秒后仍会被
+                // 自动沉浸把控件收走。
                 NowPlayingControls(
                     isPlaying = state.isPlaying,
                     isFMMode = state.isFMMode,
@@ -513,11 +520,26 @@ fun NowPlayingScreen(
                     positionMs = state.positionMs,
                     durationMs = state.durationMs,
                     qualityLabel = qualityLabel,
-                    onTogglePlay = controller::togglePlay,
-                    onNext = controller::next,
-                    onPrevious = controller::previous,
-                    onTrash = controller::fmTrash,
-                    onSeek = controller::seekTo,
+                    onTogglePlay = {
+                        viewModel.markInteraction()
+                        controller.togglePlay()
+                    },
+                    onNext = {
+                        viewModel.markInteraction()
+                        controller.next()
+                    },
+                    onPrevious = {
+                        viewModel.markInteraction()
+                        controller.previous()
+                    },
+                    onTrash = {
+                        viewModel.markInteraction()
+                        controller.fmTrash()
+                    },
+                    onSeek = {
+                        viewModel.markInteraction()
+                        controller.seekTo(it)
+                    },
                     onCyclePlayMode = onCyclePlayMode,
                     onToggleQueue = viewModel::toggleQueuePanel,
                     modifier = Modifier

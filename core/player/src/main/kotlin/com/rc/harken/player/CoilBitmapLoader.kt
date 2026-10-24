@@ -16,6 +16,7 @@ import java.io.IOException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
 /**
@@ -36,6 +37,11 @@ class CoilBitmapLoader(private val context: Context) : BitmapLoader {
 
     /** 封面均为图片 MIME；其余交给默认处理。 */
     override fun supportsMimeType(mimeType: String): Boolean = mimeType.startsWith("image/")
+
+    /** 取消内部加载 scope（服务销毁时调用，避免重建服务后遗留空闲协程）。 */
+    fun cancel() {
+        scope.cancel()
+    }
 
     private fun loadAsync(data: Any?): ListenableFuture<Bitmap> {
         val result = SettableFuture.create<Bitmap>()

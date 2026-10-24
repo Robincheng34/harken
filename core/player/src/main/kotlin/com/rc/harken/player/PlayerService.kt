@@ -29,6 +29,7 @@ import com.rc.harken.storage.download.LocalSongSource
 class PlayerService : MediaSessionService() {
 
     private var mediaSession: MediaSession? = null
+    private var bitmapLoader: CoilBitmapLoader? = null
 
     override fun onCreate() {
         super.onCreate()
@@ -43,10 +44,24 @@ class PlayerService : MediaSessionService() {
             return
         }
         val engine = PlaybackEngine.acquire(applicationContext)
+        val loader = CoilBitmapLoader(this)
+        bitmapLoader = loader
         mediaSession = MediaSession.Builder(this, engine.exoPlayer)
-            .setBitmapLoader(CoilBitmapLoader(this))
+            .setBitmapLoader(loader)
             .build()
         setMediaNotificationProvider(DefaultMediaNotificationProvider(this))
+    }
+
+    override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        // 前台超时兜底：`startForegroundService` 拉起本服务后，media3 要等播放器
+        // 进入 BUFFERING/READY 才会 startForeground（MediaNotificationManager 的
+        // 判据）——而首播的第一步是 URL 解析，慢网/解锁源逐个超时时整条链路远超
+        // 系统 ~10s 时限，直接 ForegroundServiceDidNotStartInTimeException 崩溃。
+        // 这里先以最小通知立即转前台，媒体通知随后接管（通知 ID 不同，
+        // startForeground 会替换而非叠加）。仅 start（非 bind）路径会走到这里，
+        // 纯绑定场景不会多发多余通知。
+        startForegroundMinimal()
+        return super.onStartCommand(intent, flags, startId)
     }
 
     /**
@@ -94,6 +109,8 @@ class PlayerService : MediaSessionService() {
     override fun onDestroy() {
         mediaSession?.release()
         mediaSession = null
+        bitmapLoader?.cancel()
+        bitmapLoader = null
         // 服务已停止：复位引擎内的启动标志，下次播放才会重新拉起前台服务
         // （否则 onTaskRemoved 停服后，引擎仍以为服务活着，不再发起启动）。
         PlaybackEngine.peek()?.onServiceDestroyed()

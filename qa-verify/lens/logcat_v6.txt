@@ -1,8 +1,0 @@
---------- beginning of main
-10-15 11:44:19.138 20450 20450 I LiquidGlassLens: behind capture: 1440x287
-10-15 11:44:19.161 20450 20450 I LiquidGlassLens: lens shader created for 434x168
-10-15 11:44:19.251 20450 20450 I LiquidGlassLens: lens shader created for 434x151
-10-15 11:44:49.080 20450 20450 I LiquidGlassLens: lens shader created for 433x168
-10-15 11:44:49.177 20450 20450 I LiquidGlassLens: lens shader created for 433x151
-10-15 11:44:49.226 20450 20450 I LiquidGlassLens: behind capture: 1440x287
-10-15 11:44:49.246 20450 20450 I LiquidGlassLens: lens shader created for 433x151

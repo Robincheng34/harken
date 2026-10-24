@@ -386,7 +386,7 @@ private fun AppContent(graph: AppGraph) {
             // 品牌启动层：盖在全部内容之上，与启动图窗口背景同资产衔接，
             // 淡出结束后（splashVisible=false）从组合中移除。
             if (splashVisible) {
-                SplashLayer(splashAlpha = 1f - splashProgress.value)
+                SplashLayer(splashAlpha = { 1f - splashProgress.value })
             }
         }
     }
@@ -396,13 +396,16 @@ private fun AppContent(graph: AppGraph) {
  * 品牌启动层：黑底 + 品牌启动图（与冷启动 windowBackground 同一张
  * `splash_brand` 资产，ContentScale.Crop 铺满），整层随 [splashAlpha] 淡出。
  * 纯展示层：不拦截事件之外的行为，无状态。
+ *
+ * [splashAlpha] 走 lambda 在 graphicsLayer 块内延迟读取：淡出的每一帧只更新
+ * 图层属性，不重组 AppContent 作用域（组合期读 Animatable 会逐帧全量重组）。
  */
 @Composable
-private fun SplashLayer(splashAlpha: Float) {
+private fun SplashLayer(splashAlpha: () -> Float) {
     Box(
         modifier = Modifier
             .fillMaxSize()
-            .graphicsLayer { this.alpha = splashAlpha }
+            .graphicsLayer { this.alpha = splashAlpha() }
             .background(Color.Black),
     ) {
         Image(

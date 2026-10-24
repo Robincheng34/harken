@@ -33,10 +33,21 @@ class DataStoreCookieStore(private val dataStore: DataStore<Preferences>) : Cook
      *
      * 原 bug：`load()` 的 clear+回填段与并发的 `update()`（HTTP 响应 absorb 写入）
      * 竞态，期间写入的 Cookie 会被 clear() 抹掉，且随后调度的持久化 job 把清空后
-     * 的 cache 写盘，登录 Cookie/CSRF 永久丢失。现让所有 cache 段互斥（挂起的
-     * DataStore 读取放在锁外，`update()` 是同步接口方法故用 `synchronized`）。
+     * 的 cache 写盘，登录 Cookie/CSRF 永久丢失。
+     *
+     * ⚠️ 不能把挂起的 DataStore 读盘放进临界区：`load()` 在 Main 调度器上持锁
+     * 挂起等 DataStore IO 时，主线程上任何 `snapshot()`/`update()` 都会阻塞等锁，
+     * load 的恢复点也排在主线程队列上 → 死锁（2026-10-24 真机踩坑：首页永久
+     * 骨架屏）。改用「锁外读盘 + [overlayWrites] 写覆盖层」：读盘期间发生的
+     * update/clear 记下 key，回填时跳过这些 key，内存写入不会被旧盘数据覆盖。
      */
     private val cacheLock = Any()
+
+    /**
+     * 读盘窗口内被 update()/clearAuthCookies() 触碰过的 cookie 名（cacheLock 保护）。
+     * [load] 回填磁盘数据时跳过它们：内存值（或已删除状态）比旧盘数据新。
+     */
+    private val overlayWrites = HashSet<String>()
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
 
     @Volatile
@@ -44,15 +55,19 @@ class DataStoreCookieStore(private val dataStore: DataStore<Preferences>) : Cook
 
     /** Hydrates the in-memory cache from disk; call once during bootstrap. */
     suspend fun load() {
-        // 挂起的 DataStore 读取放在锁外，避免长时间持锁。
+        // 挂起的读盘必须在锁外（见 cacheLock 注释的死锁警告）。
         val stored = dataStore.data.first()[COOKIES_KEY].orEmpty()
         synchronized(cacheLock) {
             cache.clear()
             for (entry in stored) {
                 val separator = entry.indexOf('=')
                 if (separator <= 0) continue
-                cache[entry.substring(0, separator)] = entry.substring(separator + 1)
+                val name = entry.substring(0, separator)
+                // 读盘窗口内被 update 写入 / clear 删除的 key 不回填：内存状态更新。
+                if (name in overlayWrites) continue
+                cache[name] = entry.substring(separator + 1)
             }
+            overlayWrites.clear()
         }
     }
 
@@ -61,6 +76,7 @@ class DataStoreCookieStore(private val dataStore: DataStore<Preferences>) : Cook
     override fun update(newCookies: Map<String, String>) {
         synchronized(cacheLock) {
             cache.putAll(newCookies)
+            overlayWrites.addAll(newCookies.keys)
             schedulePersistLocked()
         }
     }
@@ -69,6 +85,8 @@ class DataStoreCookieStore(private val dataStore: DataStore<Preferences>) : Cook
         synchronized(cacheLock) {
             cache.remove(NeteaseClient.COOKIE_MUSIC_U)
             cache.remove(NeteaseClient.COOKIE_CSRF)
+            overlayWrites.add(NeteaseClient.COOKIE_MUSIC_U)
+            overlayWrites.add(NeteaseClient.COOKIE_CSRF)
             schedulePersistLocked()
         }
     }

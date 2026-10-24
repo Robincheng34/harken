@@ -9,9 +9,11 @@
 
     <!-- 冷启动主题：windowBackground 用品牌启动图（黑底），消除白屏。
          MainActivity.onCreate 在 super 之前 setTheme(Theme.Harken) 切回正常主题，
-         Compose 启动层（HarkenApp 内）负责品牌图 → 首页的无缝过渡。 -->
+         Compose 启动层（HarkenApp 内）负责品牌图 → 首页的无缝过渡。
+         不设 windowFullscreen：真实窗口是 edge-to-edge + 透明状态栏，启动窗口
+         若强制全屏会在切换瞬间出现顶部一次内缩/闪烁（黑底启动图下状态栏区域
+         本来就是黑的，全屏与否视觉一致，去掉更一致）。 -->
     <style name="Theme.Harken.Launch" parent="Theme.Harken">
         <item name="android:windowBackground">@drawable/splash_background</item>
-        <item name="android:windowFullscreen">true</item>
     </style>
 </resources>

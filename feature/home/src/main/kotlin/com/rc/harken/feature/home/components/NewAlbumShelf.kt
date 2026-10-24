@@ -71,6 +71,10 @@ fun NewAlbumShelf(
                         contentDescription = album.name,
                         title = album.name,
                         subtitle = album.artistName,
+                        // artistName 可为空：空时不渲染副标题行会让同行卡片高低不一
+                        // （LazyRow 以可见项最大高度定行高，横滑进新卡行高变化 →
+                        // 首页下方分区跳动，e24fc43 同因）。占住副标题行保证等高。
+                        reserveSubtitleLine = true,
                         size = cardSize,
                         onPlay = onPlay?.let { callback -> { callback(album.id) } },
                         onClick = { onOpen(album.id) },

@@ -3,6 +3,9 @@
      消除窗口背景 → 首帧之间的白屏/跳变）。 -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:drawable="@android:color/black" />
+    <!-- centerCrop 与 Compose SplashLayer 的 ContentScale.Crop 才是同语义，
+         但 XML bitmap gravity 不支持 centerCrop（AAPT 限制），等比裁切需
+         预裁资产或换 LayerDrawable 实现——维持 fill（拉伸），跳变问题缓议。 -->
     <item>
         <bitmap
             android:src="@drawable/splash_brand"
