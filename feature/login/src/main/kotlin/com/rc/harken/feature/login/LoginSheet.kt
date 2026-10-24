@@ -43,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
 import com.rc.harken.design.composition.LocalNeteaseApi
+import com.rc.harken.design.theme.Layout
 import com.rc.harken.feature.login.components.QrCodeView
 import com.rc.harken.feature.login.components.SmsCodeSection
 
