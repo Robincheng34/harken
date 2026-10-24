@@ -202,7 +202,6 @@ class SongUrlResolverTest {
             override suspend fun songURL(ids: List<Long>, level: String): List<SongURLData> = emptyList()
         }
         val wrongSong = object : UnblockSource {
-            override suspend fun resolve(track: Track): String? = "https://third.test/wrong.m4a"
             override suspend fun resolveCandidate(track: Track): UnblockCandidate =
                 UnblockCandidate(
                     url = "https://third.test/wrong.m4a",
@@ -225,7 +224,6 @@ class SongUrlResolverTest {
             override suspend fun songURL(ids: List<Long>, level: String): List<SongURLData> = emptyList()
         }
         val good = object : UnblockSource {
-            override suspend fun resolve(track: Track): String? = null
             override suspend fun resolveCandidate(track: Track): UnblockCandidate =
                 UnblockCandidate(
                     url = "http://third.test/good.m4a",
@@ -247,14 +245,19 @@ class SongUrlResolverTest {
 
     @Test
     fun `unblock without source metadata still flags as unblocked`() = runTest {
-        // 宽松路径 [UnblockSource.resolve] 只有 URL、没有元数据：iOS 侧不存在
-        // 这种情况（第三方源必带 displayName），安卓侧退化为 UNBLOCK_SOURCE_UNNAMED
-        // ——仍然要提示用户走了第三方源，只是不带名字。
         val empty = object : SongUrlApi {
             override suspend fun songURL(ids: List<Long>, level: String): List<SongURLData> = emptyList()
         }
+        // 唯一实现总带元数据；这里用空 sourceName 模拟「源名未知」的兜底形态。
         val unnamed = object : UnblockSource {
-            override suspend fun resolve(track: Track): String? = "https://third.test/anon.m4a"
+            override suspend fun resolveCandidate(track: Track): UnblockCandidate =
+                UnblockCandidate(
+                    url = "https://third.test/anon.m4a",
+                    title = track.name,
+                    artist = "",
+                    durationMS = track.durationMS,
+                    sourceName = null,
+                )
         }
         val resolved = resolver(empty, unblockEnabled = true, unblock = unnamed)
             .resolve(track, AudioQuality.EXHIGH)
@@ -272,7 +275,13 @@ class SongUrlResolverTest {
             mapOf("hires" to data(url = "https://cdn.test/trial.m4a", level = "hires", trial = true)),
         )
         val source = object : UnblockSource {
-            override suspend fun resolve(track: Track): String? = "https://third.test/full.m4a"
+            override suspend fun resolveCandidate(track: Track): UnblockCandidate =
+                UnblockCandidate(
+                    url = "https://third.test/full.m4a",
+                    title = track.name,
+                    artist = "",
+                    durationMS = track.durationMS,
+                )
         }
         val resolved = resolver(api, unblockEnabled = true, unblock = source)
             .resolve(track, AudioQuality.HIRES)
@@ -293,9 +302,14 @@ class SongUrlResolverTest {
         )
         var called = false
         val source = object : UnblockSource {
-            override suspend fun resolve(track: Track): String? {
+            override suspend fun resolveCandidate(track: Track): UnblockCandidate {
                 called = true
-                return "https://third.test/x.m4a"
+                return UnblockCandidate(
+                    url = "https://third.test/x.m4a",
+                    title = track.name,
+                    artist = "",
+                    durationMS = track.durationMS,
+                )
             }
         }
         val resolved = resolver(api, unblockEnabled = true, unblock = source)
@@ -315,9 +329,14 @@ class SongUrlResolverTest {
         }
         var called = false
         val source = object : UnblockSource {
-            override suspend fun resolve(track: Track): String? {
+            override suspend fun resolveCandidate(track: Track): UnblockCandidate {
                 called = true
-                return "https://third.test/x.m4a"
+                return UnblockCandidate(
+                    url = "https://third.test/x.m4a",
+                    title = track.name,
+                    artist = "",
+                    durationMS = track.durationMS,
+                )
             }
         }
         val error = runCatching {

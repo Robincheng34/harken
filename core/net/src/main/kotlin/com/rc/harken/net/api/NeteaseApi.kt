@@ -341,14 +341,6 @@ open class NeteaseApi(private val client: NeteaseClient) {
         return response.data?.dailySongs ?: emptyList()
     }
 
-    open suspend fun personalizedNewSongs(limit: Int = 10): List<Track> {
-        val response: PersonalizedNewsongResponse = weapi(
-            "/personalized/newsong",
-            mapOf("type" to "recommend", "limit" to limit, "areaId" to 0),
-        )
-        return response.result.mapNotNull { it.song }
-    }
-
     open suspend fun playlistDetail(id: Long): PlaylistDetailResponse =
         weapi("/v6/playlist/detail", mapOf("id" to id, "n" to 100_000, "s" to 8))
 
@@ -405,11 +397,6 @@ open class NeteaseApi(private val client: NeteaseClient) {
             mapOf("name" to name, "privacy" to if (isPrivate) 10 else 0, "type" to "NORMAL"),
         )
         return response.id
-    }
-
-    open suspend fun deletePlaylist(id: Long) {
-        val response: CodeOnly = weapi("/playlist/remove", mapOf("ids" to "[$id]"))
-        assertCode(response.code)
     }
 
     open suspend fun subscribePlaylist(id: Long, subscribe: Boolean) {
@@ -563,9 +550,6 @@ open class NeteaseApi(private val client: NeteaseClient) {
         )
         return response.albums
     }
-
-    open suspend fun albumDynamic(id: Long): AlbumDynamicResponse =
-        eapi("/album/detail/dynamic", mapOf("id" to id))
 
     open suspend fun subscribeAlbum(id: Long, subscribe: Boolean) {
         val response: CodeOnly = weapi(

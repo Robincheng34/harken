@@ -36,16 +36,21 @@ data class UnblockCandidate(
  * 架构文档 §9 假设 1：解锁有法律风险，v1.0 仅保留接口 + 设置开关（默认关），
  * 并保留「客户书面确认后启用」的合规流程。
  */
+/**
+ * 灰色歌曲解锁钩子（P1 预留，默认关闭）。
+ *
+ * 架构文档 §9 假设 1：解锁有法律风险，v1.0 仅保留接口 + 设置开关（默认关），
+ * 并保留「客户书面确认后启用」的合规流程。
+ */
 interface UnblockSource {
-    /** 返回第三方直链；null 表示无法解锁。 */
-    suspend fun resolve(track: Track): String?
-
     /**
-     * 返回带元数据的候选（iOS `isPlausibleMatch` 校验所需）。
+     * 返回带元数据的候选（iOS `isPlausibleMatch` 校验所需）；null = 无法解锁。
      *
-     * 默认返回 null → 解析器退回仅校验 URL 的宽松路径。
+     * 历史上还有仅返回 URL 的宽松路径 `resolve`——唯一实现
+     * [NeteaseUnblockSource] 本就走同一匹配链路可给元数据，宽松路径只会把
+     * 解锁未命中的耗时翻倍（同一条链再空跑一遍），已删除。
      */
-    suspend fun resolveCandidate(track: Track): UnblockCandidate? = null
+    suspend fun resolveCandidate(track: Track): UnblockCandidate?
 }
 
 /** iOS `AudioSourceProvider.isPlausibleMatch` 的时长容差（毫秒）。 */
@@ -54,9 +59,8 @@ internal const val DURATION_TOLERANCE_MS = 10_000L
 /**
  * 解锁命中但源名未知的占位值。
  *
- * iOS 侧第三方源**必然**带 `displayName`（`AudioSourceProvider.swift:19`），
- * 不存在这种情况；Android 的宽松路径 [UnblockSource.resolve] 只返回 URL，没有
- * 元数据。这里用「**非空**」表示「命中了解锁」（决定要不要提示用户），用
+ * 当前唯一实现 [NeteaseUnblockSource] 总是带 sourceName，此值仅作为防御性
+ * 兜底保留：用「**非空**」表示「命中了解锁」（决定要不要提示用户），用
  * 「空串」表示「源名未知」（决定提示文案带不带名字）。写成常量是为了让这个
  * 约定在代码里只出现一次。
  */

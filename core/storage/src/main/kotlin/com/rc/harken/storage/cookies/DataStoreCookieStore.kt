@@ -68,6 +68,9 @@ class DataStoreCookieStore(private val dataStore: DataStore<Preferences>) : Cook
                 cache[name] = entry.substring(separator + 1)
             }
             overlayWrites.clear()
+            // 回写收敛：把合并后的内存态异步落盘，洗掉历史脏盘；也保证若发生
+            // 第二次 load()，读到的盘数据已包含读盘窗口内的内存写入。
+            schedulePersistLocked()
         }
     }
 

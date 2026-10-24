@@ -12,6 +12,7 @@ import com.rc.harken.net.api.NeteaseApiError
 import com.rc.harken.net.api.userMessage
 import com.rc.harken.net.model.AlbumSummary
 import com.rc.harken.net.model.ArtistSummary
+import com.rc.harken.net.model.PlaylistSummary
 import com.rc.harken.net.model.ToplistItem
 import com.rc.harken.net.model.Track
 import kotlinx.coroutines.CoroutineScope
@@ -34,13 +35,12 @@ class HomeViewModel(
     val uiState: StateFlow<HomeUiState> = _uiState.asStateFlow()
 
     /**
-     * 上次成功发起加载时的登录态（null = 从未发起过加载）。
-     *
-     * 「已加载则跳过」守卫必须连同登录态一起判断：登录前后首页内容不同
-     * （登录态追加每日推荐头部 + 雷达歌单）。原实现只看内容非空——未登录时
-     * 先打开过首页，登录成功回首页直接 return，雷达歌单/个性化推荐永不加载；
-     * 反向登出则残留上一账号的推荐数据。
+     * 上次实际执行拉取的登录态（null = 从未拉取过）。补跑循环以它为比较基准——
+     * 不能用 [lastLoadLoggedIn]：refresh() 也写它，会吞掉在途加载的补跑。
      */
+    private var lastRunLoggedIn: Boolean? = null
+
+    /** 上次发起 load 的登录态；「已加载且登录态未变则跳过」守卫用。 */
     private var lastLoadLoggedIn: Boolean? = null
 
     /**
@@ -74,14 +74,15 @@ class HomeViewModel(
         loadInFlight = true
         scope.launch {
             try {
-                loadSuspend(loggedIn)
-                // 在途期间登录态又变了：按最新登录态补一轮，保证内容与登录态一致。
+                var run = loggedIn
                 while (true) {
-                    val pending = pendingLoadLoggedIn ?: break
-                    if (pending == lastLoadLoggedIn) break
+                    lastRunLoggedIn = run
+                    loadSuspend(run)
+                    // 在途期间登录态又变了：按最新登录态补一轮，保证内容与登录态一致。
+                    val pending = pendingLoadLoggedIn
+                    if (pending == null || pending == lastRunLoggedIn) break
                     pendingLoadLoggedIn = null
-                    lastLoadLoggedIn = pending
-                    loadSuspend(pending)
+                    run = pending
                 }
             } finally {
                 loadInFlight = false
@@ -89,49 +90,57 @@ class HomeViewModel(
         }
     }
 
-    private suspend fun loadSuspend(loggedIn: Boolean) = coroutineScope {
-            _uiState.update { it.copy(isLoading = true, error = null) }
-            val recommend = async {
-                runCatching {
-                    if (loggedIn) {
-                        // 登录态：每日推荐歌单在前，个性化推荐去重补齐（iOS fetchRecommendPlaylists）。
-                        val head = api.recommendResource()
-                        val tail = api.personalizedPlaylists(limit = 30)
-                        val seen = HashSet<Long>()
-                        (head + tail).filter { seen.add(it.id) }
-                    } else {
-                        api.personalizedPlaylists(limit = 30)
-                    }
-                }.getOrNull() ?: emptyList()
-            }
-            val daily = async { runCatching { api.dailyRecommendSongs() }.getOrNull() ?: emptyList<Track>() }
-            val tops = async { runCatching { api.toplists() }.getOrNull() ?: emptyList<ToplistItem>() }
-            val albums = async { runCatching { api.newAlbums(limit = 20) }.getOrNull() ?: emptyList<AlbumSummary>() }
-            val artists = async { runCatching { api.topArtists(limit = 12) }.getOrNull() ?: emptyList<ArtistSummary>() }
-            val radar = if (loggedIn) {
-                async { runCatching { loadRadarPlaylists() }.getOrNull() ?: emptyList<RadarPlaylist>() }
-            } else null
+    /** 一次全量首页拉取（各请求独立 runCatching，失败字段为空列表）。 */
+    private suspend fun fetchHome(loggedIn: Boolean): HomeContent = coroutineScope {
+        val recommend = async {
+            runCatching {
+                if (loggedIn) {
+                    // 登录态：每日推荐歌单在前，个性化推荐去重补齐（iOS fetchRecommendPlaylists）。
+                    val head = api.recommendResource()
+                    val tail = api.personalizedPlaylists(limit = 30)
+                    val seen = HashSet<Long>()
+                    (head + tail).filter { seen.add(it.id) }
+                } else {
+                    api.personalizedPlaylists(limit = 30)
+                }
+            }.getOrNull() ?: emptyList()
+        }
+        val daily = async { runCatching { api.dailyRecommendSongs() }.getOrNull() ?: emptyList<Track>() }
+        val tops = async { runCatching { api.toplists() }.getOrNull() ?: emptyList<ToplistItem>() }
+        val albums = async { runCatching { api.newAlbums(limit = 20) }.getOrNull() ?: emptyList<AlbumSummary>() }
+        val artists = async { runCatching { api.topArtists(limit = 12) }.getOrNull() ?: emptyList<ArtistSummary>() }
+        val radar = if (loggedIn) {
+            async { runCatching { loadRadarPlaylists() }.getOrNull() ?: emptyList<RadarPlaylist>() }
+        } else null
 
-            val recommendList = recommend.await()
-            val dailyList = daily.await()
-            val toplistItems = tops.await().filter { it.id in OFFICIAL_TOPLIST_IDS }
-            val albumList = albums.await()
-            val artistList = artists.await().shuffled().take(6)
-
-            _uiState.update {
-                it.copy(
-                    isLoading = false,
-                    recommendPlaylists = recommendList,
-                    dailySongs = dailyList,
-                    dailyFirstCover = dailyList.firstOrNull()?.album?.picUrl,
-                    toplists = toplistItems,
-                    newAlbums = albumList,
-                    artists = artistList,
-                    radarPlaylists = radar?.await() ?: emptyList(),
-                    error = if (recommendList.isEmpty() && albumList.isEmpty()) "网络连接失败" else null,
-                )
-            }
+        HomeContent(
+            recommendPlaylists = recommend.await(),
+            dailySongs = daily.await(),
+            toplists = tops.await().filter { it.id in OFFICIAL_TOPLIST_IDS },
+            newAlbums = albums.await(),
+            artists = artists.await().shuffled().take(6),
+            radarPlaylists = radar?.await() ?: emptyList(),
+        )
     }
+
+    private suspend fun loadSuspend(loggedIn: Boolean) {
+        _uiState.update { it.copy(isLoading = true, error = null) }
+        val content = fetchHome(loggedIn)
+        _uiState.update {
+            it.copy(
+                isLoading = false,
+                recommendPlaylists = content.recommendPlaylists,
+                dailySongs = content.dailySongs,
+                dailyFirstCover = content.dailySongs.firstOrNull()?.album?.picUrl,
+                toplists = content.toplists,
+                newAlbums = content.newAlbums,
+                artists = content.artists,
+                radarPlaylists = content.radarPlaylists,
+                error = if (content.recommendPlaylists.isEmpty() && content.newAlbums.isEmpty()) "网络连接失败" else null,
+            )
+        }
+    }
+
     /** 重开（错误态重试）。 */
     fun reload(loggedIn: Boolean) {
         // 置空登录态标记强制 load 真正重跑（错误态重试可能带部分已加载数据）。
@@ -141,56 +150,43 @@ class HomeViewModel(
 
     /** 下拉刷新：保留当前内容，后台重新拉全量数据（失败静默、不闪骨架）。 */
     fun refresh(loggedIn: Boolean) {
+        // 与在途 load 并行只会互相覆盖（load 的最终 apply 必然后到）；
+        // 在途加载本身会按最新登录态补跑，直接跳过。
+        if (loadInFlight) return
         // 刷新用的是当前登录态，同步标记保持一致（否则登录后先刷新再切 Tab
         // 会误触发一次 load）。
         lastLoadLoggedIn = loggedIn
         scope.launch {
             _uiState.update { it.copy(isRefreshing = true) }
-            // 与 load() 相同的并发拉取逻辑（复用同一组 api 调用，失败分支静默）。
-            val recommend = async {
-                runCatching {
-                    if (loggedIn) {
-                        val head = api.recommendResource()
-                        val tail = api.personalizedPlaylists(limit = 30)
-                        val seen = HashSet<Long>()
-                        (head + tail).filter { seen.add(it.id) }
-                    } else {
-                        api.personalizedPlaylists(limit = 30)
-                    }
-                }.getOrNull() ?: emptyList()
-            }
-            val daily = async { runCatching { api.dailyRecommendSongs() }.getOrNull() ?: emptyList<Track>() }
-            val tops = async { runCatching { api.toplists() }.getOrNull() ?: emptyList<ToplistItem>() }
-            val albums = async { runCatching { api.newAlbums(limit = 20) }.getOrNull() ?: emptyList<AlbumSummary>() }
-            val artists = async { runCatching { api.topArtists(limit = 12) }.getOrNull() ?: emptyList<ArtistSummary>() }
-            val radar = if (loggedIn) {
-                async { runCatching { loadRadarPlaylists() }.getOrNull() ?: emptyList<RadarPlaylist>() }
-            } else null
-
-            val recommendList = recommend.await()
-            val dailyList = daily.await()
-            val toplistItems = tops.await().filter { it.id in OFFICIAL_TOPLIST_IDS }
-            val albumList = albums.await()
-            val artistList = artists.await().shuffled().take(6)
-
+            val content = fetchHome(loggedIn)
             _uiState.update {
                 it.copy(
                     isRefreshing = false,
                     // 仅当拉取成功（非空）才更新内容；失败保留旧数据（下拉刷新
                     // 不应闪回错误态 / 骨架，用户期望是「数据没变」而非「页面崩了」）。
-                    recommendPlaylists = recommendList.ifEmpty { it.recommendPlaylists },
-                    dailySongs = dailyList.ifEmpty { it.dailySongs },
-                    dailyFirstCover = dailyList.firstOrNull()?.album?.picUrl
+                    recommendPlaylists = content.recommendPlaylists.ifEmpty { it.recommendPlaylists },
+                    dailySongs = content.dailySongs.ifEmpty { it.dailySongs },
+                    dailyFirstCover = content.dailySongs.firstOrNull()?.album?.picUrl
                         ?: it.dailyFirstCover,
-                    toplists = toplistItems.ifEmpty { it.toplists },
-                    newAlbums = albumList.ifEmpty { it.newAlbums },
-                    artists = artistList.ifEmpty { it.artists },
-                    radarPlaylists = (radar?.await() ?: emptyList()).ifEmpty { it.radarPlaylists },
+                    toplists = content.toplists.ifEmpty { it.toplists },
+                    newAlbums = content.newAlbums.ifEmpty { it.newAlbums },
+                    artists = content.artists.ifEmpty { it.artists },
+                    radarPlaylists = content.radarPlaylists.ifEmpty { it.radarPlaylists },
                     error = null,
                 )
             }
         }
     }
+
+    /** [fetchHome] 的聚合结果（失败字段为空列表）。 */
+    private data class HomeContent(
+        val recommendPlaylists: List<PlaylistSummary>,
+        val dailySongs: List<Track>,
+        val toplists: List<ToplistItem>,
+        val newAlbums: List<AlbumSummary>,
+        val artists: List<ArtistSummary>,
+        val radarPlaylists: List<RadarPlaylist>,
+    )
 
     /** 雷达歌单：四个个性化雷达 ID 拉简要信息，标题按「|」拆分（iOS loadRadarPlaylists）。 */
     private suspend fun loadRadarPlaylists(): List<RadarPlaylist> {

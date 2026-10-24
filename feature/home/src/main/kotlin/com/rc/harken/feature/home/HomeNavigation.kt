@@ -11,10 +11,8 @@ import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavHostController
 
 /** 首页 Tab 起始路由（对应 `Routes.HOME`）。 */
-const val HOME_ROUTE = "home"
 
 /** 搜索 Tab 路由（对应 `Routes.SEARCH`）。 */
-const val SEARCH_ROUTE = "search"
 
 /** 歌单详情路由构造器（对应 `Routes.playlistDetail`）。 */
 fun playlistDetailRoute(id: Long): String = "playlist/$id"
@@ -29,13 +27,10 @@ fun artistDetailRoute(id: Long): String = "artist/$id"
 const val DAILY_SONGS_ROUTE = "daily_songs"
 
 /** 最近播放覆盖层（对应 `Routes.RECENT_PLAYS`）。 */
-const val RECENT_PLAYS_ROUTE = "recent_plays"
 
 /** 我喜欢的音乐覆盖层（对应 `Routes.FAVORITES`）。 */
-const val FAVORITES_ROUTE = "favorites"
 
 /** 音乐云盘覆盖层（对应 `Routes.CLOUD`）。 */
-const val CLOUD_ROUTE = "cloud"
 
 /**
  * 导航图占位：本页为 Tab 内容（由 `:app` TabsScreen 直接调用 `*Screen` 渲染），

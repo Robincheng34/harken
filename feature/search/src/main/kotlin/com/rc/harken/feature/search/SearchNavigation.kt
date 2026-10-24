@@ -14,7 +14,6 @@ import com.rc.harken.feature.search.pages.ArtistsScreen
 import com.rc.harken.feature.search.pages.GenreScreen
 
 /** 搜索页 Tab 起始路由（对应 `Routes.SEARCH`）。 */
-const val SEARCH_ROUTE = "search"
 
 /**
  * 搜索相关覆盖层路由。

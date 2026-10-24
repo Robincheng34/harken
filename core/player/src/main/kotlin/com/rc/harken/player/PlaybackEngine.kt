@@ -260,6 +260,7 @@ class PlaybackEngine(
         // 解析协程与在途 FM 拉取，并复位 deckLoaded。
         playGeneration++
         fmGeneration++
+        userPauseIntent = false
         deckLoaded = false
         exoPlayer.pause()
         exoPlayer.stop()
@@ -302,10 +303,7 @@ class PlaybackEngine(
         if (next == null) {
             exoPlayer.pause()
             exoPlayer.seekTo(0)
-            // 队列耗尽停下：deckLoaded 可能为 false（空档期按下一首到队尾），
-            // publish 走保留初值分支，必须显式纠正播放态，否则 UI 残留「正在播放」。
-            _state.update { it.copy(isPlaying = false) }
-            publish()
+            haltStopped()
             return
         }
         playCurrent()
@@ -325,7 +323,8 @@ class PlaybackEngine(
         }
         val previous = queue.previous()
         if (previous == null) {
-            exoPlayer.seekTo(0)
+            // 空档期旧 deck 仍在发声，seek(0) 会让旧曲从 0 重播直到新曲装填。
+            if (deckLoaded) exoPlayer.seekTo(0)
             return
         }
         playCurrent()
@@ -351,6 +350,9 @@ class PlaybackEngine(
 
     /** 私人漫游：拉一批 FM 歌曲并播放。 */
     fun startFM() {
+        // 用户显式发起播放：清除解析空档期记录的暂停意图（否则空档期暂停后
+        // 点漫游，新队列装填完成会被旧意图压住不起播，表现为「漫游按钮坏了」）。
+        userPauseIntent = false
         // 原 bug：快速连点并发发起多个 fetchFM()，各自 loadFMTracks 整批替换
         // 互相覆盖。加代际计数（同 playGeneration 模式），过期结果直接丢弃。
         val generation = ++fmGeneration
@@ -385,10 +387,7 @@ class PlaybackEngine(
             if (generation != fmGeneration) return@launch
             if (tracks.isNullOrEmpty()) {
                 exoPlayer.pause()
-                // 同 next()：publish 走 !deckLoaded 保留初值分支，需显式纠正。
-                _state.update { it.copy(isPlaying = false) }
-                _state.update { it.copy(error = "漫游已结束") }
-                publish()
+                haltStopped("漫游已结束")
                 return@launch
             }
             loadFMTracks(tracks)
@@ -639,10 +638,7 @@ class PlaybackEngine(
         }
         if (queue.current() == null) {
             exoPlayer.pause()
-            // 队列为空停下：deckLoaded=false 时 publish 走保留初值分支，
-            // 必须显式纠正播放态（队列被清空的残余解析失败路径）。
-            _state.update { it.copy(isPlaying = false) }
-            publish()
+            haltStopped()
             return
         }
         // 上一曲稳定播放过（判定同 onTrackEnded，见 [isStablePlayback]）则视为
@@ -658,10 +654,7 @@ class PlaybackEngine(
         if (consecutiveFailures >= MAX_CONSECUTIVE_FAILURES) {
             // 连续失败达到上限：停下并保留 state.error（onPlayerError 已写入）。
             exoPlayer.pause()
-            // deckLoaded=false（解析失败路径）时 publish 走保留初值分支，
-            // 显式纠正播放态，否则 UI 永久显示「正在播放」。
-            _state.update { it.copy(isPlaying = false) }
-            publish()
+            haltStopped()
             return
         }
         if (queue.isFMMode) {
@@ -674,10 +667,7 @@ class PlaybackEngine(
         val next = queue.advance()
         if (next == null) {
             exoPlayer.pause()
-            // 队列末尾停下（解析失败终点）：deckLoaded=false，publish 走保留
-            // 初值分支，需显式纠正播放态。
-            _state.update { it.copy(isPlaying = false) }
-            publish()
+            haltStopped()
             return
         }
         playCurrent()
@@ -747,6 +737,19 @@ class PlaybackEngine(
     /** [PlayerService.onDestroy] 回调：服务已停止，下次播放需重新拉起。 */
     fun onServiceDestroyed() {
         serviceStarted = false
+    }
+
+    /**
+     * 播放停止的统一收尾：先由调用方停掉 ExoPlayer，这里纠正播放态并发布。
+     *
+     * deckLoaded=false（解析空档期停下）时 publish 走「保留初值」分支——
+     * 不在这里显式把 isPlaying 置 false，UI 会残留「正在播放」。
+     */
+    private fun haltStopped(error: String? = null) {
+        _state.update {
+            it.copy(isPlaying = false, isBuffering = false, error = error ?: it.error)
+        }
+        publish()
     }
 
     private fun publish() {

@@ -35,20 +35,6 @@ fun SkeletonLine(
     )
 }
 
-/** 圆形头像/封面骨架。 */
-@Composable
-fun SkeletonCircle(
-    modifier: Modifier = Modifier,
-    size: Dp = 48.dp,
-) {
-    Box(
-        modifier = modifier
-            .size(size)
-            .clip(CircleShape)
-            .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.6f)),
-    )
-}
-
 /** 封面卡骨架（方形 1:1）。 */
 @Composable
 fun SkeletonCover(modifier: Modifier = Modifier) {
@@ -59,19 +45,3 @@ fun SkeletonCover(modifier: Modifier = Modifier) {
     )
 }
 
-/** 多行文本骨架（列表项通用）。 */
-@Composable
-fun SkeletonTextBlock(lines: Int = 2) {
-    androidx.compose.foundation.layout.Column(
-        modifier = Modifier.padding(8.dp),
-        verticalArrangement = androidx.compose.foundation.layout.Arrangement
-            .spacedBy(8.dp),
-    ) {
-        repeat(lines) { index ->
-            SkeletonLine(
-                height = if (index == 0) 16.dp else 12.dp,
-                modifier = Modifier.fillMaxWidth(if (index == 0) 0.8f else 0.6f),
-            )
-        }
-    }
-}

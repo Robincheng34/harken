@@ -267,22 +267,30 @@ class PlaybackQueue {
     }
 
     private fun restoreListedOrder() {
-        val currentTrack = current()
+        // 插播曲正在发声时（currentOverride != null），「基准曲目」是被它顶掉的
+        // queue[currentIndex]——恢复顺序要以它定位，而不是 current()（那是插播曲，
+        // 不在 listedOrder 里）。
+        val base = currentOverride ?: current()
         queue = listedOrder
-        if (currentTrack == null) {
+        if (base == null) {
             currentIndex = -1
             currentOverride = null
             return
         }
-        val index = listedOrder.indexOfFirst { it.id == currentTrack.id }
+        val index = listedOrder.indexOfFirst { it.id == base.id }
         if (index >= 0) {
-            currentIndex = index
-            currentOverride = null
+            if (currentOverride == null) {
+                // 当前曲就是基准曲：索引指向它、清除 override。
+                currentIndex = index
+                currentOverride = null
+            } else {
+                // 插播曲仍在发声：保留 override，currentIndex 指回它顶掉的位置——
+                // 插播曲播完后 advance() 从基准曲的下一首继续（repeat-all 照常循环）。
+                currentIndex = index
+            }
         } else {
-            // 当前曲是 play-next 插播曲（不在 listedOrder 中）：保留 currentOverride、
-            // currentIndex=-1（队列暂无当前位，插播曲播完后 advance 从队首继续）。
-            // 原实现 coerceAtLeast(0) 把不存在的索引钳到 0 并清掉 override——队列
-            // 高亮指向第一首而实际发声的是插播曲，下一次 advance 直接跳过插播曲。
+            // 基准曲也不在 listedOrder（队列被外部改过）：保底从队首继续，
+            // 插播曲若仍在发声则播完后 advance 从队首取曲。
             currentIndex = -1
         }
     }

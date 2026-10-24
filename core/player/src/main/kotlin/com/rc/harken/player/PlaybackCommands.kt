@@ -117,14 +117,10 @@ class PlaybackCommands(
         startIndex: Int = 0,
         openPlayer: Boolean = true,
     ) {
-        if (tracks.isEmpty()) {
-            // 空列表语义 = 清空队列并停止（PlaybackQueue.load 文档）；不触发跳转，
-            // 避免用户点了空列表后看到一个「未在播放」的播放页。
-            controller.play(tracks, startIndex, context, source)
-            return
-        }
+        // 空列表语义 = 清空队列并停止（PlaybackQueue.load 文档）；tracks 为空时
+        // onPlayStarted 不触发，避免用户点了空列表后看到一个「未在播放」的播放页。
         controller.play(tracks, startIndex, context, source)
-        if (openPlayer) onPlayStarted?.invoke()
+        if (tracks.isNotEmpty() && openPlayer) onPlayStarted?.invoke()
     }
 
     // MARK: - 透传命令

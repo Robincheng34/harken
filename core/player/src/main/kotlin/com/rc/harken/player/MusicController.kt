@@ -140,12 +140,6 @@ class MusicController(private val context: Context) {
         )
     }
 
-    /** 解绑；状态流在进程存活期间持续可用。 */
-    fun release() {
-        controllerFuture?.let(MediaController::releaseFuture)
-        controllerFuture = null
-    }
-
     // MARK: - Commands
 
     fun play(tracks: List<Track>, startIndex: Int, context: PlayContext?, source: PlaySource) =

@@ -56,7 +56,6 @@ import com.rc.harken.net.model.Formatters
 import kotlinx.coroutines.launch
 
 /** 漫游页 Tab 起始路由（与 `:app` `Routes.FM` 的字符串契约）。 */
-const val FM_ROUTE = "fm"
 
 /**
  * 私人漫游页。

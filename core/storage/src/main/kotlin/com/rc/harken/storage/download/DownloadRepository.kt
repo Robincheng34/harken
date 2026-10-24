@@ -63,6 +63,12 @@ class DownloadRepository(
     /** 在途下载的按 key 互斥锁（见 [download]）：防并发下载同曲目交错写坏 .part。 */
     private val inFlightLocks = ConcurrentHashMap<String, kotlinx.coroutines.sync.Mutex>()
 
+    /** 下载专用 client（构造期持有）：每次下载 new 一套连接池/线程池是泄漏源。 */
+    private val downloadClient = OkHttpClient.Builder()
+        .connectTimeout(30, TimeUnit.SECONDS)
+        .readTimeout(60, TimeUnit.SECONDS)
+        .build()
+
     init {
         // 预热内存索引：取首帧即可，后续 upsert/delete 会同步进 index。
         scope.launch {
@@ -101,22 +107,25 @@ class DownloadRepository(
      * 终态通过 [bus] 下发，供 UI 做 toast。
      *
      * 同一曲目并发去重：[index.containsKey] 检查与写入之间没有原子性，两个并发
-     * download 会同时通过查重、交错写同一个 `.part` 文件导致文件损坏。按 key
-     * 挂互斥锁，已有在途下载时按「已存在」处理。
+     * download 会同时通过查重、交错写同一个 `.part` 文件导致文件损坏。按 key 挂
+     * 互斥锁，在途时按 [DownloadStatus.Started] 提示。
+     *
+     * 锁随 [inFlightLocks] 常驻（key = trackId_level，量级内存可忽略）：不要在
+     * finally 里 remove——unlock 与 remove 之间的窗口会让后续请求拿到同一把已
+     * 解锁的锁再被 remove，两个新请求就能并发写同一个 .part（评审实测推演）。
      */
     fun download(track: Track, level: String) {
         val key = "${track.id}_$level"
         scope.launch {
             val inFlight = inFlightLocks.computeIfAbsent(key) { Mutex() }
             if (!inFlight.tryLock()) {
-                _bus.emit(DownloadStatus.AlreadyExists(track.id, level, track.name))
+                _bus.emit(DownloadStatus.Started(track.id, level, track.name))
                 return@launch
             }
             try {
                 downloadLocked(track, level, key)
             } finally {
                 inFlight.unlock()
-                inFlightLocks.remove(key, inFlight)
             }
         }
     }
@@ -171,10 +180,6 @@ class DownloadRepository(
             val finalFile = File(dir, "${track.id}_$level.$ext")
             partFile = File(dir, "$key.part")
 
-            val client = OkHttpClient.Builder()
-                .connectTimeout(30, TimeUnit.SECONDS)
-                .readTimeout(60, TimeUnit.SECONDS)
-                .build()
             val request = Request.Builder()
                 .url(downloadUrl)
                 .header("User-Agent", userAgent)
@@ -182,7 +187,7 @@ class DownloadRepository(
                 .build()
 
             Log.d(TAG, "开始下载：${track.name} ($level) -> $downloadUrl")
-            client.newCall(request).execute().use { response ->
+            downloadClient.newCall(request).execute().use { response ->
                 if (!response.isSuccessful || response.body == null) {
                     Log.e(TAG, "下载失败 HTTP ${response.code}: ${track.name}")
                     _bus.emit(

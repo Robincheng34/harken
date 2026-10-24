@@ -31,6 +31,15 @@ class PlayerService : MediaSessionService() {
     private var mediaSession: MediaSession? = null
     private var bitmapLoader: CoilBitmapLoader? = null
 
+    /**
+     * 本次服务生命周期内是否已发过最小前台通知（[onStartCommand] 用）。
+     *
+     * 不加门控的话，每个 media button intent 都会把前台通知替换回占位通知——
+     * media3 只在播放状态/元数据变化时重发媒体通知，一个不改变状态的按键
+     * （如暂停态再按暂停）会留下无封面无按钮的占位通知长期占住前台位。
+     */
+    private var minimalForegroundPosted = false
+
     override fun onCreate() {
         super.onCreate()
         if (!PlayerDependencies.isProvided) {
@@ -57,10 +66,13 @@ class PlayerService : MediaSessionService() {
         // 进入 BUFFERING/READY 才会 startForeground（MediaNotificationManager 的
         // 判据）——而首播的第一步是 URL 解析，慢网/解锁源逐个超时时整条链路远超
         // 系统 ~10s 时限，直接 ForegroundServiceDidNotStartInTimeException 崩溃。
-        // 这里先以最小通知立即转前台，媒体通知随后接管（通知 ID 不同，
-        // startForeground 会替换而非叠加）。仅 start（非 bind）路径会走到这里，
-        // 纯绑定场景不会多发多余通知。
-        startForegroundMinimal()
+        // 首个命令先以最小通知立即转前台，媒体通知随后接管（通知 ID 不同，
+        // startForeground 会替换而非叠加）；之后不再重复发，避免把媒体通知顶成
+        // 占位通知。仅 start（非 bind）路径会走到这里，纯绑定场景不受影响。
+        if (!minimalForegroundPosted) {
+            startForegroundMinimal()
+            minimalForegroundPosted = true
+        }
         return super.onStartCommand(intent, flags, startId)
     }
 
@@ -111,6 +123,7 @@ class PlayerService : MediaSessionService() {
         mediaSession = null
         bitmapLoader?.cancel()
         bitmapLoader = null
+        minimalForegroundPosted = false
         // 服务已停止：复位引擎内的启动标志，下次播放才会重新拉起前台服务
         // （否则 onTaskRemoved 停服后，引擎仍以为服务活着，不再发起启动）。
         PlaybackEngine.peek()?.onServiceDestroyed()

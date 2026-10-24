@@ -130,21 +130,14 @@ class SongUrlResolver(
     /**
      * 灰色解锁救援（iOS `UnblockService.resolve` 后的采纳判定）。
      *
-     * 优先走带元数据的候选：按 iOS `isPlausibleMatch` 校验时长（≤5s 差值），
-     * 时长不合理即视为「解锁源返回错歌」而拒绝；候选缺省（null）时退回仅取 URL
-     * 的宽松路径。
+     * 按 iOS `isPlausibleMatch` 校验时长（iOS 5s，本实现放宽到 10s，
+     * 见 [DURATION_TOLERANCE_MS]），时长不合理即视为「解锁源返回错歌」而拒绝。
      */
     private suspend fun rescue(track: Track): RescueResult? {
         val source = unblock ?: return null
-        val candidate = source.resolveCandidate(track)
-        if (candidate != null) {
-            if (!isPlausibleDuration(track, candidate)) return null
-            return RescueResult(url = candidate.url, sourceName = candidate.sourceName)
-        }
-        // 宽松路径：只有 URL，没有元数据 → 源名未知（仍要提示用户，见
-        // UNBLOCK_SOURCE_UNNAMED 的说明）。
-        val url = source.resolve(track) ?: return null
-        return RescueResult(url = url, sourceName = null)
+        val candidate = source.resolveCandidate(track) ?: return null
+        if (!isPlausibleDuration(track, candidate)) return null
+        return RescueResult(url = candidate.url, sourceName = candidate.sourceName)
     }
 
     /** 解锁救援结果：[sourceName] 为 null 表示源名未知。 */

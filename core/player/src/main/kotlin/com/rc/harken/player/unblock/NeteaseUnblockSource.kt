@@ -81,42 +81,23 @@ class NeteaseUnblockSource(
      */
     override suspend fun resolveCandidate(track: Track): UnblockCandidate? = resolveInternal(track)
 
-    /** 宽松路径：只取直链（无元数据）。与 [resolveCandidate] 走同一匹配逻辑，避免错配。 */
-    override suspend fun resolve(track: Track): String? = resolveInternal(track)?.url
-
     /**
-     * 三源依次尝试，返回第一个通过匹配守卫且**音频长度合理**的候选；全部失败返回 null。
+     * 解锁源依次尝试，返回第一个**音频长度合理**的候选；全部失败返回 null。
      *
-     * 顺序按实测可用性排列（见类注释）：酷我 → pyncmd → 酷狗。
+     * 顺序即 [sources] 数组顺序（B 站置首：免登录、实测唯一能出完整音轨的源）。
      * 每个候选在采纳前还会校验直链大小：部分源（如酷我 `anti.s`）对受限曲目只返回
      * 十几秒的试听样本，若直接采纳会让用户听 11 秒就断——宁可判为「解锁失败」，
      * 由上层回落到官方的试听片段（至少时长与提示是诚实的）。
      */
-    private suspend fun resolveInternal(track: Track): UnblockCandidate? {
-        // ⓪ B 站：免登录、实测唯一能出完整音轨的源，置首。
-        val biliResult = runCatching { bilibili(track) }.getOrNull()
-        if (biliResult != null && isLikelyFullAudio(biliResult.url, track.durationMS)) {
-            return biliResult
+    private suspend fun resolveInternal(track: Track): UnblockCandidate? =
+        sources.firstNotNullOfOrNull { src ->
+            runCatching { src(track) }.getOrNull()
+                ?.takeIf { isLikelyFullAudio(it.url, track.durationMS) }
         }
-        // ① 咪咕免费曲：B 站没有、但咪咕免费时兜底（不解锁 VIP）。
-        val miguResult = runCatching { migu(track) }.getOrNull()
-        if (miguResult != null && isLikelyFullAudio(miguResult.url, track.durationMS)) {
-            return miguResult
-        }
-        val kuwoResult = runCatching { kuwo(track) }.getOrNull()
-        if (kuwoResult != null && isLikelyFullAudio(kuwoResult.url, track.durationMS)) {
-            return kuwoResult
-        }
-        val pyncmdResult = runCatching { pyncmd(track) }.getOrNull()
-        if (pyncmdResult != null && isLikelyFullAudio(pyncmdResult.url, track.durationMS)) {
-            return pyncmdResult
-        }
-        val kugouResult = runCatching { kugou(track) }.getOrNull()
-        if (kugouResult != null && isLikelyFullAudio(kugouResult.url, track.durationMS)) {
-            return kugouResult
-        }
-        return null
-    }
+
+    /** 解锁链路：顺序即尝试顺序，加源/调序只改这里。 */
+    private val sources: List<suspend (Track) -> UnblockCandidate?> =
+        listOf(::bilibili, ::migu, ::kuwo, ::pyncmd, ::kugou)
 
     /**
      * 直链大小校验：对已知识时长的曲目，HEAD 取 Content-Length 粗估音频是否完整。
@@ -705,7 +686,7 @@ class NeteaseUnblockSource(
             '憶' to '忆', '記' to '记', '飄' to '飘', '風' to '风', '雲' to '云', '電' to '电',
             '陽' to '阳', '陰' to '阴', '紅' to '红', '綠' to '绿', '藍' to '蓝', '鳥' to '鸟',
             '魚' to '鱼', '龍' to '龙', '貓' to '猫', '頭' to '头', '髮' to '发', '臉' to '脸',
-            '車' to '车', '馬' to '马', '飛' to '飞', '還' to '还', '進' to '进', '邊' to '边',
+            '車' to '车', '馬' to '马', '飛' to '飞', '進' to '进', '邊' to '边',
         )
 
         /** 每个源只匹配前 N 条候选（iOS `prefix(5)`）。 */

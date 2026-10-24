@@ -197,7 +197,6 @@ private const val FROST_BLUR_RADIUS = 26f
 private const val FROST_ENABLED = false
 
 /** 镜片诊断日志 tag（真机 `adb logcat -s LiquidGlassLens` 观察捕获结果）。 */
-private const val TAG_LENS = "LiquidGlassLens"
 
 /**
  * 启动层停留时长（ms）：品牌图静止展示的窗口，期间正常初始化（AppGraph 等）

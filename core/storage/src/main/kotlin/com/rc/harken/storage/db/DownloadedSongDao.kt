@@ -14,15 +14,9 @@ interface DownloadedSongDao {
     @Query("SELECT * FROM downloaded_songs ORDER BY downloadedAt DESC")
     fun observeAll(): Flow<List<DownloadedSongEntity>>
 
-    @Query("SELECT * FROM downloaded_songs WHERE trackId = :trackId AND level = :level LIMIT 1")
-    suspend fun get(trackId: Long, level: String): DownloadedSongEntity?
-
     @Upsert
     suspend fun upsert(entity: DownloadedSongEntity)
 
     @Query("DELETE FROM downloaded_songs WHERE trackId = :trackId AND level = :level")
     suspend fun delete(trackId: Long, level: String)
-
-    @Query("DELETE FROM downloaded_songs WHERE trackId = :trackId")
-    suspend fun deleteAllForTrack(trackId: Long)
 }

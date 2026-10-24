@@ -112,7 +112,6 @@ import kotlinx.coroutines.flow.collect
 import kotlinx.coroutines.launch
 
 /** 全屏播放页覆盖层路由（与 `:app` `Routes.NOW_PLAYING` 的字符串契约）。 */
-const val NOW_PLAYING_ROUTE = "now_playing"
 
 /** 官方红心红（点赞激活色）。 */
 private val LikeRed = Color(0xFFE8434F)

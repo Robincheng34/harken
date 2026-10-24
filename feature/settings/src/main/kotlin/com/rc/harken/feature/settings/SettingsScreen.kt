@@ -95,8 +95,6 @@ import androidx.compose.ui.graphics.Color
 import java.io.File
 import kotlinx.coroutines.launch
 
-/** 设置页覆盖层路由（与 `:app` `Routes.SETTINGS` 的字符串契约）。 */
-const val SETTINGS_ROUTE = "settings"
 
 /**
  * 设置页。

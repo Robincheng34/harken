@@ -10,7 +10,6 @@ import androidx.navigation.NavGraphBuilder
 import androidx.navigation.NavHostController
 
 /** 发现页 Tab 起始路由（对应 `Routes.EXPLORE`）。 */
-const val EXPLORE_ROUTE = "explore"
 
 /**
  * 导航图占位：本页为 Tab 内容（由 `:app` TabsScreen 直接调用 `*Screen` 渲染），

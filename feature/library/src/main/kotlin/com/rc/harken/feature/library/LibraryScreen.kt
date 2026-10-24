@@ -102,7 +102,6 @@ import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.launch
 
 /** 我的页 Tab 起始路由（与 `:app` `Routes.LIBRARY` 的字符串契约）。 */
-const val LIBRARY_ROUTE = "library"
 
 // MARK: - 配色（官方新版「我的」页红底）
 
