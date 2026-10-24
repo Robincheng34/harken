@@ -79,7 +79,6 @@ import com.rc.harken.design.composition.LocalToastState
 import com.rc.harken.design.theme.Layout
 import com.rc.harken.feature.home.components.ArtistShelf
 import com.rc.harken.feature.home.components.FunctionCards
-import com.rc.harken.feature.home.components.CategoryGridSection
 import com.rc.harken.feature.home.components.HomeShelf
 import com.rc.harken.feature.home.components.NewAlbumShelf
 import com.rc.harken.design.component.PlaylistShelf
@@ -217,13 +216,6 @@ fun HomeScreen(
                             }
                         }
 
-                        // 分类宫格(官方音乐首页同款 2×4,登录/游客态都展示)。
-                        item(key = "category-grid", contentType = "category-grid") {
-                            CategoryGridSection(
-                                onNavigate = { route -> navController.navigate(route) },
-                                modifier = Modifier.padding(top = 4.dp),
-                            )
-                        }
 
                         if (uiState.recommendPlaylists.isNotEmpty()) {
                             item(key = "recommend", contentType = "shelf") {
