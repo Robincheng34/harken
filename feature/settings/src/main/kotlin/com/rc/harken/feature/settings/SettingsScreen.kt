@@ -528,7 +528,9 @@ fun SettingsScreen(
                 )
             }
 
-            Column(modifier = Modifier.padding(Layout.fullChromeClearance + Layout.bottomGestureInset())) {}
+            // 设置页是全屏覆盖层,底栏 chrome 被盖住:底部只需手势条避让 + 呼吸空间,
+            // 原先的 fullChromeClearance 是「关于」下方大片空白的来源。
+            Spacer(modifier = Modifier.height(Layout.bottomGestureInset() + 24.dp))
         }
     }
 }

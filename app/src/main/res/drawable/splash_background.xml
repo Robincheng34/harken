@@ -1,14 +1,7 @@
 <?xml version="1.0" encoding="utf-8"?>
-<!-- 冷启动窗口背景：纯黑垫底 + 品牌启动图（与 Compose 启动层同一资产，
-     消除窗口背景 → 首帧之间的白屏/跳变）。 -->
+<!-- 纯黑启动背景:品牌螺旋由 Compose SplashLayer 绘制(带缩放入场动画)。
+     此前窗口背景放拉伸位图,与 Compose 层的 Crop+缩放渲染不一致,
+     冷启动时螺旋会跳变(用户反馈「金色螺旋会跳动」);纯黑则无几何跳变。 -->
 <layer-list xmlns:android="http://schemas.android.com/apk/res/android">
     <item android:drawable="@android:color/black" />
-    <!-- centerCrop 与 Compose SplashLayer 的 ContentScale.Crop 才是同语义，
-         但 XML bitmap gravity 不支持 centerCrop（AAPT 限制），等比裁切需
-         预裁资产或换 LayerDrawable 实现——维持 fill（拉伸），跳变问题缓议。 -->
-    <item>
-        <bitmap
-            android:src="@drawable/splash_brand"
-            android:gravity="fill" />
-    </item>
 </layer-list>

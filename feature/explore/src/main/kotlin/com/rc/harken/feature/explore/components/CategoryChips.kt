@@ -81,10 +81,16 @@ fun CategoryChips(
                     )
                     var overSlop = 0f
                     var dragging = false
+                    // 屏幕左右缘 24dp 是系统返回热区:起点在此的手势不拦截,
+                    // 避免分类行吞掉边缘返回(vivo 手势失效加固)。
+                    val edgePx = 14.dp.toPx()
                     while (true) {
                         val event = awaitPointerEvent(PointerEventPass.Initial)
                         val change = event.changes.firstOrNull() ?: break
                         if (!change.pressed) break
+                        val x = change.position.x
+                        // 屏幕左右缘为系统返回热区:不拦截,保证边缘返回手势可用。
+                        if (x < edgePx || x > size.width - edgePx) break
                         if (!change.isConsumed) {
                             overSlop += change.positionChangeIgnoreConsumed().x
                             if (!dragging && abs(overSlop) > viewConfiguration.touchSlop) {
