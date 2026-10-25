@@ -40,6 +40,7 @@ import com.rc.harken.design.theme.GlassTopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -93,6 +94,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import java.io.File
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 
@@ -196,16 +198,28 @@ fun SettingsScreen(
             )
         },
     ) { padding ->
+        val settingsScroll = rememberScrollState()
         Column(
             modifier = Modifier
                 .padding(padding)
                 .fillMaxSize()
-                .verticalScroll(rememberScrollState()),
+                .verticalScroll(settingsScroll),
         ) {
             // 二级菜单：所有设置分区收进可展开大类，同一时间只展开一组（默认展开「播放」）。
             var expandedGroup by remember { mutableStateOf<String?>("播放") }
             val onGroupToggle: (String) -> Unit = { key ->
                 expandedGroup = if (expandedGroup == key) null else key
+            }
+            // 收起分组后内容变短:滚动位置若停在内容末尾之外,视口会露出大段空白
+            // (用户反馈「关闭关于后底部空白又出现」)。收起动画结束后把滚动位置
+            // 钳回有效范围。
+            LaunchedEffect(expandedGroup) {
+                if (expandedGroup == null) {
+                    delay(360) // 等 shrinkVertically 收起动画播完(maxValue 随布局收缩)
+                    settingsScroll.scrollTo(
+                        settingsScroll.value.coerceAtMost(settingsScroll.maxValue),
+                    )
+                }
             }
             val sPlayback = stringResource(R.string.settings_playback)
             val sMini = stringResource(R.string.settings_miniplayer)
