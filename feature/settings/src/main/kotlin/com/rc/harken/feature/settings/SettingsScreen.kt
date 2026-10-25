@@ -207,17 +207,25 @@ fun SettingsScreen(
         ) {
             // 二级菜单：所有设置分区收进可展开大类，同一时间只展开一组（默认展开「播放」）。
             var expandedGroup by remember { mutableStateOf<String?>("播放") }
+            // 上一个展开的分组标题(收起时用它回滚定位)。
+            var lastExpandedKey by remember { mutableStateOf<String?>("播放") }
             val onGroupToggle: (String) -> Unit = { key ->
-                expandedGroup = if (expandedGroup == key) null else key
+                if (expandedGroup == key) {
+                    // 收起:记住位置,动画结束后把视口拉回该组标题附近——
+                    // 否则内容收缩后视口停在原地,组标题跑出屏外,下方留整屏空白。
+                    lastExpandedKey = key
+                    expandedGroup = null
+                } else {
+                    lastExpandedKey = key
+                    expandedGroup = key
+                }
             }
-            // 收起分组后内容变短:滚动位置若停在内容末尾之外,视口会露出大段空白
-            // (用户反馈「关闭关于后底部空白又出现」)。收起动画结束后把滚动位置
-            // 钳回有效范围。
             LaunchedEffect(expandedGroup) {
                 if (expandedGroup == null) {
-                    delay(360) // 等 shrinkVertically 收起动画播完(maxValue 随布局收缩)
-                    settingsScroll.scrollTo(
-                        settingsScroll.value.coerceAtMost(settingsScroll.maxValue),
+                    delay(360) // 等 shrinkVertically 收起动画播完(高度逐帧收缩)
+                    settingsScroll.animateScrollTo(
+                        (settingsScroll.value * 0.55f).toInt()
+                            .coerceIn(0, settingsScroll.maxValue),
                     )
                 }
             }
