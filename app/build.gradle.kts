@@ -20,14 +20,19 @@ val hasReleaseSigning = keystoreProperties["storeFile"] != null
 
 android {
     namespace = "com.rc.harken"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         applicationId = "com.rc.harken"
         minSdk = 26
-        targetSdk = 35
-        versionCode = 1
-        versionName = "1.0.0"
+        targetSdk = 36
+        // versionCode 与 Git tag 的语义化版本一一对应：
+        // major*10000 + minor*100 + patch（v1.0.1 → 10001）。
+        // 应用内「检查更新」把 GitHub Release 的 tag_name 按同一规则换算成
+        // versionCode 再与本地比较，两边必须用同一套编码，改这里要同步改
+        // core:net 的 UpdateManifest 解析。
+        versionCode = 10001
+        versionName = "1.0.1"
     }
 
     signingConfigs {
@@ -44,6 +49,19 @@ android {
     buildTypes {
         debug {
             isMinifyEnabled = false
+            // 与 release 共用同一把签名钥匙（仓库根 harken-release.jks）。
+            //
+            // 原状：debug 用 AGP 默认调试证书、release 用发布证书，两者签名不同 →
+            // 换包必须 `adb uninstall` 再装（丢登录态与本地数据），在真机之间
+            // 来回切换也只能卸载重装。统一签名后 debug/release 可互相覆盖升级
+            // （`adb install -r` / 直接点 APK 覆盖安装）。
+            // keystore.properties 缺失（他人 clone 源码）时回落到默认调试证书，
+            // 行为与改动前一致。
+            signingConfig = if (hasReleaseSigning) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
         release {
             // 本项目尚未维护完整 R8 规则，release 关闭混淆/收缩，保证功能一致。

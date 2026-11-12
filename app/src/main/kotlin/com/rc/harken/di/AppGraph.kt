@@ -123,16 +123,22 @@ class AppGraph private constructor(context: Context) {
     }
 
     /**
-     * 在线检测更新（best-effort）：距上次检查满 24h 才拉取 version.json，
+     * 在线检测更新（best-effort）：距上次**成功**检查满 24h 才拉取，
      * 若远端版本号更高则持久化为「待更新」。异常一律吞掉，不影响启动。
+     *
+     * 时间戳只在拉取成功后写入：原实现在 fetch 之前就记「已检查」，一旦这次
+     * 网络失败（例如 GitHub 未认证 API 撞限流返回 403），接下来 24 小时都不会
+     * 再尝试，用户永远看不到新版本。失败时留待下次启动重试即可（每次启动最多
+     * 一次，不会打爆）。
      */
     suspend fun checkForUpdateIfDue() {
         runCatching {
             val last = updateRepository.getLastCheckMillis()
             val now = System.currentTimeMillis()
             if (now - last < 24L * 60 * 60 * 1000) return@runCatching
-            updateRepository.setLastCheckMillis(now)
             val manifest = updateRepository.fetchManifest()
+            // 拉取成功才消费这次 24h 窗口。
+            updateRepository.setLastCheckMillis(now)
             val installed = updateRepository.getInstalledVersion()
             if (manifest.versionCode > installed.versionCode) {
                 updateRepository.savePendingUpdate(manifest)

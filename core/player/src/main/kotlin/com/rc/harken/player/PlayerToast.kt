@@ -19,20 +19,15 @@ data class PlayerToastEvent(
 /**
  * 「按曲目一次性触发」提示的纯判定。
  *
- * iOS `PlayerService.swift:1093-1100` 有两条**相互独立**的 `if`，可同时触发：
+ * 现在只服务**试听提示**（iOS `PlayerService.swift:1097-1099`
+ * `ToastCenter.shared.show("VIP 歌曲，当前为试听片段")`）。
  *
- * ```
- * 1093: unblockSource = resolved.unblockSource
- * 1094: if let source = resolved.unblockSource {
- * 1095:     ToastCenter.shared.show(String(localized: "已使用第三方音源：\(source)"))
- * 1096: }
- * 1097: if resolved.isTrial {
- * 1098:     isTrial = true
- * 1099:     ToastCenter.shared.show(String(localized: "VIP 歌曲，当前为试听片段"))
- * 1100: }
- * ```
+ * 历史：iOS `:1093-1100` 有两条相互独立的 `if`（unblockSource / isTrial），
+ * Android 侧原先也用本函数分别驱动「已使用第三方音源：X」与试听两条提示；
+ * 前者已按需求整体移除（[MusicController] 不再读取 `unblockSource` 弹提示），
+ * 但本函数原样保留——试听提示仍靠它，且它是纯函数、可 JVM 单测。
  *
- * 两条都吃同一套状态机规则，所以抽成一个函数、由调用方各自持有一份记忆：
+ * 状态机规则：
  * - 条件不成立 → 清空记忆，不弹；
  * - 条件成立但拿不到曲目 ID → 保持记忆，不弹（没有可记忆的键）；
  * - 条件成立且曲目 ID 与上次相同 → 保持记忆，不弹（同一首不重复弹）；
@@ -47,7 +42,7 @@ data class PlayerToastEvent(
  *
  * @param lastTrackID 上一次弹过该提示的曲目 ID（`null` 表示无记忆）。
  * @param trackID 当前曲目 ID（`PlayerState.currentTrack?.id`）。
- * @param isActive 该提示的条件是否成立（试听 = `isTrial`；解锁 = `unblockSource != null`）。
+ * @param isActive 该提示的条件是否成立（试听 = `isTrial`）。
  * @return `Pair(新的 lastTrackID, 本次是否弹)`。调用方需把 first 写回自己的记忆
  *         变量——函数本身无副作用，便于测试。
  */

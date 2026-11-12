@@ -102,10 +102,18 @@ class PlaybackEngine(
         .setWakeMode(C.WAKE_MODE_LOCAL)
         .build()
 
-    /** 灰色解锁自建 client（连接 15s / 读取 30s）；注入 [SongUrlResolver] 作救援源。 */
+    /**
+     * 灰色解锁自建 client；注入 [SongUrlResolver] 作救援源。
+     *
+     * 超时短于官方源：解锁是「尽力而为」的串行兜底（B 站 → 咪咕 → 酷我 → pyncmd →
+     * 酷狗 依次尝试），单个源挂死不能让用户干等。原来的 15s/30s 下，一条死链路
+     * 就要 45s，五源全挂时起播前的静默期可达数分钟（用户表现为「点了没反应」）。
+     * 这些接口只返回小体积 JSON / 纯文本，10s 读超时足够；连接超时收紧到 6s 让
+     * DNS / 握手失败尽快跳到下一个源。**官方网易云接口不受影响**（走 :core:net 的 client）。
+     */
     private val unblockClient = OkHttpClient.Builder()
-        .connectTimeout(15, java.util.concurrent.TimeUnit.SECONDS)
-        .readTimeout(30, java.util.concurrent.TimeUnit.SECONDS)
+        .connectTimeout(6, java.util.concurrent.TimeUnit.SECONDS)
+        .readTimeout(10, java.util.concurrent.TimeUnit.SECONDS)
         .build()
 
     private val resolver = SongUrlResolver(

@@ -280,9 +280,9 @@ private fun AppContent(graph: AppGraph) {
         if (AppTab.LIBRARY in fromOrder) fromOrder else fromOrder + AppTab.LIBRARY
     }
 
-    // 播放层提示（试听 / 已使用第三方音源）：由常驻 MusicController 判定并上抛
-    // 资源 ID，此处统一解析并弹（iOS PlayerService.swift:1093-1100）。挂在根
-    // 可组合上，因此任意页面、播放页未打开时都能弹出。
+    // 播放层提示（目前只有试听提示）：由常驻 MusicController 判定并上抛资源 ID，
+    // 此处统一解析并弹（iOS PlayerService.swift:1097-1099）。挂在根可组合上，
+    // 因此任意页面、播放页未打开时都能弹出。
     // 资源 ID 由 MusicController（非 Composable 层）上抛，此处在可组合作用域内
     // 解析成文案；`stringResource` 不能在 LaunchedEffect 的协程体内调用。
     val context = LocalContext.current

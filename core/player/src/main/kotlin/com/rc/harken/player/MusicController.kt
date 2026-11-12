@@ -43,11 +43,11 @@ class MusicController(private val context: Context) {
     val state: StateFlow<PlayerState> = engine.state
 
     /**
-     * 播放层提示事件（iOS `PlayerService.swift:1093-1100` 的两条 `ToastCenter`）。
+     * 播放层提示事件（iOS `PlayerService.swift:1097-1099` 的 `ToastCenter`）。
      *
-     * 承载两类提示：
-     * - 走了第三方解锁源 → 「已使用第三方音源：X」（iOS `:1094-1095`）；
-     * - 试听片段 → 「VIP 歌曲，当前为试听片段」（iOS `:1097-1099`）。
+     * 目前**只承载一条**提示：试听片段 →「VIP 歌曲，当前为试听片段」。
+     * 原先还有「已使用第三方音源：X」，已按需求删除（见 [observePlaybackToasts]）；
+     * [PlayerState.unblockSource] 字段本身保留，只是不再被读取来弹提示。
      *
      * Android 侧若把提示留在播放页里，播放页未打开时就弹不出来；因此上提到常驻的
      * MusicController，由 `:app` 根可组合统一订阅。
@@ -73,46 +73,26 @@ class MusicController(private val context: Context) {
     }
 
     /**
-     * 订阅引擎状态、按 [shouldShowOneShotToast] 判定并下发两条播放提示。
+     * 订阅引擎状态、按 [shouldShowOneShotToast] 判定并下发试听提示。
      *
-     * 只在「曲目 ID + 试听标记 + 解锁源名」这组键变化时判定，避免位置轮询
-     * （500ms 一跳）把整条状态流反复推到这里。
+     * 只在「曲目 ID + 试听标记」这组键变化时判定，避免位置轮询（500ms 一跳）
+     * 把整条状态流反复推到这里。
      *
-     * 试听与解锁**各持一份记忆**：iOS `:1094` 与 `:1097` 是两个独立 `if`，
-     * 可以同时成立（解锁后的音源理论上不再是试听片段，但预取/预载路径两者可能
-     * 共存），因此这里刻意不写成 else-if。
+     * 原实现在 `unblockSource != null` 时还会提示「已使用第三方音源：X」。该提示
+     * 会让用户在起播瞬间看到源名，已按需求整体移除；[PlayerState.unblockSource]
+     * 字段仍由 `PlaybackEngine` 写入，供后续诊断 / 展示使用，这里不再读取。
      */
     private fun observePlaybackToasts() {
         var lastTrialTrackID: Long? = null
-        var lastUnblockTrackID: Long? = null
         state
-            .map { playerState ->
-                Triple(playerState.currentTrack?.id, playerState.isTrial, playerState.unblockSource)
-            }
+            .map { playerState -> playerState.currentTrack?.id to playerState.isTrial }
             .distinctUntilChanged()
-            .onEach { (trackID, isTrial, unblockSource) ->
+            .onEach { (trackID, isTrial) ->
                 val (nextTrialID, showTrial) =
                     shouldShowOneShotToast(lastTrialTrackID, trackID, isTrial)
                 lastTrialTrackID = nextTrialID
                 if (showTrial) {
                     _playerToastEvent.tryEmit(PlayerToastEvent(R.string.player_trial_toast))
-                }
-
-                // iOS :1094-1095：非空即命中解锁。源名为空串（宽松路径无元数据）
-                // 时退化成不带名字的文案，但**仍然提示**——「是否走了第三方源」
-                // 比「源叫什么」更该让用户知道。
-                val (nextUnblockID, showUnblock) =
-                    shouldShowOneShotToast(lastUnblockTrackID, trackID, unblockSource != null)
-                lastUnblockTrackID = nextUnblockID
-                if (showUnblock) {
-                    val name = unblockSource?.takeIf { it.isNotBlank() }
-                    _playerToastEvent.tryEmit(
-                        if (name == null) {
-                            PlayerToastEvent(R.string.player_unblock_toast_unnamed)
-                        } else {
-                            PlayerToastEvent(R.string.player_unblock_toast, listOf(name))
-                        },
-                    )
                 }
             }
             .launchIn(controllerScope)

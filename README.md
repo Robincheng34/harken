@@ -2,7 +2,7 @@
 
 网易云音乐第三方客户端 — iOS 应用（Swift 6.2 + SwiftUI，LGPL-3.0，上游见根目录 [NOTICE](NOTICE)）的 Android 移植版。
 
-- **包名**：`com.rc.harken` ｜ minSdk 26 / targetSdk 35 ｜ 分发：侧载 APK + GitHub Releases
+- **包名**：`com.rc.harken` ｜ minSdk 26 / targetSdk 36 ｜ 分发：侧载 APK + GitHub Releases
 - **架构**：单 Activity + 多模块 + MVVM；协议层（weapi/eapi 加密、约 50 个端点、模型解析、歌词解析）与播放队列状态机为**纯 Kotlin/JVM 模块**（`:core:net`、`:core:playback`），不依赖 Android framework
 - **技术栈**：Jetpack Compose (Material3) + Media3 ExoPlayer + OkHttp + kotlinx.serialization + Room + DataStore；设计文档见 `docs/harken-android-architecture.md`
 
@@ -118,10 +118,35 @@ harken-android/
 
 ## 技术债
 
-- **`targetSdkVersion = 35`，而目标真机是 Android 16 / API 36（vivo V2408A）。**
-  Android 16 对 targetSdk 低于 36 的应用启用更严格的兼容行为（edge-to-edge 强制、
-  预测式返回等），本版尚未适配。**v1.1 需评估升到 36**：改动面较大（全屏/沉浸布局、
-  返回手势、权限模型），因此本轮刻意不动，先记录风险。
+### 已清零（v1.0.1）
+
+- ~~`targetSdkVersion = 35`，未适配 Android 16 / API 36 的强制兼容行为~~
+  → 已升到 **36**：全部 14 个模块的 `compileSdk` / `targetSdk` 统一为 36。
+  App 原本就走 `enableEdgeToEdge()`，edge-to-edge 强制化无需额外改造；返回手势沿用
+  Compose `BackHandler`（androidx.activity 会注册到 `OnBackInvokedDispatcher`），
+  预测式返回打开后语义不变。
+
+### 遗留（非阻塞，已知并接受）
+
+- **Android 16 真机专项回归尚未做。** 升级到 targetSdk 36 后在 Android 11
+  （HD1910 / API 30）上验证了安装、启动、设置页、离线降级与返回导航，但 API 36 的
+  两项强制行为（边到边、预测式返回）只在 Android 16+ 上生效，需在 Android 16 设备
+  复验。原目标机 vivo V2408A 当前不在线，恢复连接后补一轮。
+- **应用内更新依赖 GitHub API 未认证额度**（60 次/小时/**出口 IP**，国内 CGNAT 下易被
+  他人耗尽）。已加兜底：API 返回 403/429 时改走网页端 `releases/latest` 的 302 重定向，
+  不消耗额度、不限流。该兜底按资产命名约定 `Harken-<version>.apk` 推导下载地址，
+  **改资产命名必须同步改 `UpdateManifest.kt` 里的推导逻辑**。
+
+## 版本与发版约定
+
+- `versionCode = major * 10000 + minor * 100 + patch`，与 Git tag 一一对应
+  （`v1.0.1` → `10001`）。应用内更新把 GitHub Release 的 `tag_name` 按同一规则换算后
+  与本地 `versionCode` 比较，**两边必须用同一套编码**。
+- 发布流程：改 `app/build.gradle.kts` 的 `versionCode` / `versionName` → 构建
+  `:app:assembleRelease` → 打 tag → 建 Release 并上传 `Harken-<version>.apk` 与
+  `SHA256SUMS.txt`（资产命名见上一条约束）。
+- **debug 与 release 使用同一把发布证书**（仓库根 `harken-release.jks`，不入 git），
+  因此两类包可互相覆盖安装；`keystore.properties` 缺失时自动回落到 AGP 默认调试证书。
 
 ## 合规
 

@@ -55,13 +55,24 @@ class UpdateRepository(
     suspend fun setUpdateSourceUrl(url: String) =
         dataStore.edit { it[Keys.UPDATE_URL] = url }
 
-    suspend fun fetchManifest(): UpdateManifest = checker.fetchManifest(getUpdateSourceUrl())
+    /**
+     * 拉取更新清单。
+     *
+     * 按更新源 URL 分派：`https://api.github.com/...` 走 GitHub Releases 解析
+     * （默认源），其余（用户自定义）走原自托管 `version.json` 解析；
+     * 两条路径都产出同一个 [UpdateManifest]，上层无需感知。
+     */
+    suspend fun fetchManifest(): UpdateManifest = checker.fetch(getUpdateSourceUrl())
 
     suspend fun downloadApk(url: String, onProgress: (DownloadProgress) -> Unit = {}): File =
         withContext(Dispatchers.IO) {
             val target = apkFile(context)
             val part = File(target.parentFile, target.name + ".part")
+            // GitHub 资产会 302 到 release-assets.githubusercontent.com，必须跟随重定向
+            // （OkHttp 默认开启，这里显式固定，避免后续有人调客户端参数时误关）。
             val client = OkHttpClient.Builder()
+                .followRedirects(true)
+                .followSslRedirects(true)
                 .connectTimeout(30, TimeUnit.SECONDS)
                 .readTimeout(60, TimeUnit.SECONDS).build()
             val request = Request.Builder().url(url)

@@ -10,14 +10,6 @@
 -->
 <resources>
     <string name="player_trial_toast">VIP 歌曲，当前为试听片段</string>
-    <!-- iOS PlayerService.swift:1095 `String(localized: "已使用第三方音源：\(source)")` -->
-    <string name="player_unblock_toast">已使用第三方音源：%1$s</string>
-    <!--
-      源名未知时的退化文案：iOS 侧第三方源必然带 displayName
-      （AudioSourceProvider.swift:19），只有安卓的「仅返回 URL」宽松路径会走到这里。
-      仍然提示，只是不带名字——是否走了第三方源比源叫什么更该让用户知道。
-    -->
-    <string name="player_unblock_toast_unnamed">已使用第三方音源</string>
     <!-- 依赖缺失兜底前台通知（PlayerService.startForegroundMinimal）：仅为满足
       startForeground 时限、避免 ForegroundServiceDidNotStartInTime 崩溃。 -->
     <string name="player_service_name">Harken 倾耳</string>

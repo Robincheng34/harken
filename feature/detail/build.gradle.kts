@@ -9,7 +9,7 @@ plugins {
 
 android {
     namespace = "com.rc.harken.feature.detail"
-    compileSdk = 35
+    compileSdk = 36
 
     defaultConfig {
         minSdk = 26

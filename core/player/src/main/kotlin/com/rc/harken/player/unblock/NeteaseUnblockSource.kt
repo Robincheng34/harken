@@ -76,7 +76,7 @@ class NeteaseUnblockSource(
 
     /**
      * 带元数据的候选：经匹配守卫后返回，供 [com.rc.harken.player.SongUrlResolver.rescue]
-     * 做时长校验并带出 [UnblockCandidate.sourceName]（驱动「已使用第三方音源：X」提示）。
+     * 做时长校验并带出 [UnblockCandidate.sourceName]。
      * 未命中任何源返回 null。
      */
     override suspend fun resolveCandidate(track: Track): UnblockCandidate? = resolveInternal(track)
@@ -88,16 +88,39 @@ class NeteaseUnblockSource(
      * 每个候选在采纳前还会校验直链大小：部分源（如酷我 `anti.s`）对受限曲目只返回
      * 十几秒的试听样本，若直接采纳会让用户听 11 秒就断——宁可判为「解锁失败」，
      * 由上层回落到官方的试听片段（至少时长与提示是诚实的）。
+     *
+     * 起播前的静默期就是这条链路的串行耗时，因此只对**确有残片风险**的源做 HEAD：
+     * - B 站（[Attempt.verifySize] = false）：playurl 返回的就是该投稿的完整音轨，
+     *   且投稿视频本身已通过时长匹配（≤10s）。对 CDN 直链发 HEAD 还会因缺少
+     *   UA/Referer 被 403 —— 即「失败即放行」，纯粹多一次跨域 TLS + 往返。
+     * - 咪咕（verifySize = false）：[migu] 内部已用 `Range: bytes=0-0` 探测过返回的
+     *   是音频流而非 VIP 的 JSON，无需再 HEAD。
+     * - 酷我 / pyncmd / 酷狗（verifySize = true）：保留大小校验（酷我给 ~11s 残片）。
      */
-    private suspend fun resolveInternal(track: Track): UnblockCandidate? =
-        sources.firstNotNullOfOrNull { src ->
-            runCatching { src(track) }.getOrNull()
-                ?.takeIf { isLikelyFullAudio(it.url, track.durationMS) }
+    private suspend fun resolveInternal(track: Track): UnblockCandidate? {
+        for (source in sources) {
+            val candidate = runCatching { source.fetch(track) }.getOrNull() ?: continue
+            if (!source.verifySize || isLikelyFullAudio(candidate.url, track.durationMS)) {
+                return candidate
+            }
         }
+        return null
+    }
+
+    /** 单个解锁源的尝试项：`verifySize` 表示采纳前是否还需 HEAD 校验音频大小。 */
+    private class Attempt(
+        val fetch: suspend (Track) -> UnblockCandidate?,
+        val verifySize: Boolean,
+    )
 
     /** 解锁链路：顺序即尝试顺序，加源/调序只改这里。 */
-    private val sources: List<suspend (Track) -> UnblockCandidate?> =
-        listOf(::bilibili, ::migu, ::kuwo, ::pyncmd, ::kugou)
+    private val sources: List<Attempt> = listOf(
+        Attempt(::bilibili, verifySize = false),
+        Attempt(::migu, verifySize = false),
+        Attempt(::kuwo, verifySize = true),
+        Attempt(::pyncmd, verifySize = true),
+        Attempt(::kugou, verifySize = true),
+    )
 
     /**
      * 直链大小校验：对已知识时长的曲目，HEAD 取 Content-Length 粗估音频是否完整。
@@ -235,7 +258,7 @@ class NeteaseUnblockSource(
                 // 412 / 风控时重建 buvid 再试一次。
                 biliCookiesReady = false
                 ensureBiliCookies()
-                delay(700)
+                delay(RETRY_BACKOFF_MS)
             }
         }
         null
@@ -691,6 +714,15 @@ class NeteaseUnblockSource(
 
         /** 每个源只匹配前 N 条候选（iOS `prefix(5)`）。 */
         private const val CANDIDATE_LIMIT = 5
+
+        /**
+         * 412 风控后重建 buvid 的退避时长（原实现固定 700ms）。
+         *
+         * 退避的目的是让新 buvid 在下一请求前生效，不是等服务端限流窗口；300ms 足够
+         * 完成会话切换，同时把风控网络下每次起播的固定干等减少 400ms。仍在重试一次
+         * 后放弃（沿用原语义），不放大重试次数。
+         */
+        private const val RETRY_BACKOFF_MS = 300L
 
         /** 短于此时长的曲目不做大小校验（铃声/小品等本身文件就小）。 */
         private const val SHORT_TRACK_MS = 90_000L
