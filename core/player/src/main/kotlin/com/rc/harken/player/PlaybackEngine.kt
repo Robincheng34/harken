@@ -301,9 +301,15 @@ class PlaybackEngine(
         }
         val next = queue.advance()
         if (next == null) {
-            exoPlayer.pause()
-            exoPlayer.seekTo(0)
-            haltStopped()
+            // 顺序播放到队列末首时「下一首」无曲可切：保持当前曲继续播放。
+            //
+            // 原实现在这里 pause + seekTo(0) + haltStopped()——通知栏三键修好之后，
+            // 末首点一下「下一首」会把正在播的歌直接停掉并回开头，按钮可见却
+            // 产生破坏性结果（真机可复现）。显式切歌命令在无目标时应为无操作，
+            // 与「上一首到队首」的语义（重播当前曲）保持对称。
+            //
+            // 注意：自然播完到末尾仍会停播，走的是 onTrackEnded() 里自己的
+            // haltStopped 分支，与本方法无关，不要一并改掉。
             return
         }
         playCurrent()
