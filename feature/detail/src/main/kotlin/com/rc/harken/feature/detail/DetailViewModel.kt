@@ -18,8 +18,11 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.SharedFlow
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.asSharedFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
@@ -30,6 +33,16 @@ class DetailViewModel(
 ) {
     private val _uiState: MutableStateFlow<DetailUiState> = MutableStateFlow(DetailUiState())
     val uiState: StateFlow<DetailUiState> = _uiState.asStateFlow()
+
+    /**
+     * 收藏失败的一次性事件（失败必须有用户可见反馈）。
+     *
+     * 只发事件不带文案：文案由 Screen 从 `strings.xml` 取；也不复用
+     * [DetailUiState.error]——后者是「整页加载失败」的门控，塞进去会把页面
+     * 直接切成错误态。
+     */
+    private val _subscribeFailures = MutableSharedFlow<Unit>(extraBufferCapacity = 4)
+    val subscribeFailures: SharedFlow<Unit> = _subscribeFailures.asSharedFlow()
 
     private var loadJob: Job? = null
 
@@ -145,6 +158,9 @@ class DetailViewModel(
                     creatorName = artist.name,
                     creatorAvatar = artist.picUrl,
                     trackCount = artist.musicSize,
+                    // 歌手接口回传 `followed`：必须作为收藏按钮的真值，
+                    // 否则「已关注」的歌手永远渲染成未关注。
+                    subscribed = artist.followed,
                 ),
                 tracks = response.hotSongs,
                 artistAlbums = albums,
@@ -157,35 +173,78 @@ class DetailViewModel(
 
     // MARK: - 收藏切换（iOS 各详情页 `.subscribe` 按钮）
 
+    /**
+     * 歌单收藏 / 取消收藏。
+     *
+     * 原 bug：只发 `subscribe(true)` 单向请求且成功才更新 `header.subscribed`，
+     * 大部分失败路径下按钮点完毫无变化（无提示）。现统一走
+     * [toggleSubscription]：乐观更新 + 失败回滚 + 失败事件。
+     */
     fun togglePlaylistSubscription() {
-        val state = _uiState.value
-        val target = !state.header.subscribed
-        scope.launch {
-            val ok = runCatching {
-                api.subscribePlaylist(state.header.id, target)
-            }.isSuccess
-            if (ok) {
-                _uiState.update {
-                    it.copy(
-                        header = it.header.copy(
-                            subscribed = target,
-                            subscribedCount = (it.header.subscribedCount + if (target) 1 else -1)
-                                .coerceAtLeast(0),
-                        ),
-                    )
-                }
-            }
-        }
+        toggleSubscription(
+            request = { id, target -> api.subscribePlaylist(id, target) },
+            adjustCount = true,
+        )
     }
 
+    /** 专辑收藏 / 取消收藏（`/album/sub` / `/album/unsub`）。 */
     fun toggleAlbumSubscription() {
-        val id = _uiState.value.header.id
-        scope.launch { runCatching { api.subscribeAlbum(id, true) } }
+        toggleSubscription(
+            request = { id, target -> api.subscribeAlbum(id, target) },
+            adjustCount = false,
+        )
     }
 
+    /** 歌手关注 / 取消关注（`/artist/sub` / `/artist/unsub`）。 */
     fun toggleArtistSubscription() {
-        val id = _uiState.value.header.id
-        scope.launch { runCatching { api.subscribeArtist(id, true) } }
+        toggleSubscription(
+            request = { id, target -> api.subscribeArtist(id, target) },
+            adjustCount = false,
+        )
+    }
+
+    /**
+     * 收藏态切换（乐观更新 + 失败回滚）。
+     *
+     * @param request 实际请求（`target = true` 收藏 / `false` 取消）。
+     * @param adjustCount 是否联动收藏数（仅歌单接口回传收藏数）。
+     *
+     * 成功判定：接口无返回值，按「无异常即成功」；成功后以服务端为准的语义由
+     * 乐观值保持（服务端不回传新状态），失败则回到点击前的完整 header 快照。
+     */
+    private fun toggleSubscription(
+        request: suspend (Long, Boolean) -> Unit,
+        adjustCount: Boolean,
+    ) {
+        val state = _uiState.value
+        val id = state.header.id
+        // 详情还没加载出来（id == 0）时没有可收藏对象，忽略。
+        if (id == 0L) return
+        // 请求进行中忽略重复点击，避免两次乐观翻转互相覆盖。
+        if (state.isSubscribing) return
+
+        val target = !state.header.subscribed
+        val original = state.header
+        _uiState.update {
+            it.copy(isSubscribing = true, header = it.header.withSubscription(target, adjustCount))
+        }
+        scope.launch {
+            runCatching { request(id, target) }
+                .onSuccess {
+                    _uiState.update { it.copy(isSubscribing = false) }
+                }
+                .onFailure {
+                    _uiState.update { current ->
+                        // 期间可能已切到别的详情：只在同一对象上回滚。
+                        if (current.header.id == id) {
+                            current.copy(isSubscribing = false, header = original)
+                        } else {
+                            current.copy(isSubscribing = false)
+                        }
+                    }
+                    _subscribeFailures.tryEmit(Unit)
+                }
+        }
     }
 
     /** 取消内部协程（页面销毁时由 UI 调用，避免收集器常驻泄漏）。 */

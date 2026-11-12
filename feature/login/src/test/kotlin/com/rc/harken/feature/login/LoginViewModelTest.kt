@@ -44,16 +44,22 @@ class LoginViewModelTest {
             }
         }
 
-    /** 短信假 API：记录调用，可配置失败。 */
+    /** 短信假 API：记录调用，可配置失败；顺带守住发码参数契约（不触碰主源码）。 */
     private class FakeSmsApi(
         private val sendError: Throwable? = null,
         private val loginError: Throwable? = null,
     ) : NeteaseApi(NeteaseClient(InMemoryCookieStore())) {
         var sentPhone: String? = null
+        var sentCountryCode: String? = null
         var loginArgs: Pair<String, String>? = null
 
         override suspend fun sendSMSCode(phone: String, countryCode: String) {
+            // 契约护栏：ViewModel 仅在手机号非空且为 11 位时可发码。
+            // 就地失败比等 ViewModel 把异常吞成 toast 更容易定位回归。
+            require(phone.isNotBlank()) { "sendSMSCode 收到空手机号" }
+            require(phone.length == 11) { "sendSMSCode 手机号应为 11 位，实际：${phone.length}" }
             sentPhone = phone
+            sentCountryCode = countryCode
             sendError?.let { throw it }
         }
 
@@ -139,6 +145,9 @@ class LoginViewModelTest {
             runCurrent()
 
             assertEquals("13800000000", api.sentPhone)
+            assertEquals(11, api.sentPhone!!.length)
+            // ViewModel 调用 sendSMSCode(phone) 时，默认参数应落到区号 "86"。
+            assertEquals("86", api.sentCountryCode)
             val state = vm.uiState.value
             assertFalse(state.smsSending)
             assertEquals("验证码已发送", state.smsMessage)

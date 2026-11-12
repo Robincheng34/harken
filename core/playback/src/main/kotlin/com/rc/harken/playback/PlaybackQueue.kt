@@ -177,6 +177,8 @@ class PlaybackQueue {
      * Removes a queue entry from both the active and the listed order. In list
      * order the current track cannot be removed (iOS parity); in shuffle order
      * it can — the following track takes over.
+     *
+     * 队列被删空时 [currentIndex] 回到 -1（「无当前曲」，与 [load] 空列表一致）。
      */
     fun removeAt(index: Int) {
         if (index < 0 || index >= queue.size) return
@@ -195,6 +197,11 @@ class PlaybackQueue {
             index < currentIndex -> currentIndex -= 1
             index == currentIndex -> currentOverride = null
         }
+        // 删掉「当前曲且它正好是最后一首」后（仅随机序可达），currentIndex 会落在
+        // queue.size 上越界 —— current() 变 null、advance() 因 `currentIndex + 1 >= size`
+        // 直接返回 null，表现为「删完这首就切不动了」。统一在末尾把索引钳回合法范围；
+        // 队列被删空时 lastIndex == -1，正好回到「无当前曲」的既有语义。
+        if (currentIndex > queue.lastIndex) currentIndex = queue.lastIndex
     }
 
     /**
@@ -266,6 +273,18 @@ class PlaybackQueue {
         currentOverride = null
     }
 
+    /**
+     * 关闭随机时把 [queue] 换回 [listedOrder]，并把 [currentIndex] 重新定位到
+     * 「基准曲」在新顺序里的位置。
+     *
+     * 基准曲 = 正在发声的插播曲（[currentOverride]），否则就是当前曲。基准曲
+     * 不在 [listedOrder] 里时（队列被外部改过、或插播曲的 id 已不在表内）**必须
+     * 回落到队首**，绝不能把 [currentIndex] 置成 -1：-1 的语义是「无当前曲」，
+     * 此时 [current] 走 `queue.getOrNull(-1)` 拿到 null，而 [advance] /
+     * [previous] 开头的 `currentIndex < 0` 守卫会让它们恒返回 null——用户点
+     * 「回到原始顺序」后播放其实还在继续，但下一首 / 上一首 / 自动续播全部失效，
+     * 只能手动点歌才能恢复（用户感受是「播着播着就切不动了」）。
+     */
     private fun restoreListedOrder() {
         // 插播曲正在发声时（currentOverride != null），「基准曲目」是被它顶掉的
         // queue[currentIndex]——恢复顺序要以它定位，而不是 current()（那是插播曲，
@@ -273,6 +292,7 @@ class PlaybackQueue {
         val base = currentOverride ?: current()
         queue = listedOrder
         if (base == null) {
+            // 没有基准曲可定位（空队列 / 索引已失效）：确实没有当前曲。
             currentIndex = -1
             currentOverride = null
             return
@@ -289,9 +309,16 @@ class PlaybackQueue {
                 currentIndex = index
             }
         } else {
-            // 基准曲也不在 listedOrder（队列被外部改过）：保底从队首继续，
-            // 插播曲若仍在发声则播完后 advance 从队首取曲。
-            currentIndex = -1
+            // 基准曲也不在 listedOrder（队列被外部改过 / 插播曲的 id 已不在表内）：
+            // 保底回落到队首，让 advance() / previous() 还有合法基准可走。
+            // 插播曲若仍在发声则保留 override（current() 仍返回它），只是把
+            // currentIndex 定位到队首，插播曲播完后 advance() 从队列继续往下取曲。
+            //
+            // 这里**不要**改回 -1：-1 = 「无当前曲」，会让 current() 变 null、
+            // advance()/previous() 因 `currentIndex < 0` 守恒返回 null，整条队列
+            // 的切歌能力全部失效（详见方法 KDoc）。只有 listedOrder 真的为空
+            // （没有可播内容）时才退回 -1。
+            currentIndex = if (listedOrder.isEmpty()) -1 else 0
         }
     }
 

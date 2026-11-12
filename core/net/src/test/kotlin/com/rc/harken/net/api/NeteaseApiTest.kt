@@ -13,6 +13,9 @@ import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.JsonObject
+import kotlinx.serialization.json.JsonPrimitive
 import okhttp3.mockwebserver.MockResponse
 import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
@@ -205,6 +208,102 @@ class NeteaseApiTest {
         assertEquals(400, error.code)
         assertEquals("参数错误", error.message)
         assertEquals("参数错误", error.userMessage())
+    }
+
+    // MARK: - SMS captcha contract
+
+    /**
+     * 契约黄金断言：官方 `sms/captcha/sent` 只收 `cellphone` + `ctcode`。
+     *
+     * 依据反编译产物 `tf0/i.java:766-784`：旧实现误用 `phone` 并多传 `secrete`，
+     * 导致服务端缺必填参数返回 400「参数错误」。这里解密 weapi 的 `params`，
+     * 逐字段锁死请求体，避免「改回 phone」在既有 176 条单测下静默通过。
+     */
+    @Test
+    fun `sendSMSCode posts cellphone and ctcode to the sms captcha endpoint`() = runBlocking {
+        enqueue("""{"code":200}""")
+
+        api.sendSMSCode("13800000000")
+
+        assertEquals(1, server.requestCount)
+        val recorded = takeRequest()
+        assertEquals("POST", recorded.method)
+        assertEquals("/weapi/sms/captcha/sent", recorded.path)
+        assertEquals("application/x-www-form-urlencoded", recorded.getHeader("Content-Type"))
+
+        val form = formFields(recorded)
+        assertEquals(setOf("params", "encSecKey"), form.keys)
+        assertTrue(form.getValue("encSecKey").matches(Regex("[0-9a-f]{256}")))
+
+        val payload = decryptWeapiPayload(form.getValue("params"))
+        // 与 qrKey 的黄金断言同风格：解密后的 JSON 恰为业务参数 + 注入的 csrf_token。
+        assertEquals(
+            """{"cellphone":"13800000000","ctcode":"86","csrf_token":""}""",
+            payload,
+        )
+        val json = Json.parseToJsonElement(payload) as JsonObject
+        assertEquals(setOf("cellphone", "ctcode", "csrf_token"), json.keys)
+        assertEquals("13800000000", (json.getValue("cellphone") as JsonPrimitive).content)
+        assertEquals("86", (json.getValue("ctcode") as JsonPrimitive).content)
+        assertEquals("", (json.getValue("csrf_token") as JsonPrimitive).content)
+
+        // 旧实现遗留字段：字段名、数量、值任意一处回归都必须红灯。
+        assertFalse(json.containsKey("phone"))
+        assertFalse(json.containsKey("secrete"))
+        assertFalse(json.containsKey("music_middleuser_pclogin"))
+        assertFalse(payload.contains("\"phone\""))
+        assertFalse(payload.contains("\"secrete\""))
+        assertFalse(payload.contains("music_middleuser_pclogin"))
+    }
+
+    @Test
+    fun `sendSMSCode forwards a non default ctcode unchanged`() = runBlocking {
+        enqueue("""{"code":200}""")
+
+        api.sendSMSCode("13800000000", "852")
+
+        assertEquals(1, server.requestCount)
+        val recorded = takeRequest()
+        assertEquals("/weapi/sms/captcha/sent", recorded.path)
+        val form = formFields(recorded)
+        assertEquals(setOf("params", "encSecKey"), form.keys)
+
+        val payload = decryptWeapiPayload(form.getValue("params"))
+        assertEquals(
+            """{"cellphone":"13800000000","ctcode":"852","csrf_token":""}""",
+            payload,
+        )
+        val json = Json.parseToJsonElement(payload) as JsonObject
+        assertEquals(setOf("cellphone", "ctcode", "csrf_token"), json.keys)
+        assertEquals("13800000000", (json.getValue("cellphone") as JsonPrimitive).content)
+        assertEquals("852", (json.getValue("ctcode") as JsonPrimitive).content)
+        assertEquals("", (json.getValue("csrf_token") as JsonPrimitive).content)
+        assertFalse(json.containsKey("phone"))
+        assertFalse(json.containsKey("secrete"))
+        assertFalse(json.containsKey("music_middleuser_pclogin"))
+    }
+
+    @Test
+    fun `sendSMSCode maps 400 parameter error to a typed business error`() = runBlocking {
+        // 旧 bug 的服务端响应：参数名写错时 sms/captcha/sent 返回 400。
+        enqueue("""{"code":400,"message":"参数错误"}""")
+
+        val error = assertThrowsAsync<NeteaseApiError.Business> {
+            api.sendSMSCode("13800000000")
+        }
+        assertEquals(400, error.code)
+        assertEquals("参数错误", error.message)
+        assertEquals("参数错误", error.userMessage())
+
+        // 失败也必须确实是打到了本端点的合规请求，而非别的路径/参数。
+        assertEquals(1, server.requestCount)
+        val recorded = takeRequest()
+        assertEquals("/weapi/sms/captcha/sent", recorded.path)
+        val payload = decryptWeapiPayload(formFields(recorded).getValue("params"))
+        assertEquals(
+            """{"cellphone":"13800000000","ctcode":"86","csrf_token":""}""",
+            payload,
+        )
     }
 
     @Test

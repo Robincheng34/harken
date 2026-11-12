@@ -64,33 +64,68 @@ class UpdateRepository(
      */
     suspend fun fetchManifest(): UpdateManifest = checker.fetch(getUpdateSourceUrl())
 
+    /**
+     * APK 下载专用 HTTP 客户端（惰性单例）。
+     *
+     * **为什么是单例**：旧实现每次 `downloadApk` 都 `OkHttpClient.Builder()...build()`，
+     * 而一个 OkHttpClient 自带连接池 + Dispatcher 线程池；下载完既不 `shutdown` 也不
+     * 复用，等于每下载一次就新起一套线程/连接资源（用户反复点「重试」时尤其明显）。
+     * 改为类内惰性单例：连接池与线程池只建一次，重定向、超时参数与旧实现完全一致
+     * （GitHub 资产 302 到 release-assets.githubusercontent.com，必须跟随重定向）。
+     */
+    private val httpClient: OkHttpClient by lazy {
+        OkHttpClient.Builder()
+            .followRedirects(true)
+            .followSslRedirects(true)
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(60, TimeUnit.SECONDS)
+            .build()
+    }
+
+    /**
+     * 下载 APK 到应用私有目录。
+     *
+     * 进度回调做了节流：只有「累计新增 ≥ 64KB」或「比例推进 ≥ 1%」才回调一次，
+     * 避免每个 8KB 缓冲块都切一次线程去刷 UI 状态；循环结束后若最后一块没被阈值
+     * 命中，则补发一次 100%，保证进度条能真正走到头。
+     */
     suspend fun downloadApk(url: String, onProgress: (DownloadProgress) -> Unit = {}): File =
         withContext(Dispatchers.IO) {
             val target = apkFile(context)
             val part = File(target.parentFile, target.name + ".part")
-            // GitHub 资产会 302 到 release-assets.githubusercontent.com，必须跟随重定向
-            // （OkHttp 默认开启，这里显式固定，避免后续有人调客户端参数时误关）。
-            val client = OkHttpClient.Builder()
-                .followRedirects(true)
-                .followSslRedirects(true)
-                .connectTimeout(30, TimeUnit.SECONDS)
-                .readTimeout(60, TimeUnit.SECONDS).build()
             val request = Request.Builder().url(url)
                 .header("User-Agent", "Harken-UpdateChecker").build()
-            client.newCall(request).execute().use { resp ->
+            httpClient.newCall(request).execute().use { resp ->
                 if (!resp.isSuccessful || resp.body == null) {
                     throw IOException("HTTP ${resp.code}")
                 }
                 val total = resp.body!!.contentLength()
                 resp.body!!.byteStream().use { input ->
                     FileOutputStream(part).use { out ->
-                        val buf = ByteArray(8192)
+                        val buf = ByteArray(BUFFER_SIZE)
                         var read: Int
                         var done: Long = 0
+                        // 上一次已上报的字节数与比例，用于阈值判断（节流状态）。
+                        var reportedBytes: Long = 0
+                        var reportedFraction = 0f
                         while (input.read(buf).also { read = it } != -1) {
                             out.write(buf, 0, read)
                             done += read
-                            if (total > 0) onProgress(DownloadProgress(done, total, done.toFloat() / total))
+                            // 长度未知（chunked / 无 Content-Length）时与旧实现一致：不回调。
+                            if (total <= 0) continue
+                            val fraction = (done.toFloat() / total).coerceIn(0f, 1f)
+                            val enoughBytes = done - reportedBytes >= PROGRESS_MIN_BYTES
+                            val enoughPercent = fraction - reportedFraction >= PROGRESS_MIN_FRACTION
+                            if (enoughBytes || enoughPercent) {
+                                reportedBytes = done
+                                reportedFraction = fraction
+                                onProgress(DownloadProgress(done, total, fraction))
+                            }
+                        }
+                        // 100% 兜底：阈值可能吞掉最后几块（例如尾块既不满 64KB、也没推进
+                        // 1%），不补发就会停在 99%。此处在读到文件尾时补一次最终进度。
+                        if (total > 0 && reportedBytes != done) {
+                            onProgress(DownloadProgress(done, total, 1f))
                         }
                     }
                 }
@@ -158,6 +193,15 @@ class UpdateRepository(
     }
 
     companion object {
+        /** 下载读写缓冲大小（保持旧实现的 8KB，不改 I/O 行为）。 */
+        private const val BUFFER_SIZE = 8 * 1024
+
+        /** 进度回调的最小字节步长：累计新增 64KB 才回调一次。 */
+        private const val PROGRESS_MIN_BYTES = 64L * 1024
+
+        /** 进度回调的最小比例步长：比例推进 1% 才回调一次。 */
+        private const val PROGRESS_MIN_FRACTION = 0.01f
+
         fun apkFile(context: Context): File {
             val root = context.getExternalFilesDir(null) ?: context.filesDir
             val dir = File(root, "updates").also { it.mkdirs() }

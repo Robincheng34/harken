@@ -72,41 +72,39 @@ class QaQrLoginBoundaryTest {
 
     // ---- unknown / unexpected codes --------------------------------------
 
-    /** A code outside 800/801/802/803 must be ignored, not treated as success. */
+    /**
+     * A code outside 800/801/802/803 must surface an error, not hang silently.
+     *
+     * 旧行为是「静默忽略并继续轮询」。实测服务端对**空 key** 返回 400（见
+     * `LiveQrLoginProbeTest` 的取证记录），落进 `else` 就变成「轮询在跑、
+     * 面板永远停在等待扫码」——用户看到的就是「扫了没反应」。
+     */
     @Test
-    fun `an unknown code is ignored and polling continues`() = runTest {
+    fun `an unknown code surfaces an error instead of hanging`() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
-        // 999/777 are unknown; 801 keeps waiting; 803 finally confirms.
-        val api = ScriptedApi(codes = listOf(999, 777, 801, 803))
+        val api = ScriptedApi(codes = listOf(999))
         val model = viewModel(api, dispatcher)
 
         model.startQrLogin()
         advanceUntilIdle()
 
-        // The unknown codes must have been consumed and skipped, not treated
-        // as a confirmation: the 801 in between kept it in Waiting.
-        assertEquals(
-            "the unknown codes must not short-circuit the poll",
-            LoginStatus.Confirmed,
-            model.uiState.value.status,
-        )
-        assertEquals("801 before 803", 801, api.seenCodes[2])
-        assertEquals("all four scripted codes consumed", 4, api.checkCalls)
+        assertEquals(LoginStatus.Error, model.uiState.value.status)
+        assertNotNull("an unexpected code must surface a message", model.uiState.value.errorMessage)
+        assertEquals("polling must stop on an unexpected code", 1, api.checkCalls)
     }
 
-    /** A negative or zero code must also be ignored. */
+    /** A negative or zero code must also surface an error. */
     @Test
-    fun `a non-positive code is ignored`() = runTest {
+    fun `a non-positive code surfaces an error`() = runTest {
         val dispatcher = StandardTestDispatcher(testScheduler)
-        // 802 is the last scripted code; the 800 fallback then ends the poll.
-        val api = ScriptedApi(codes = listOf(-1, 0, 802))
+        val api = ScriptedApi(codes = listOf(0))
         val model = viewModel(api, dispatcher)
 
         model.startQrLogin()
         advanceUntilIdle()
 
-        assertEquals(LoginStatus.Expired, model.uiState.value.status)
-        assertEquals("all three scripted codes must be consumed", 4, api.checkCalls)
+        assertEquals(LoginStatus.Error, model.uiState.value.status)
+        assertEquals("polling must stop", 1, api.checkCalls)
     }
 
     /** A 803 with no nickname must still confirm. */

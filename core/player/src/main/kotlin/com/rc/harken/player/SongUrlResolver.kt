@@ -2,6 +2,7 @@
 
 package com.rc.harken.player
 
+import android.util.Log
 import com.rc.harken.net.api.NeteaseApi
 import com.rc.harken.net.api.NeteaseApiError
 import com.rc.harken.net.model.SongURLData
@@ -132,10 +133,30 @@ class SongUrlResolver(
      *
      * 按 iOS `isPlausibleMatch` 校验时长（iOS 5s，本实现放宽到 10s，
      * 见 [DURATION_TOLERANCE_MS]），时长不合理即视为「解锁源返回错歌」而拒绝。
+     *
+     * **异常必须留痕**：原实现是 `runCatching { unblock.resolveCandidate(track) }`
+     * `.getOrNull()`，把解锁链路里**具体**的异常（超时 / 解析失败 / 源站改版）
+     * 一律抹成 null，[resolve] 之后只能笼统抛「无法获取播放地址」——线上完全
+     * 无法判断解锁为什么没成。这里保留原始异常（含类型与堆栈）写 warn 日志，
+     * 返回值语义不变：失败仍返回 null → 回落官方源（试听片段照播）。
+     *
+     * 取消仍原样上抛：`CancellationException` 不是「解锁失败」，它是切歌/退出
+     * 场景下的正常控制流，吞掉会让已取消的请求继续与新请求竞争。
      */
     private suspend fun rescue(track: Track): RescueResult? {
         val source = unblock ?: return null
-        val candidate = source.resolveCandidate(track) ?: return null
+        val candidate: UnblockCandidate? = try {
+            source.resolveCandidate(track)
+        } catch (cancellation: CancellationException) {
+            throw cancellation
+        } catch (error: Exception) {
+            // 注：NeteaseUnblockSource 自身已把总超时转成「返回 null」，走到这里的
+            // 是其它意外异常（如自定义 UnblockSource 抛出）。不改变错误类型层级，
+            // 也不把 cause 塞进 NeteaseApiError（Business/Http 无 cause 字段）。
+            Log.w(TAG, "unblock failed for track ${track.id}", error)
+            return null
+        }
+        if (candidate == null) return null
         if (!isPlausibleDuration(track, candidate)) return null
         return RescueResult(url = candidate.url, sourceName = candidate.sourceName)
     }
@@ -153,6 +174,7 @@ class SongUrlResolver(
     }
 
     private companion object {
+        const val TAG = "SongUrlResolver"
         const val LEVEL_UNBLOCK = "unblock"
         const val ERR_NO_SOURCE = -1
     }

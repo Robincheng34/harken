@@ -19,12 +19,16 @@ import kotlinx.serialization.json.JsonPrimitive
 import kotlinx.serialization.json.buildJsonObject
 import kotlinx.serialization.json.put
 import okhttp3.CookieJar
+import okhttp3.Dns
+import okhttp3.Interceptor
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody
 import okhttp3.RequestBody.Companion.toRequestBody
 import okhttp3.Response
 import java.io.IOException
+import java.net.Inet4Address
+import java.net.InetAddress
 import java.security.MessageDigest
 import java.time.DateTimeException
 import java.time.Instant
@@ -487,10 +491,61 @@ class NeteaseClient(
             (('A'..'Z') + ('a'..'z') + ('0'..'9') + "-._~".toSet()).toSet()
         internal val PERCENT_ENCODE_HEX = "0123456789ABCDEF".toCharArray()
 
+        /**
+         * Prefer IPv4 addresses. Some cellular carriers (e.g. China Mobile cmnet)
+         * advertise broken IPv6 routes to NetEase hosts: the AAAA attempt hangs
+         * until the connect timeout instead of failing fast, which surfaces as
+         * "网络连接失败" in the UI. Falling back to IPv4 (when available) restores
+         * reliability. If no A records exist we keep the original list so IPv6-only
+         * networks still work.
+         */
+        private val ipv4FavoringDns = object : Dns {
+            override fun lookup(hostname: String): List<InetAddress> {
+                val addresses = Dns.SYSTEM.lookup(hostname)
+                val ipv4 = addresses.filterIsInstance<Inet4Address>()
+                return if (ipv4.isNotEmpty()) ipv4 else addresses
+            }
+        }
+
+        /**
+         * Retries transient connection-level failures (dropped SYNs, DNS hiccups,
+         * slow TLS handshakes) once with a short backoff. Auth/sms endpoints are
+         * excluded so a retry can never resend an SMS code or double-submit a login.
+         */
+        private class RetryInterceptor(private val maxRetries: Int = 1) : Interceptor {
+            override fun intercept(chain: Interceptor.Chain): Response {
+                val request = chain.request()
+                val mayRetry = !isAuthPath(request.url.encodedPath)
+                if (!mayRetry) return chain.proceed(request)
+                var lastException: IOException? = null
+                repeat(maxRetries + 1) { attempt ->
+                    try {
+                        return chain.proceed(request)
+                    } catch (e: IOException) {
+                        lastException = e
+                        if (attempt < maxRetries) {
+                            System.err.println(
+                                "[NeteaseClient] retry ${attempt + 1} for " +
+                                    "${request.url.host}${request.url.encodedPath} due to ${e.message}",
+                            )
+                            Thread.sleep(300L * (attempt + 1))
+                        }
+                    }
+                }
+                throw lastException ?: IOException("request failed after retry")
+            }
+        }
+
         private fun defaultHttpClient(): OkHttpClient = OkHttpClient.Builder()
-            .connectTimeout(15, TimeUnit.SECONDS)
-            .readTimeout(15, TimeUnit.SECONDS)
-            .writeTimeout(15, TimeUnit.SECONDS)
+            .dns(ipv4FavoringDns)
+            .addInterceptor(RetryInterceptor())
+            .retryOnConnectionFailure(true)
+            // Carrier TLS handshakes on cellular can take >10s; the 15s ceiling
+            // previously tripped on a successful-but-slow handshake. 30s keeps it
+            // reliable without changing behaviour for healthy networks.
+            .connectTimeout(30, TimeUnit.SECONDS)
+            .readTimeout(30, TimeUnit.SECONDS)
+            .writeTimeout(30, TimeUnit.SECONDS)
             // Cookies are managed by this class itself (iOS parity).
             .cookieJar(CookieJar.NO_COOKIES)
             .build()
@@ -505,6 +560,20 @@ internal fun ByteArray.toHexLower(): String = buildString(size * 2) {
         append(hex[value and 0x0F])
     }
 }
+
+/**
+ * 是否为登录 / 短信端点（[NeteaseClient] 的重试拦截器对它们禁用重试，避免重发短信
+ * 验证码或重复提交登录）。
+ *
+ * 等价性依据：原实现是 `encodedPath.contains(Regex("/(sms|login)/"))`，即正则
+ * `/(sms|login)/` 的一次「任意位置匹配」；该正则除分组括号与或号外不含任何元字符、
+ * 锚点或量词，语义恰好等于两个字面量子串 `"/sms/"`、`"/login/"` 的包含判断，故
+ * 改用 `contains("/sms/") || contains("/login/")` 逐字符等价。收益：① 不再每个
+ * 请求（每次 `intercept` 调用一次）都编译一次正则；② 走 `String.indexOf`，零正则
+ * 匹配器、零数组分配。
+ */
+private fun isAuthPath(encodedPath: String): Boolean =
+    encodedPath.contains("/sms/") || encodedPath.contains("/login/")
 
 /**
  * Converts a payload value (String / Number / Boolean / null / List / Map /

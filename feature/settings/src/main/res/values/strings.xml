@@ -43,6 +43,8 @@
     <string name="settings_recent_delete_guard_summary">最近播放 / 我的页近期：左滑停顿出现红色删除区，需继续左滑或点击红色区域才删除（默认关闭，一滑即删）</string>
     <string name="settings_account">账号</string>
     <string name="settings_logout">退出登录</string>
+    <string name="settings_logout_offline">当前无网络，退出登录失败，已保留登录态</string>
+    <string name="settings_logout_failed">退出登录失败，请稍后重试</string>
     <string name="settings_navbar">导航栏</string>
     <string name="settings_navbar_summary">自定义底部导航栏的显示与顺序</string>
     <string name="settings_navbar_reset">恢复默认导航栏</string>

@@ -14,4 +14,5 @@
     <string name="detail_artist_albums">专辑</string>
     <string name="detail_unknown_artist">未知歌手</string>
     <string name="detail_loading_tracks">正在加载歌曲…</string>
+    <string name="detail_subscribe_failed">收藏操作失败，请稍后重试</string>
 </resources>

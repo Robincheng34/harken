@@ -78,6 +78,7 @@ import com.rc.harken.design.composition.LocalMusicController
 import com.rc.harken.design.composition.LocalNeteaseApi
 import com.rc.harken.design.composition.LocalPlaybackCommands
 import com.rc.harken.design.composition.LocalSearchHistoryRepository
+import com.rc.harken.design.component.ErrorStateView
 import com.rc.harken.design.navigation.Destinations
 import com.rc.harken.design.theme.Layout
 import com.rc.harken.feature.search.components.SearchLandingPage
@@ -199,6 +200,9 @@ fun SearchScreen(
                     onOpenAlbum = { navController.navigate(Destinations.albumDetail(it)) },
                     onOpenPlaylist = { navController.navigate(Destinations.playlistDetail(it)) },
                     onSelectTab = viewModel::selectTab,
+                    // 「重试」= 重新触发当前查询：失败 Tab 未被记入 loadedTabs，
+                    // 因此 search() → load(当前 Tab) 会真正再发一次请求。
+                    onRetry = viewModel::search,
                 )
             }
 
@@ -241,10 +245,14 @@ fun SearchScreen(
 }
 
 /**
- * 已提交搜索后的结果区（加载态 / 空态 / 结果分区）。
+ * 已提交搜索后的结果区（加载态 / 错误态 / 空态 / 结果分区）。
  *
  * 从原 `SearchScreen` 结果分支原样搬出：有联想但当前 Tab 尚未产出结果时先给
  * 联想（iOS `.searchable` 下拉语义），否则走 [SearchResultSections]。
+ *
+ * 空态分两种，语义不同、观感不同：
+ *  - 有 `error`（断网 / 接口失败）→ [ErrorStateView]：错误文案 + 「重试」按钮；
+ *  - 无 `error` → 「没有找到相关结果」（真正的搜不到）。
  */
 @Composable
 private fun SearchResultsBody(
@@ -256,9 +264,21 @@ private fun SearchResultsBody(
     onOpenAlbum: (Long) -> Unit,
     onOpenPlaylist: (Long) -> Unit,
     onSelectTab: (SearchTab) -> Unit,
+    onRetry: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
+    // 局部变量承接 error：跨模块 public val 属性不能智能转型，取成本地 val 后才能安全
+    // 传给 ErrorStateView 的非空 message 参数。
+    val errorMessage: String? = uiState.error
     when {
+        // 加载失败：错误文案 + 重试入口（原实现只把 error 当空态文案，无重试）。
+        errorMessage != null && uiState.currentEmpty() ->
+            ErrorStateView(
+                message = errorMessage,
+                onRetry = onRetry,
+                modifier = modifier.fillMaxSize(),
+            )
+
         uiState.isSearching && uiState.currentEmpty() ->
             Box(
                 modifier = modifier.fillMaxSize(),
@@ -281,7 +301,7 @@ private fun SearchResultsBody(
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     Text(
-                        text = uiState.error ?: stringResource(R.string.search_no_result),
+                        text = stringResource(R.string.search_no_result),
                         style = MaterialTheme.typography.bodyLarge,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                     )

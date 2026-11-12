@@ -60,6 +60,9 @@ fun LoginOverlay(
                 .align(Alignment.BottomCenter)
                 .widthIn(max = 380.dp)
                 .fillMaxWidth()
+                // 吞掉卡片内的空白点击，避免未消费的事件透传到 scrim 触发关闭
+                // （如「获取验证码」原为无 clickable 的 Box，点它会落到 scrim 关闭面板）。
+                .clickable { }
                 .background(
                     MaterialTheme.colorScheme.surface.copy(alpha = 0.97f),
                     RoundedCornerShape(topStart = 28.dp, topEnd = 28.dp),

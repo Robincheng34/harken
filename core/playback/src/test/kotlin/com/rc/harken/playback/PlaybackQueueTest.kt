@@ -200,6 +200,111 @@ class PlaybackQueueTest {
         assertEquals(list[2], queue.advance())
     }
 
+    /**
+     * 基准曲不在 listedOrder 时关闭随机必须回落到队首，而不是把 currentIndex 置 -1。
+     *
+     * 构造方式（公共 API，无需反射）：load → 开随机 → insertNext 一首不在表内的
+     * 曲目并 advance() 让它发声（此时 currentOverride = 插播曲）→ 关随机。
+     * 关随机时基准曲 = 插播曲，其 id 不在 listedOrder 里 → 走回落分支。
+     *
+     * 修复前该分支置 currentIndex = -1：current() 仍返回插播曲（override 未清），
+     * 但 advance() 因 `currentIndex < 0` 恒返回 null，上一首/自动续播同样失效。
+     */
+    @Test
+    fun `disabling shuffle falls back to the queue head when the base track is missing`() {
+        val queue = queue()
+        val list = tracks(3)
+        queue.load(list, startIndex = 0, context = null, source = PlaySource.NONE)
+        queue.shuffleEnabled = true
+        val inserted = track(99)
+        queue.insertNext(inserted)
+        // 插播曲发声：currentOverride = 插播曲，队列索引留在原位。
+        assertEquals(inserted, queue.advance())
+        assertEquals(0, queue.currentIndex)
+
+        queue.shuffleEnabled = false
+
+        // 插播曲仍在发声，不能被清掉。
+        assertEquals(inserted, queue.current())
+        // 基准曲（插播曲）不在 listedOrder → 回落到队首（不是 -1）。
+        assertEquals(0, queue.currentIndex)
+        assertEquals(list, queue.queue)
+        // 插播曲播完后顺着恢复的顺序继续：队首已作为位置基准，下一首是第 2 首。
+        assertEquals(list[1], queue.advance())
+        assertEquals(1, queue.currentIndex)
+        // 上一首也必须可用（同受 `currentIndex < 0` 守卫影响）。
+        assertEquals(list[0], queue.previous())
+    }
+
+    /**
+     * 回落分支同样不能让待播的插播曲丢失，且 repeat-all 的绕回不能被破坏。
+     */
+    @Test
+    fun `disabling shuffle keeps pending insertions and repeat all working after the fallback`() {
+        val queue = queue()
+        val list = tracks(2)
+        queue.load(list, startIndex = 0, context = null, source = PlaySource.NONE)
+        queue.shuffleEnabled = true
+        val inserted = track(77)
+        queue.insertNext(inserted)
+        queue.insertNext(track(78))
+        assertEquals(inserted, queue.advance())
+        queue.repeatMode = RepeatMode.ALL
+
+        queue.shuffleEnabled = false
+
+        assertEquals(inserted, queue.current())
+        assertEquals(0, queue.currentIndex)
+        // 待播插播曲先走，然后从恢复后的队列继续，最后照 repeat-all 绕回队首。
+        assertEquals(track(78), queue.advance())
+        assertEquals(list[1], queue.advance())
+        assertEquals(list[0], queue.advance())
+        assertEquals(0, queue.currentIndex)
+    }
+
+    /**
+     * 回归：插播曲的 id 仍能在 listedOrder 里定位时，走的是「定位到基准曲位置」的
+     * 原有分支，不能被新加的回落逻辑改掉。
+     */
+    @Test
+    fun `disabling shuffle relocates a sounding insertion whose id is still listed`() {
+        val queue = queue()
+        val list = tracks(3)
+        queue.load(list, startIndex = 0, context = null, source = PlaySource.NONE)
+        queue.shuffleEnabled = true
+        // 插播曲与表内第 2 首同 id：基准曲能在 listedOrder 里定位到。
+        queue.insertNext(track(2))
+        assertEquals(2L, queue.advance()!!.id)
+
+        queue.shuffleEnabled = false
+
+        assertEquals(2L, queue.current()!!.id)
+        assertEquals(1, queue.currentIndex)
+        // 从基准曲的下一首继续。
+        assertEquals(3L, queue.advance()!!.id)
+    }
+
+    /**
+     * listedOrder 为空时保持既有语义：没有可播内容，currentIndex 回到 -1、
+     * current()/advance()/previous() 都返回 null。
+     */
+    @Test
+    fun `disabling shuffle on an empty listed order keeps no current track`() {
+        val queue = queue()
+        queue.load(tracks(2), startIndex = 0, context = null, source = PlaySource.NONE)
+        queue.shuffleEnabled = true
+        // 队列被清空，listedOrder 也随之清空。
+        queue.load(emptyList(), startIndex = 0, context = null, source = PlaySource.NONE)
+
+        queue.shuffleEnabled = false
+
+        assertEquals(-1, queue.currentIndex)
+        assertTrue(queue.queue.isEmpty())
+        assertNull(queue.current())
+        assertNull(queue.advance())
+        assertNull(queue.previous())
+    }
+
     // MARK: - FM
 
     @Test
@@ -280,6 +385,81 @@ class PlaybackQueueTest {
         assertEquals(0, queue.currentIndex)
         // The following track takes over.
         assertEquals(shuffled[1], queue.current())
+    }
+
+    /**
+     * 随机序下删掉「当前曲且它正好是最后一首」：删前 currentIndex == lastIndex，
+     * 删后若不钳制就会停在 queue.size（越界）——current() 变 null、「下一首」假死。
+     * 钳回 lastIndex 后：当前曲是原倒数第二首，上一首仍可走。
+     */
+    @Test
+    fun `removeAt on the last current track clamps the index instead of going out of range`() {
+        val queue = queue()
+        val list = tracks(3)
+        queue.load(list, startIndex = 0, context = null, source = PlaySource.NONE)
+        queue.shuffleEnabled = true
+        val shuffled = queue.queue
+        queue.jumpTo(shuffled.lastIndex)
+        val expectedPrevious = shuffled[shuffled.lastIndex - 1]
+
+        queue.removeAt(shuffled.lastIndex)
+
+        assertEquals(2, queue.size)
+        // 越界的 currentIndex（== size）被钳回合法范围。
+        assertEquals(queue.queue.lastIndex, queue.currentIndex)
+        assertEquals(1, queue.currentIndex)
+        assertEquals(expectedPrevious, queue.current())
+        // 顺序播放真的到底了：OFF 下「下一首」返回 null 是正常语义。
+        assertNull(queue.advance())
+        // 但索引没越界，「上一首」必须还能走。
+        assertEquals(shuffled[0], queue.previous())
+    }
+
+    /** 随机序连删到底：队列空 → currentIndex 回到 -1（无当前曲）。 */
+    @Test
+    fun `removing every track in shuffle order leaves no current track`() {
+        val queue = queue()
+        queue.load(tracks(3), startIndex = 0, context = null, source = PlaySource.NONE)
+        queue.shuffleEnabled = true
+
+        queue.removeAt(0)
+        queue.removeAt(0)
+        queue.removeAt(0)
+
+        assertEquals(0, queue.size)
+        assertEquals(-1, queue.currentIndex)
+        assertNull(queue.current())
+        assertNull(queue.advance())
+        assertNull(queue.previous())
+    }
+
+    /**
+     * 列表序回归：删当前曲仍被拒绝；删当前曲之前的一首索引自减 1；
+     * 删当前曲之后的一首索引不动——末尾的钳制逻辑都不能改坏这三条。
+     */
+    @Test
+    fun `removing in list order keeps the current index correct and protects the current track`() {
+        val queue = queue()
+        val list = tracks(4)
+        queue.load(list, startIndex = 2, context = null, source = PlaySource.NONE)
+
+        // 列表序不允许删当前曲（无副作用）。
+        queue.removeAt(2)
+        assertEquals(4, queue.size)
+        assertEquals(2, queue.currentIndex)
+        assertEquals(list[2], queue.current())
+
+        // 删当前曲之前的一首 → 索引自减 1。
+        queue.removeAt(0)
+        assertEquals(3, queue.size)
+        assertEquals(1, queue.currentIndex)
+        assertEquals(list[2], queue.current())
+
+        // 删当前曲之后的一首 → 索引不动。
+        queue.removeAt(queue.queue.lastIndex)
+        assertEquals(2, queue.size)
+        assertEquals(1, queue.currentIndex)
+        assertEquals(list[2], queue.current())
     }
 
     @Test

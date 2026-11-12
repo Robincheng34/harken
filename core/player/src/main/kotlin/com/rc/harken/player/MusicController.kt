@@ -45,7 +45,9 @@ class MusicController(private val context: Context) {
     /**
      * 播放层提示事件（iOS `PlayerService.swift:1097-1099` 的 `ToastCenter`）。
      *
-     * 目前**只承载一条**提示：试听片段 →「VIP 歌曲，当前为试听片段」。
+     * 目前承载两条提示：
+     * 1. 试听片段 →「VIP 歌曲，当前为试听片段」（由本类 [observePlaybackToasts] 判定）；
+     * 2. 播放指令失败 →「操作失败，请重试」（由 [PlaybackCommands] 经 [notifyToast] 上抛）。
      * 原先还有「已使用第三方音源：X」，已按需求删除（见 [observePlaybackToasts]）；
      * [PlayerState.unblockSource] 字段本身保留，只是不再被读取来弹提示。
      *
@@ -59,6 +61,24 @@ class MusicController(private val context: Context) {
     private val _playerToastEvent: MutableSharedFlow<PlayerToastEvent> =
         MutableSharedFlow(extraBufferCapacity = 2)
     val playerToastEvent: SharedFlow<PlayerToastEvent> = _playerToastEvent.asSharedFlow()
+
+    /**
+     * 由本模块内其它组件上抛一次提示（当前唯一调用方：[PlaybackCommands]）。
+     *
+     * [PlaybackCommands] 是独立类而非内部类，拿不到私有字段 `_playerToastEvent`；
+     * 与其为它单开一条 SharedFlow（`:app` 还要多订阅一处、多解析一份），不如在这里
+     * 给一个极小的下行入口——提示事件始终只有一条流、一个消费点
+     * （`HarkenApp` 根可组合），文案仍留在 `strings.xml` 单一真源。
+     *
+     * @param messageRes `@StringRes` 文案 ID。
+     * @param args 文案格式化参数（`context.getString(res, *args)`）。
+     */
+    fun notifyToast(messageRes: Int, args: List<String> = emptyList()) {
+        // extraBufferCapacity = 2 且无订阅者时会静默丢弃——提示丢了不致命，
+        // 但必须留痕，否则又是一处「静默失败」。
+        val emitted = _playerToastEvent.tryEmit(PlayerToastEvent(messageRes, args))
+        if (!emitted) Log.w(TAG, "提示事件缓冲已满，已丢弃 res=$messageRes")
+    }
 
     private val controllerScope: CoroutineScope =
         CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)

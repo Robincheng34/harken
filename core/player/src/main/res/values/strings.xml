@@ -2,14 +2,20 @@
 <!--
   :core:player 文案真源。
 
-  本模块只有一条文案：试听提示由常驻的 MusicController 下发（iOS
+  本模块的**一次性提示**文案统一由常驻的 MusicController 下发（iOS
   PlayerService.swift:1099 `ToastCenter.shared.show("VIP 歌曲，当前为试听片段")`），
   而 MusicController 位于非 Composable 层、拿不到 `stringResource`，因此以
   `@StringRes` 资源 ID 形式上抛，由 `:app` 的根可组合解析。文案宿主必须是
   发出它的模块，否则 :core:player 会反向依赖 feature 层。
+  目前两条：试听提示（player_trial_toast）、播放指令失败提示（player_command_failed）。
 -->
 <resources>
     <string name="player_trial_toast">VIP 歌曲，当前为试听片段</string>
+    <!-- 播放指令失败提示（PlaybackCommands 的统一失败出口）。
+      原先歌单/专辑/歌手「播放全部」的取数失败只 `return false`，而多数调用方
+      （HomeScreen / ExploreScreen）直接丢弃返回值，用户点了没任何反应也没提示。
+      文案刻意保持通用：具体失败原因在日志里（PlaybackCommands.TAG）。 -->
+    <string name="player_command_failed">操作失败，请重试</string>
     <!-- 依赖缺失兜底前台通知（PlayerService.startForegroundMinimal）：仅为满足
       startForeground 时限、避免 ForegroundServiceDidNotStartInTime 崩溃。 -->
     <string name="player_service_name">Harken 倾耳</string>

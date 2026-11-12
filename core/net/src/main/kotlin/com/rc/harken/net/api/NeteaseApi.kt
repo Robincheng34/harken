@@ -84,13 +84,30 @@ open class NeteaseApi(private val client: NeteaseClient) {
      * 原 bug：两次 parse/decode 都跑在调用方（Main.immediate）调度器上，错误路径
      * businessCode/businessMessage 还各解析一次大 body。现整体移入
      * [Dispatchers.Default]，code/message 复用同一个已解析的 [JsonElement]。
+     *
+     * 只解析一次：**为什么** —— 旧实现先用 `parseToJsonElement(raw)` 解析一遍取业务码，
+     * 再用 `decodeFromString(serializer, raw)` 把**同一个字符串**重新解析一遍得到目标
+     * 类型，首页/歌单这类数百 KB 的响应因此被完整反序列化两次、对象图复制两份（纯
+     * CPU + 分配浪费）。现在改成「一次树解析 + 对该树做解码」：树只建一次，业务码
+     * 校验与目标类型解码共用它。等价性依据：`decodeFromJsonElement` 走
+     * `JsonTreeDecoder`，与 `decodeFromString` 的 `StreamingJsonDecoder` 共用同一个
+     * [NeteaseJson] 配置（`ignoreUnknownKeys` / `coerceInputValues` 在树解码器里同样
+     * 实现），抛出的仍是 `SerializationException` / `IllegalArgumentException` 家族，
+     * 因此异常类型与 [NeteaseApiError.Decoding] 映射不变；响应体无法解析时旧实现
+     * 靠随后的 `decodeFromString` 抛错，这里显式抛同一映射。
      */
     private suspend fun <T> decodeChecked(raw: String, serializer: KSerializer<T>): T =
         withContext(Dispatchers.Default) {
-            val element = parseJsonElement(raw)
+            val element = try {
+                NeteaseJson.parseToJsonElement(raw)
+            } catch (e: SerializationException) {
+                throw NeteaseApiError.Decoding(e.message ?: e.toString())
+            } catch (e: IllegalArgumentException) {
+                throw NeteaseApiError.Decoding(e.message ?: e.toString())
+            }
             assertBusinessCode(element)
             try {
-                NeteaseJson.decodeFromString(serializer, raw)
+                NeteaseJson.decodeFromJsonElement(serializer, element)
             } catch (e: SerializationException) {
                 throw NeteaseApiError.Decoding(e.message ?: e.toString())
             } catch (e: IllegalArgumentException) {
@@ -141,6 +158,15 @@ open class NeteaseApi(private val client: NeteaseClient) {
     // open：测试（LoginViewModelTest 等）以匿名子类覆写注入确定性假数据。
     open suspend fun qrKey(): String {
         val response: QRKeyResponse = weapi("/login/qrcode/unikey", mapOf("type" to 1))
+        // 空 unikey 必须当失败处理：否则会渲染出 `...?codekey=` 的空二维码。
+        // 官方客户端判断一个二维码是不是登录码时要求 codekey **非空**
+        // （反编译产物 module/barcode/g.java:221 `getQueryParameter("codekey")`
+        // 后走 `utils/fs.g` 即 isNotEmpty），空值会被手机端静默丢弃——用户看到
+        // 的就是「扫了完全没反应」；我们这边轮询随后拿到 code=400，若再被忽略
+        // 就彻底没有反馈。
+        if (response.unikey.isBlank()) {
+            throw NeteaseApiError.Business(response.code, "二维码获取失败，请重试")
+        }
         return response.unikey
     }
 
@@ -167,12 +193,14 @@ open class NeteaseApi(private val client: NeteaseClient) {
 
     // open：测试（LoginViewModelTest 等）以匿名子类覆写注入确定性假数据。
     open suspend fun sendSMSCode(phone: String, countryCode: String = "86") {
+        // 忠于反编译产物 tf0/i.java:766-784：官方 sms/captcha/sent 只收
+        // cellphone + ctcode 两个参数，无 secrete；旧实现误用 phone 导致
+        // 服务端缺必填参数返回 code=400「参数错误」。
         val response: CodeOnly = weapi(
             "/sms/captcha/sent",
             mapOf(
-                "ctcode" to countryCode,
                 "cellphone" to phone,
-                "secrete" to "music_middleuser_pclogin",
+                "ctcode" to countryCode,
             ),
         )
         assertCode(response.code)
@@ -181,15 +209,12 @@ open class NeteaseApi(private val client: NeteaseClient) {
     /** Phone-number login with an SMS code; auth cookies arrive via Set-Cookie. */
     open suspend fun loginCellphone(phone: String, captcha: String, countryCode: String = "86") {
         val response: CodeOnly = weapi(
-            "/w/login/cellphone",
+            "/login/cellphone",
             mapOf(
-                "type" to "1",
-                "https" to "true",
                 "phone" to phone,
                 "countrycode" to countryCode,
                 "captcha" to captcha,
-                "remember" to "true",
-                "secureCaptcha" to "",
+                "rememberLogin" to "true",
             ),
         )
         assertCode(response.code)
@@ -201,7 +226,15 @@ open class NeteaseApi(private val client: NeteaseClient) {
     /** Logs out; with [detachedCookies] the caller's jar is left untouched. */
     open suspend fun logout(detachedCookies: Map<String, String>? = null) {
         val oldCookies = detachedCookies ?: client.authenticationCookies()
-        if (detachedCookies == null) client.clearAuthCookies()
+        // 顺序很重要：**先请求、成功后才丢本地凭证**。
+        //
+        // 原实现是「先 clearAuthCookies() 再发请求，并把所有异常吞掉」，带来两个后果：
+        // 1. 调用方（设置页）永远看到「成功」，无法区分断网/服务端失败；
+        // 2. 一旦断网，本地凭证其实已经被清掉，但界面若按「失败保留登录态」处理，
+        //    两边状态就互相矛盾（本地已登出、UI 说还登着）。
+        // 现在失败会原样抛出，由调用方提示并保留登录态；只有服务端确认登出才清凭证。
+        // 请求本身用 cookieOverrides 携带旧 Cookie，不依赖本地 jar 是否还在。
+        var failure: Throwable? = null
         try {
             client.weapi(
                 "/logout",
@@ -211,8 +244,11 @@ open class NeteaseApi(private val client: NeteaseClient) {
         } catch (e: CancellationException) {
             throw e
         } catch (e: Exception) {
-            // Best-effort logout: the local credentials are already gone.
+            failure = e
         }
+        if (failure != null) throw failure
+        // 服务端已确认登出，才丢弃本地认证凭证（非认证 Cookie 如 os/appver 保留）。
+        if (detachedCookies == null) client.clearAuthCookies()
     }
 
     /** Renews the login token; best-effort. */

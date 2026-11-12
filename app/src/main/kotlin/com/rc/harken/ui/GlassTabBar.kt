@@ -44,6 +44,7 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -72,7 +73,9 @@ import com.rc.harken.design.theme.GlassBox
 import com.rc.harken.design.theme.Layout
 import com.rc.harken.design.theme.LiquidGlassLens
 import com.rc.harken.design.theme.glassTokens
+import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlin.math.abs
 import kotlin.math.roundToInt
@@ -189,30 +192,45 @@ fun GlassTabBar(
     // 保证回缩尾巴能收敛到 0，不会把拉伸「冻」在半路。
     val lensStretch = remember { mutableFloatStateOf(0f) }
     LaunchedEffect(cellWidthPx) {
+        if (cellWidthPx <= 0f) return@LaunchedEffect
         var prevX = Float.NaN
         var prevT = 0L
-        while (true) {
-            val frameTime = withFrameNanos { it }
-            if (cellWidthPx > 0f) {
-                val x = lensX
-                if (!prevX.isNaN() && prevT > 0L) {
-                    val dt = (frameTime - prevT) / 1_000_000_000f
-                    if (dt > 0f) {
-                        // 参考速度 = 3.2 个 cell/秒：手一快就能看到明显拉伸（液态感更足）。
-                        val v = abs(x - prevX) / dt
-                        val target = (v / (cellWidthPx * 3.2f)).coerceIn(0f, 1f)
-                        val cur = lensStretch.floatValue
-                        // 非对称低通：起速快（28）、回落慢（10）——blob 被甩出去后带一点
-                        // 黏滞感再收回去，像液体而不是橡皮筋；纯对称系数会显得太「弹」。
-                        val k = if (target > cur) 28f else 10f
-                        var next = cur + (target - cur) * (dt * k).coerceAtMost(1f)
-                        if (next < 0.002f) next = 0f
-                        if (next != cur) lensStretch.floatValue = next
-                    }
-                }
-                prevX = x
-                prevT = frameTime
+        while (isActive) {
+            // 静止期不占帧。原实现是无条件的 `while (true) { withFrameNanos { } }`：
+            // 底栏在每个页面都常驻，于是即便不滑动、不播放，也**每帧**唤醒一次主线程
+            // 做速度积分，等于给整个 App 叠了一层永不消失的每帧成本（也是「静止时应零
+            // 开销」这个前提被打破的地方）。这里改成：镜片没动、且拉伸已收敛到 0 时
+            // 挂起在 snapshotFlow 上，等 lensX 真正变化才继续 —— 静止期零帧。
+            //
+            // 注意必须同时判断 lensStretch：松手后 lensX 已停、但拉伸尾巴还在回缩，
+            // 那几十毫秒仍要逐帧积分，否则 blob 会被「冻」在半拉伸状态。
+            if (lensStretch.floatValue == 0f && lensX == prevX) {
+                snapshotFlow { lensX }.first { it != prevX }
+                // 重新起速：丢掉旧的时间/位置基准，避免挂起期间累积出巨大 dt，
+                // 恢复瞬间算出一个离谱的速度让镜片猛弹一下。
+                prevX = Float.NaN
+                prevT = 0L
+                continue
             }
+            val frameTime = withFrameNanos { it }
+            val x = lensX
+            if (!prevX.isNaN() && prevT > 0L) {
+                val dt = (frameTime - prevT) / 1_000_000_000f
+                if (dt > 0f) {
+                    // 参考速度 = 3.2 个 cell/秒：手一快就能看到明显拉伸（液态感更足）。
+                    val v = abs(x - prevX) / dt
+                    val target = (v / (cellWidthPx * 3.2f)).coerceIn(0f, 1f)
+                    val cur = lensStretch.floatValue
+                    // 非对称低通：起速快（28）、回落慢（10）——blob 被甩出去后带一点
+                    // 黏滞感再收回去，像液体而不是橡皮筋；纯对称系数会显得太「弹」。
+                    val k = if (target > cur) 28f else 10f
+                    var next = cur + (target - cur) * (dt * k).coerceAtMost(1f)
+                    if (next < 0.002f) next = 0f
+                    if (next != cur) lensStretch.floatValue = next
+                }
+            }
+            prevX = x
+            prevT = frameTime
         }
     }
     val cellWidthDp = with(density) { cellWidthPx.toDp() }

@@ -510,6 +510,9 @@ fun FavoritesScreen(
                 com.rc.harken.design.component.SectionHeader(title = "收藏的专辑")
                 com.rc.harken.design.component.PlaylistShelf(
                     title = "",
+                    // 标题已由上方 SectionHeader 画出：关掉 shelf 自绘标题，
+                    // 否则下面会多出一条空白标题行 + 一个多余「>」。
+                    showHeader = false,
                     items = albums.map {
                         com.rc.harken.net.model.PlaylistSummary(
                             id = it.id,
@@ -525,6 +528,8 @@ fun FavoritesScreen(
                 com.rc.harken.design.component.SectionHeader(title = "关注的歌手")
                 com.rc.harken.design.component.PlaylistShelf(
                     title = "",
+                    // 同上：标题已由上方 SectionHeader 画出。
+                    showHeader = false,
                     items = artists.map {
                         com.rc.harken.net.model.PlaylistSummary(
                             id = it.id,

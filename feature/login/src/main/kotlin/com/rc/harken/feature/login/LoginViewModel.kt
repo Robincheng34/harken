@@ -12,6 +12,7 @@ package com.rc.harken.feature.login
 import com.rc.harken.net.api.NeteaseApi
 import com.rc.harken.net.api.NeteaseApiError
 import com.rc.harken.net.api.userMessage
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -98,9 +99,28 @@ open class LoginViewModel(
     }
 
     private suspend fun poll(unikey: String) {
+        var consecutiveFailures = 0
         while (scope.isActive) {
             delay(pollIntervalMillis)
-            val result = runCatching { api.qrCheck(unikey) }.getOrNull() ?: continue
+            val result = try {
+                api.qrCheck(unikey)
+            } catch (cancellation: CancellationException) {
+                throw cancellation
+            } catch (error: Throwable) {
+                // 原实现 `runCatching{}.getOrNull() ?: continue` 把**任何**异常都吞掉：
+                // 断网 / 风控 / 超时都会让面板永远停在「等待扫码」且不报错，用户看到
+                // 的就是「扫了没反应」。改为「连续失败到上限才判错」，既不在弱网下
+                // 频繁闪错，也不再把真实故障藏起来。
+                consecutiveFailures++
+                if (consecutiveFailures >= MAX_POLL_FAILURES) {
+                    _uiState.update {
+                        it.copy(status = LoginStatus.Error, errorMessage = mapError(error))
+                    }
+                    return
+                }
+                continue
+            }
+            consecutiveFailures = 0
             when (result.code) {
                 800 -> {
                     _uiState.update { it.copy(status = LoginStatus.Expired) }
@@ -119,7 +139,19 @@ open class LoginViewModel(
                     onConfirmed(result.nickname, result.avatarUrl)
                     return
                 }
-                else -> { /* 其它码忽略 */ }
+                else -> {
+                    // 原实现 `else -> {}` 静默忽略：服务端对**空 key** 会返回 400
+                    // （实测），落进这里就变成「轮询在跑、但面板永远不动」。
+                    // 现在显式报错并让 UI 露出「刷新」按钮。
+                    _uiState.update {
+                        it.copy(
+                            status = LoginStatus.Error,
+                            errorMessage = result.message?.takeIf { m -> m.isNotBlank() }
+                                ?: "扫码登录失败（${result.code}）",
+                        )
+                    }
+                    return
+                }
             }
         }
     }
@@ -207,5 +239,8 @@ open class LoginViewModel(
 
     private companion object {
         const val SMS_COOLDOWN_SECONDS = 60
+
+        /** 连续多少次轮询抛异常才判定为错误（1.5s × 5 ≈ 7.5s，容忍一次网络抖动）。 */
+        const val MAX_POLL_FAILURES = 5
     }
 }

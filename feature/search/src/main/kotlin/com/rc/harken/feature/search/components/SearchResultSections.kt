@@ -351,7 +351,12 @@ private fun AlbumRow(
     }
 }
 
-/** 歌单横滑（方形封面 + 播放量）。与其余分区一致开启官方逐个入场动效。 */
+/**
+ * 歌单横滑（方形封面 + 播放量）。与其余分区一致开启官方逐个入场动效。
+ *
+ * ⚠️ `showHeader = false`：分区标题（「歌单」+「查看全部」）已由外层 [Shelf] 画过，
+ * 这里再让 [PlaylistShelf] 自绘标题会在下面多出一条空白标题行 + 一个多余「>」。
+ */
 @Composable
 private fun PlaylistRow(
     playlists: List<PlaylistSummary>,
@@ -362,6 +367,7 @@ private fun PlaylistRow(
         items = playlists,
         onOpen = onOpenPlaylist,
         staggered = true,
+        showHeader = false,
     )
 }
 

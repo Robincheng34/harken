@@ -10,4 +10,5 @@
     <string name="fm_dislike">不喜欢</string>
     <string name="fm_next">下一首</string>
     <string name="fm_end">已经到底啦</string>
+    <string name="fm_like_failed">收藏失败，请检查网络后重试</string>
 </resources>

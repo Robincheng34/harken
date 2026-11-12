@@ -2,13 +2,18 @@
 
 package com.rc.harken.player.unblock
 
+import android.util.Log
 import com.rc.harken.net.model.Track
 import com.rc.harken.player.DURATION_TOLERANCE_MS
 import com.rc.harken.player.UnblockCandidate
 import com.rc.harken.player.UnblockSource
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonArray
 import kotlinx.serialization.json.JsonElement
@@ -49,8 +54,19 @@ import kotlin.math.abs
  *
  * `resolve` / `resolveCandidate` 共用同一条四源链路：依次尝试、首个通过匹配守卫
  * 的直链即被采纳；任一源失败（网络异常 / JSON 解析失败 / 歌名不匹配）一律跳下一源，
- * 绝不向外抛异常（外层 `runCatching` 兜底）。直链 `http://` 一律升 `https://`
+ * 绝不向外抛异常。直链 `http://` 一律升 `https://`
  * （外层 [com.rc.harken.player.SongUrlResolver] 也会再升一次，这里保持幂等）。
+ *
+ * **超时与取消（2026 修复）**：
+ * - 五源串行、每源内部还有多次往返，理论最坏耗时可达数十秒（B 站 4 次请求 +
+ *   咪咕 2 次 + 酷我/酷狗/pyncmd 各 2 次，OkHttp 连接 15s / 读取 30s）。起播前
+ *   用户就干等这么久，因此 [resolveCandidate] 整体包一层
+ *   [UNBLOCK_TOTAL_TIMEOUT_MS] 总超时，超时按「解锁失败」处理（返回 null，
+ *   **不**上抛成崩溃），由上层回落到官方源。
+ * - 所有可能失败的地方统一走 [runUnblockCatching]：`CancellationException`
+ *   **原样重抛**。原实现一律 `runCatching { ... }.getOrNull()`，连取消也一并
+ *   吞掉——切歌时上一首的解锁请求取消不掉，继续占着网络与 CPU，还会与新请求
+ *   竞争（真机表现为切歌后偶尔串音源 / 白等）。
  *
  * 匹配守卫对齐 iOS `AudioSourceTrackMatcher.matches`：标题归一化相等、歌手命中
  * （候选歌手按分隔符拆分后包含曲目首位歌手）、时长差 ≤ 5s、版本标记
@@ -78,8 +94,59 @@ class NeteaseUnblockSource(
      * 带元数据的候选：经匹配守卫后返回，供 [com.rc.harken.player.SongUrlResolver.rescue]
      * 做时长校验并带出 [UnblockCandidate.sourceName]。
      * 未命中任何源返回 null。
+     *
+     * 整体受 [UNBLOCK_TOTAL_TIMEOUT_MS] 约束：超时即视为「解锁失败」返回 null。
+     *
+     * 为什么用 [withTimeoutOrNull] 而不是 `try { withTimeout(...) } catch
+     * (TimeoutCancellationException)`：前者内部用 `e.coroutine === this` 做身份判定，
+     * **只**把「自己这一次」的超时转成 null，外层调用方自己的 `withTimeout`
+     * 触发的取消仍会正常向上传播（否则会误把别人的超时吞成「解锁失败」）。
+     * 超时与「没找到源」都返回 null，故用耗时是否触顶来区分并打日志。
      */
-    override suspend fun resolveCandidate(track: Track): UnblockCandidate? = resolveInternal(track)
+    override suspend fun resolveCandidate(track: Track): UnblockCandidate? {
+        val startedAtNanos = System.nanoTime()
+        val candidate = withTimeoutOrNull(UNBLOCK_TOTAL_TIMEOUT_MS) { resolveInternal(track) }
+        if (candidate == null) {
+            val elapsedMs = (System.nanoTime() - startedAtNanos) / 1_000_000L
+            if (elapsedMs >= UNBLOCK_TOTAL_TIMEOUT_MS) {
+                Log.w(
+                    TAG,
+                    "unblock timed out after ${elapsedMs}ms " +
+                        "(limit ${UNBLOCK_TOTAL_TIMEOUT_MS}ms), track=${track.id}",
+                )
+            }
+        }
+        return candidate
+    }
+
+    /**
+     * 解锁链路统一异常收口（替代原先散落的 `runCatching { ... }.getOrNull()`）。
+     *
+     * 两件事必须一起做，缺一不可：
+     * 1. **`CancellationException` 原样重抛**。`runCatching` 捕获 `Throwable`，
+     *    会把协程取消一起吞成 null —— 切歌时上一首的解锁请求因此取消不掉，
+     *    继续占网络与 CPU，并与新请求竞争（表现为切歌后偶尔串音源 / 白等）。
+     * 2. **非取消异常留痕**。串行五源全部 `getOrNull()` 后只剩一个 null，
+     *    真机上完全看不出是哪一源、因为什么失败。这里统一打一条带堆栈的 warn。
+     *
+     * 进入 [block] 前先 `ensureActive()`：即使底层是阻塞 IO（OkHttp 同步调用），
+     * 也能在推进到下一步之前立刻响应取消，不把已取消的请求继续串下去。
+     *
+     * @param label 步骤标签（`bili.search` / `kuwo.json` 等），写进日志便于定位。
+     * @param block 实际动作。
+     * @return 成功返回 [block] 结果；非取消类异常返回 null（调用方继续跳下一源）。
+     */
+    private suspend fun <T> runUnblockCatching(label: String, block: suspend () -> T?): T? =
+        try {
+            currentCoroutineContext().ensureActive()
+            block()
+        } catch (cancellation: CancellationException) {
+            Log.d(TAG, "unblock step '$label' cancelled")
+            throw cancellation
+        } catch (error: Exception) {
+            Log.w(TAG, "unblock step '$label' failed", error)
+            null
+        }
 
     /**
      * 解锁源依次尝试，返回第一个**音频长度合理**的候选；全部失败返回 null。
@@ -99,7 +166,11 @@ class NeteaseUnblockSource(
      */
     private suspend fun resolveInternal(track: Track): UnblockCandidate? {
         for (source in sources) {
-            val candidate = runCatching { source.fetch(track) }.getOrNull() ?: continue
+            // 每换一个源先确认协程仍活跃：切歌后不必等某个慢源自己超时。
+            currentCoroutineContext().ensureActive()
+            val candidate = runUnblockCatching("${source.label}.fetch") {
+                source.fetch(track)
+            } ?: continue
             if (!source.verifySize || isLikelyFullAudio(candidate.url, track.durationMS)) {
                 return candidate
             }
@@ -107,19 +178,26 @@ class NeteaseUnblockSource(
         return null
     }
 
-    /** 单个解锁源的尝试项：`verifySize` 表示采纳前是否还需 HEAD 校验音频大小。 */
+    /**
+     * 单个解锁源的尝试项。
+     *
+     * @param label 日志标签（仅用于诊断，不影响行为）。
+     * @param fetch 取候选动作。
+     * @param verifySize 采纳前是否还需 HEAD 校验音频大小。
+     */
     private class Attempt(
+        val label: String,
         val fetch: suspend (Track) -> UnblockCandidate?,
         val verifySize: Boolean,
     )
 
     /** 解锁链路：顺序即尝试顺序，加源/调序只改这里。 */
     private val sources: List<Attempt> = listOf(
-        Attempt(::bilibili, verifySize = false),
-        Attempt(::migu, verifySize = false),
-        Attempt(::kuwo, verifySize = true),
-        Attempt(::pyncmd, verifySize = true),
-        Attempt(::kugou, verifySize = true),
+        Attempt(label = "bilibili", fetch = ::bilibili, verifySize = false),
+        Attempt(label = "migu", fetch = ::migu, verifySize = false),
+        Attempt(label = "kuwo", fetch = ::kuwo, verifySize = true),
+        Attempt(label = "pyncmd", fetch = ::pyncmd, verifySize = true),
+        Attempt(label = "kugou", fetch = ::kugou, verifySize = true),
     )
 
     /**
@@ -132,14 +210,16 @@ class NeteaseUnblockSource(
     private suspend fun isLikelyFullAudio(url: String, trackDurationMs: Long): Boolean =
         withContext(Dispatchers.IO) {
             if (trackDurationMs < SHORT_TRACK_MS) return@withContext true
-            runCatching {
+            // 探测失败（网络异常 / 403 / 无 Content-Length）一律放行：宁可多试一曲，
+            // 也不因探测本身失败而误伤可用源。取消仍会被 runUnblockCatching 上抛。
+            runUnblockCatching("head") {
                 val request = Request.Builder().url(url).head().build()
                 client.newCall(request).execute().use { resp ->
                     if (!resp.isSuccessful) return@use true
                     val length = resp.header("Content-Length")?.toLongOrNull() ?: return@use true
                     length >= MIN_FULL_AUDIO_BYTES
                 }
-            }.getOrDefault(true)
+            } ?: true
         }
 
     // MARK: - ⓪ 哔哩哔哩（免登录，实测唯一可用的免费整首源）
@@ -190,9 +270,9 @@ class NeteaseUnblockSource(
     )
 
     /** 匿名 buvid（进程内缓存；搜索返回非 JSON 时重建一次）。 */
-    private fun ensureBiliCookies(): Boolean {
+    private suspend fun ensureBiliCookies(): Boolean {
         if (biliCookiesReady) return true
-        return runCatching {
+        return runUnblockCatching("bili.spi") {
             val request = Request.Builder()
                 .url("https://api.bilibili.com/x/frontend/finger/spi")
                 .header("User-Agent", BILI_UA)
@@ -214,7 +294,7 @@ class NeteaseUnblockSource(
                 biliCookiesReady = true
                 true
             }
-        }.getOrDefault(false)
+        } ?: false
     }
 
     private suspend fun biliSearch(track: Track): JsonArray? = withContext(Dispatchers.IO) {
@@ -240,7 +320,7 @@ class NeteaseUnblockSource(
             .build()
 
         repeat(2) { attempt ->
-            val body = runCatching {
+            val body = runUnblockCatching("bili.search") {
                 biliClient.newCall(
                     Request.Builder()
                         .url(url)
@@ -248,9 +328,11 @@ class NeteaseUnblockSource(
                         .header("Referer", "https://search.bilibili.com")
                         .build(),
                 ).execute().use { it.body?.string() }
-            }.getOrNull()
-            val result = (body
-                ?.let { runCatching { json.parseToJsonElement(it) }.getOrNull() }
+            }
+            val parsed = body?.let { raw ->
+                runUnblockCatching("bili.search.json") { json.parseToJsonElement(raw) }
+            }
+            val result = (parsed
                 ?.let { (it as? JsonObject)?.get("data") as? JsonObject }
                 ?.get("result")) as? JsonArray
             if (result != null) return@withContext result
@@ -265,7 +347,7 @@ class NeteaseUnblockSource(
     }
 
     private suspend fun biliCid(bvid: String): Long? = withContext(Dispatchers.IO) {
-        runCatching {
+        runUnblockCatching("bili.view") {
             biliClient.newCall(
                 Request.Builder()
                     .url("https://api.bilibili.com/x/web-interface/view?bvid=$bvid")
@@ -278,11 +360,11 @@ class NeteaseUnblockSource(
                 val cid = data?.get("cid").stringOrNull()?.toLongOrNull()
                 cid
             }
-        }.getOrNull()
+        }
     }
 
     private suspend fun biliAudioUrl(bvid: String, cid: Long): String? = withContext(Dispatchers.IO) {
-        runCatching {
+        runUnblockCatching("bili.playurl") {
             biliClient.newCall(
                 Request.Builder()
                     .url("https://api.bilibili.com/x/player/playurl?bvid=$bvid&cid=$cid&fnval=16")
@@ -302,7 +384,7 @@ class NeteaseUnblockSource(
                     ?.let { it["baseUrl"].stringOrNull() ?: it["base_url"].stringOrNull() }
                 url
             }
-        }.getOrNull()
+        }
     }
 
     /** B 站标题匹配：标题需同时包含歌名与任一歌手，时长差 ≤10s，版本标记一致。 */
@@ -392,13 +474,14 @@ class NeteaseUnblockSource(
             .addQueryParameter("pageSize", "20")
             .addQueryParameter("searchSwitch", """{"song":1}""")
             .build()
-        val body = runCatching {
+        val body = runUnblockCatching("migu.search") {
             client.newCall(
                 Request.Builder().url(searchUrl).header("User-Agent", MIGU_UA).build(),
             ).execute().use { it.body?.string() }
-        }.getOrNull() ?: return@withContext null
-        val root = runCatching { json.parseToJsonElement(body) }.getOrNull() as? JsonObject
-            ?: return@withContext null
+        } ?: return@withContext null
+        val root = runUnblockCatching("migu.search.json") {
+            json.parseToJsonElement(body)
+        } as? JsonObject ?: return@withContext null
         val results = (root["songResultData"] as? JsonObject)?.get("result") as? JsonArray
             ?: return@withContext null
 
@@ -443,7 +526,7 @@ class NeteaseUnblockSource(
 
     /** 探测 listenSong.do 最终返回的是音频流（免费曲）还是 JSON（VIP 无地址）。 */
     private suspend fun miguPlayable(url: String): Boolean = withContext(Dispatchers.IO) {
-        runCatching {
+        runUnblockCatching("migu.probe") {
             client.newCall(
                 Request.Builder()
                     .url(url)
@@ -454,7 +537,7 @@ class NeteaseUnblockSource(
                 val type = response.body?.contentType()?.toString().orEmpty()
                 response.isSuccessful && (type.startsWith("audio") || type.contains("octet-stream"))
             }
-        }.getOrDefault(false)
+        } ?: false
     }
 
     /** 咪咕匹配：歌名归一化相等、歌手命中、版本标记一致（搜索无时长）。 */
@@ -482,8 +565,9 @@ class NeteaseUnblockSource(
         val searchUrl = "https://search.kuwo.cn/r.s?&correct=1&vipver=1&stype=comprehensive" +
             "&encoding=utf8&rformat=json&mobi=1&show_copyright_off=1&searchapi=6&all=$query"
         val searchBody = getText(searchUrl, userAgent = KUWO_UA) ?: return@withContext null
-        val root = runCatching { json.parseToJsonElement(searchBody) }.getOrNull() as? JsonObject
-            ?: return@withContext null
+        val root = runUnblockCatching("kuwo.search.json") {
+            json.parseToJsonElement(searchBody)
+        } as? JsonObject ?: return@withContext null
         // iOS `content[1]["musicpage"]["abslist"]`（不是根级 abslist）。
         // content[1] 是 {"musicpage": {...}} 包装层，需拆两层。
         val content = root["content"] as? JsonArray ?: return@withContext null
@@ -529,8 +613,9 @@ class NeteaseUnblockSource(
         val url = "https://music-api.gdstudio.xyz/api.php?" +
             "types=url&source=netease&id=${track.id}&br=320"
         val body = getText(url) ?: return@withContext null
-        val root = runCatching { json.parseToJsonElement(body) }.getOrNull() as? JsonObject
-            ?: return@withContext null
+        val root = runUnblockCatching("pyncmd.json") {
+            json.parseToJsonElement(body)
+        } as? JsonObject ?: return@withContext null
         // iOS 先校验 br > 0 再取 url；镜像被 CF 拦截时是整个 HTML，解析会在上一步失败。
         val br = root["br"].stringOrNull()?.toIntOrNull() ?: 0
         if (br <= 0) return@withContext null
@@ -553,8 +638,9 @@ class NeteaseUnblockSource(
         val searchUrl = "http://mobilecdn.kugou.com/api/v3/search/song?format=json" +
             "&keyword=$query&page=1&pagesize=10"
         val searchBody = getText(searchUrl) ?: return@withContext null
-        val root = runCatching { json.parseToJsonElement(searchBody) }.getOrNull() as? JsonObject
-            ?: return@withContext null
+        val root = runUnblockCatching("kugou.search.json") {
+            json.parseToJsonElement(searchBody)
+        } as? JsonObject ?: return@withContext null
         val data = root["data"] as? JsonObject ?: return@withContext null
         // iOS `data["info"]`（不是 `list`）。
         val info = data["info"] as? JsonArray ?: return@withContext null
@@ -579,8 +665,9 @@ class NeteaseUnblockSource(
         val playUrl = "https://trackercdn.kugou.com/i/v2/?key=$key&hash=$hash" +
             "&appid=1005&pid=2&cmd=25&behavior=play&album_id=$albumId"
         val playBody = getText(playUrl) ?: return@withContext null
-        val playRoot = runCatching { json.parseToJsonElement(playBody) }.getOrNull() as? JsonObject
-            ?: return@withContext null
+        val playRoot = runUnblockCatching("kugou.play.json") {
+            json.parseToJsonElement(playBody)
+        } as? JsonObject ?: return@withContext null
         val direct = extractKugouUrl(playRoot["url"]) ?: return@withContext null
         if (!direct.startsWith("http")) return@withContext null
 
@@ -643,10 +730,10 @@ class NeteaseUnblockSource(
     private fun keyword(track: Track): String =
         "${track.name} ${track.artists.firstOrNull()?.name.orEmpty()}".trim()
 
-    /** 执行 GET，失败返回 null（不抛）。 */
+    /** 执行 GET，失败返回 null（不抛；取消仍原样上抛）。 */
     private suspend fun getText(url: String, userAgent: String? = null): String? =
         withContext(Dispatchers.IO) {
-            runCatching {
+            runUnblockCatching("get") {
                 val request = Request.Builder().url(url).get().apply {
                     if (userAgent != null) header("User-Agent", userAgent)
                 }.build()
@@ -654,7 +741,7 @@ class NeteaseUnblockSource(
                     if (!resp.isSuccessful) return@use null
                     resp.body?.string()
                 }
-            }.getOrNull()
+            }
         }
 
     /** 酷狗云 key：MD5(hash + "kgcloudv2") 小写 hex。 */
@@ -671,6 +758,20 @@ class NeteaseUnblockSource(
     }
 
     companion object {
+        /** 日志 TAG（解锁链路诊断：哪个源、哪一步、什么异常）。 */
+        private const val TAG = "NeteaseUnblockSource"
+
+        /**
+         * 解锁链路总超时（含全部五源串行 + 每次 HEAD 校验）。
+         *
+         * 五源串行理论最坏 ≈ 6s×5 + 10s×5 = 80s（每源 2~4 次往返，OkHttp 连接 15s /
+         * 读取 30s）。起播前让用户干等 80s 不可接受，故设 12s 硬顶：超时即当
+         * 「解锁失败」返回 null，由上层回落官方源（试听片段照播），绝不抛成崩溃。
+         * 取 12s 的理由：真机实测 B 站单源命中通常在 1~3s 内完成，12s 足够让前
+         * 两三个源各试一轮，又远短于用户能忍受的起播等待。
+         */
+        private const val UNBLOCK_TOTAL_TIMEOUT_MS = 12_000L
+
         /** 酷我搜索必须带此 UA，否则返回空结果。 */
         private const val KUWO_UA = "okhttp/3.10.0"
 

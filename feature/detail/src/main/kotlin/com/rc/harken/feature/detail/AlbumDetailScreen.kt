@@ -36,6 +36,7 @@ import com.rc.harken.design.component.TrackListView
 import com.rc.harken.design.composition.LocalMusicController
 import com.rc.harken.design.composition.LocalNeteaseApi
 import com.rc.harken.design.composition.LocalPlaybackCommands
+import com.rc.harken.design.composition.LocalToastState
 import com.rc.harken.feature.detail.components.DetailHeader
 import com.rc.harken.playback.PlayContext
 import com.rc.harken.playback.PlaySource
@@ -57,6 +58,7 @@ fun AlbumDetailScreen(
 ) {
     val api = LocalNeteaseApi.current ?: error("LocalNeteaseApi 必须在 HarkenApp 提供")
     val commands = LocalPlaybackCommands.current
+    val toast = LocalToastState.current
     val scope = rememberCoroutineScope()
 
     // 系统返回：本页显式接管。外层 Tab（如搜索页）注册了常驻 BackHandler，
@@ -69,6 +71,12 @@ fun AlbumDetailScreen(
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
 
     LaunchedEffect(albumID) { viewModel.loadAlbum(albumID) }
+
+    // 收藏失败必须有可见反馈（原 bug：`runCatching` 吞异常，按钮点了永远不变）。
+    val subscribeFailedMessage = stringResource(R.string.detail_subscribe_failed)
+    LaunchedEffect(viewModel, subscribeFailedMessage) {
+        viewModel.subscribeFailures.collect { toast.show(subscribeFailedMessage) }
+    }
 
     val controller = LocalMusicController.current
     val playerState by (controller?.state ?: remember { MutableStateFlow(PlayerState()) })

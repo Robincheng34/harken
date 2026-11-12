@@ -30,9 +30,9 @@ import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -48,12 +48,12 @@ import coil.compose.AsyncImage
 import com.rc.harken.design.composition.LocalIsLoggedIn
 import com.rc.harken.design.composition.LocalMusicController
 import com.rc.harken.design.composition.LocalNeteaseApi
+import com.rc.harken.design.composition.LocalToastState
 import com.rc.harken.design.theme.AppAnimations
 import com.rc.harken.design.theme.BrandRed
 import com.rc.harken.feature.fm.components.FmBackground
 import com.rc.harken.feature.fm.components.FmControls
 import com.rc.harken.net.model.Formatters
-import kotlinx.coroutines.launch
 
 /** 漫游页 Tab 起始路由（与 `:app` `Routes.FM` 的字符串契约）。 */
 
@@ -73,17 +73,26 @@ fun FmScreen(
         ?: error("LocalNeteaseApi 必须在 HarkenApp 提供")
     val loggedInFlow = LocalIsLoggedIn.current
     val isLoggedIn by loggedInFlow.collectAsStateWithLifecycle()
-    val scope = rememberCoroutineScope()
+    val toast = LocalToastState.current
+    // 文案在组合期取出，供 LaunchedEffect（非组合上下文）使用。
+    val likeFailedMessage = stringResource(R.string.fm_like_failed)
 
     val viewModel = remember(controller) {
         FmViewModel(
             controller = MusicControllerFmAdapter(controller),
             isLoggedIn = { isLoggedIn },
+            // 收藏（红心）走真实接口，ViewModel 内做乐观更新 + 失败回滚。
+            api = api,
         )
     }
     // 页面销毁时取消 ViewModel 内部协程（原 bug：自建 scope 永不取消，状态收集器常驻泄漏）。
     DisposableEffect(Unit) { onDispose { viewModel.cancel() } }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
+
+    // 收藏失败必须有可见反馈（原 bug：`runCatching` 吞掉异常，点了没反应也没提示）。
+    LaunchedEffect(viewModel, likeFailedMessage) {
+        viewModel.likeFailures.collect { toast.show(likeFailedMessage) }
+    }
 
     Box(modifier = modifier.fillMaxSize()) {
         FmBackground(coverURL = uiState.currentTrack?.album?.picUrl)
@@ -99,11 +108,7 @@ fun FmScreen(
             onStart = viewModel::start,
             onNext = viewModel::next,
             onTrash = viewModel::trash,
-            onToggleLike = { trackId ->
-                scope.launch {
-                    runCatching { api.likeTrack(trackId, true) }
-                }
-            },
+            onToggleLike = viewModel::toggleLike,
         )
     }
 }
@@ -201,7 +206,8 @@ private fun FmContent(
         if (uiState.isFmMode) {
             FmControls(
                 isPlaying = uiState.isPlaying,
-                isLiked = false,
+                // 原 bug：这里硬编码 false → 红心永远空心，点了看不到任何变化。
+                isLiked = uiState.isCurrentTrackLiked,
                 onTrash = onTrash,
                 onTogglePlay = onTogglePlay,
                 onNext = onNext,

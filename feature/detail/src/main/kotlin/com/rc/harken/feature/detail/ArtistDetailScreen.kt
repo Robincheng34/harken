@@ -75,6 +75,12 @@ fun ArtistDetailScreen(
 
     LaunchedEffect(artistID) { viewModel.loadArtist(artistID) }
 
+    // 关注失败必须有可见反馈（原 bug：`runCatching` 吞异常，按钮点了永远不变）。
+    val subscribeFailedMessage = stringResource(R.string.detail_subscribe_failed)
+    LaunchedEffect(viewModel, subscribeFailedMessage) {
+        viewModel.subscribeFailures.collect { toast.show(subscribeFailedMessage) }
+    }
+
     val controller = LocalMusicController.current
     val playerState by (controller?.state ?: remember { MutableStateFlow(PlayerState()) })
         .collectAsStateWithLifecycle()
@@ -139,11 +145,13 @@ fun ArtistDetailScreen(
                                 header = uiState.header,
                                 onPlayAll = {
                                     scope.launch {
-                                        val ok = commands?.playArtistHotTracks(
+                                        // 失败提示由 :core:player 的 PlaybackCommands 统一上抛
+                                        // （player_command_failed），这里不再重复 toast，
+                                        // 否则一次失败会连弹两条。
+                                        commands?.playArtistHotTracks(
                                             artistID,
                                             uiState.header.title,
-                                        ) ?: false
-                                        if (!ok) toast.show("播放失败")
+                                        )
                                     }
                                 },
                                 onToggleSubscribe = viewModel::toggleArtistSubscription,
@@ -175,6 +183,9 @@ fun ArtistDetailScreen(
                                         }
                                     },
                                     staggered = true,
+                                    // 上面已有「热门专辑」SectionHeader，这里再自绘一遍会多出
+                                    // 一条空白标题行 + 一个多余「>」箭头（与搜索页同款缺陷）。
+                                    showHeader = false,
                                 )
                             }
                         }

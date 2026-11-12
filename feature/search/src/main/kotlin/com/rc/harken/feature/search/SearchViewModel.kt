@@ -113,7 +113,10 @@ class SearchViewModel(
 
     /** 切换结果分区（iOS `model.tab`）：首次进入该 Tab 时按需加载。 */
     fun selectTab(tab: SearchTab) {
-        _uiState.update { it.copy(tab = tab) }
+        // 一并清掉上一个 Tab 的 error：否则切到一个「已加载且结果为空」的 Tab 时，
+        // 空态会展示上一个 Tab 残留的报错文案（错配）。真正的失败会在本次 load
+        // 的 catch 里重新写入。
+        _uiState.update { it.copy(tab = tab, error = null) }
         load(tab)
     }
 
@@ -140,24 +143,27 @@ class SearchViewModel(
             try {
                 when (tab) {
                     SearchTab.ALL -> loadAll(keywords)
+                    // 单类型 Tab：**不**用 runCatching 吞异常。请求失败时让异常冒到
+                    // 下面的统一 catch —— 与 `ALL` 分支走完全同一套错误处理：写入
+                    // `error`、且**不**把该 Tab 记入 `loadedTabs`，用户切回该 Tab 或
+                    // 点「重试」时可再次发起请求。
+                    // 原 bug：`runCatching{}.getOrNull()?.songs.orEmpty()` 把断网吞成
+                    // 空列表并照常标记已加载 → 用户只看到「没有找到相关结果」，
+                    // 且恢复网络后永不再重试。
                     SearchTab.SONGS -> {
-                        val songs = runCatching { api.search(keywords, SearchTab.SONGS.searchType!!, 100) }
-                            .getOrNull()?.songs.orEmpty()
+                        val songs = api.search(keywords, SearchTab.SONGS.searchType!!, 100).songs
                         _uiState.update { it.copy(songs = songs) }
                     }
                     SearchTab.ARTISTS -> {
-                        val artists = runCatching { api.search(keywords, SearchTab.ARTISTS.searchType!!, 50) }
-                            .getOrNull()?.artists.orEmpty()
+                        val artists = api.search(keywords, SearchTab.ARTISTS.searchType!!, 50).artists
                         _uiState.update { it.copy(artists = artists) }
                     }
                     SearchTab.ALBUMS -> {
-                        val albums = runCatching { api.search(keywords, SearchTab.ALBUMS.searchType!!, 50) }
-                            .getOrNull()?.albums.orEmpty()
+                        val albums = api.search(keywords, SearchTab.ALBUMS.searchType!!, 50).albums
                         _uiState.update { it.copy(albums = albums) }
                     }
                     SearchTab.PLAYLISTS -> {
-                        val playlists = runCatching { api.search(keywords, SearchTab.PLAYLISTS.searchType!!, 50) }
-                            .getOrNull()?.playlists.orEmpty()
+                        val playlists = api.search(keywords, SearchTab.PLAYLISTS.searchType!!, 50).playlists
                         _uiState.update { it.copy(playlists = playlists) }
                     }
                 }
@@ -179,18 +185,33 @@ class SearchViewModel(
         }
     }
 
-    /** `ALL`：四路并发（iOS `async let` ×4，同一 scope 内并行）。 */
+    /**
+     * `ALL`：四路并发（iOS `async let` ×4，同一 scope 内并行）。
+     *
+     * 单路失败容忍（其余分区照常展示），但**四路全失败**视为整体失败（典型即断网），
+     * 抛出首个异常交给 [load] 的统一 catch：写 `error`、不标记已加载 —— 与单类型 Tab
+     * 的错误语义保持一致，避免「综合」Tab 断网时被吞成一片空白。
+     */
     private suspend fun loadAll(keywords: String) = coroutineScope {
-        val songs = async { runCatching { api.search(keywords, SearchTab.SONGS.searchType!!, 12) }.getOrNull()?.songs }
-        val artists = async { runCatching { api.search(keywords, SearchTab.ARTISTS.searchType!!, 10) }.getOrNull()?.artists }
-        val albums = async { runCatching { api.search(keywords, SearchTab.ALBUMS.searchType!!, 10) }.getOrNull()?.albums }
-        val playlists = async { runCatching { api.search(keywords, SearchTab.PLAYLISTS.searchType!!, 10) }.getOrNull()?.playlists }
+        val songs = async { runCatching { api.search(keywords, SearchTab.SONGS.searchType!!, 12) } }
+        val artists = async { runCatching { api.search(keywords, SearchTab.ARTISTS.searchType!!, 10) } }
+        val albums = async { runCatching { api.search(keywords, SearchTab.ALBUMS.searchType!!, 10) } }
+        val playlists = async { runCatching { api.search(keywords, SearchTab.PLAYLISTS.searchType!!, 10) } }
+        val songResult = songs.await()
+        val artistResult = artists.await()
+        val albumResult = albums.await()
+        val playlistResult = playlists.await()
+        if (songResult.isFailure && artistResult.isFailure &&
+            albumResult.isFailure && playlistResult.isFailure
+        ) {
+            throw songResult.exceptionOrNull() ?: IllegalStateException(ERROR_SEARCH)
+        }
         _uiState.update {
             it.copy(
-                songs = songs.await().orEmpty(),
-                artists = artists.await().orEmpty(),
-                albums = albums.await().orEmpty(),
-                playlists = playlists.await().orEmpty(),
+                songs = songResult.getOrNull()?.songs.orEmpty(),
+                artists = artistResult.getOrNull()?.artists.orEmpty(),
+                albums = albumResult.getOrNull()?.albums.orEmpty(),
+                playlists = playlistResult.getOrNull()?.playlists.orEmpty(),
             )
         }
     }

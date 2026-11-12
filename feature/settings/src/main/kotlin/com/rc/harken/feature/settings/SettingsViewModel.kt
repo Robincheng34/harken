@@ -34,6 +34,15 @@ class SettingsViewModel(
     /** 登出成功后的回调（由宿主传入，用于刷新全局登录态 `AppGraph.onLoggedOut()`）。 */
     private val onLoggedOut: () -> Unit = {},
     private val scope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate),
+    /**
+     * 当前是否有可用网络（仅用于给出更具体的失败文案）。
+     *
+     * `NeteaseApi.logout()` 已改为「服务端确认成功后才丢本地凭证，失败原样抛出」，
+     * 所以离线时即便不判网也会走失败分支并保留登录态。这里预判网络只是为了把
+     * 「当前无网络」和「服务端失败」区分开，给用户更准确的提示。
+     * 默认 true（单测 / 无网检测的宿主行为不变）。
+     */
+    private val isOnline: () -> Boolean = { true },
 ) {
     private val _uiState: MutableStateFlow<SettingsUiState> = MutableStateFlow(SettingsUiState())
     val uiState: StateFlow<SettingsUiState> = _uiState.asStateFlow()
@@ -160,16 +169,59 @@ class SettingsViewModel(
         repository.setTabOrder(reordered.map { it.key })
     }
 
-    /** 退出登录（iOS 设置页「退出登录」）。 */
+    /**
+     * 退出登录（iOS 设置页「退出登录」）。
+     *
+     * 原则：**只有成功才落地「已退出」**。
+     *  - 离线：不发请求，保留登录态，记录 [LogoutFailure.OFFLINE]；
+     *  - 请求失败：保留登录态，记录 [LogoutFailure.SERVER]；
+     *  - 成功：清 `isLoggedIn` / `nickname` 并回调 [onLoggedOut] 刷新全局登录态。
+     *
+     * 原 bug：无论成败一律置为未登录，断网时界面与服务端真实会话不一致。
+     */
     fun logout() {
+        if (_uiState.value.isLoggingOut) return
         scope.launch {
-            _uiState.update { it.copy(isLoggingOut = true) }
+            if (!isOnline()) {
+                _uiState.update {
+                    it.copy(
+                        isLoggingOut = false,
+                        logoutFailure = LogoutFailure.OFFLINE,
+                        logoutFailureSeq = it.logoutFailureSeq + 1,
+                    )
+                }
+                return@launch
+            }
+            _uiState.update { it.copy(isLoggingOut = true, logoutFailure = null) }
             val result = runCatching { api.logout() }
-            _uiState.update { it.copy(isLoggingOut = false, isLoggedIn = false, nickname = "") }
+            if (result.isFailure) {
+                // 失败：保留原登录态（isLoggedIn / nickname 不动），只记录失败原因。
+                _uiState.update {
+                    it.copy(
+                        isLoggingOut = false,
+                        logoutFailure = LogoutFailure.SERVER,
+                        logoutFailureSeq = it.logoutFailureSeq + 1,
+                    )
+                }
+                return@launch
+            }
+            _uiState.update {
+                it.copy(
+                    isLoggingOut = false,
+                    isLoggedIn = false,
+                    nickname = "",
+                    logoutFailure = null,
+                )
+            }
             // 原 bug：登出只清 cookie + 局部 UI 状态，全局登录态（AppGraph）永不
             // 更新（onLoggedOut() 零调用）。成功路径回调宿主刷新全局登录态。
-            if (result.isSuccess) onLoggedOut()
+            onLoggedOut()
         }
+    }
+
+    /** 收起退出登录失败提示（UI 弹过 toast 后调用，避免重复展示）。 */
+    fun dismissLogoutFailure() {
+        _uiState.update { it.copy(logoutFailure = null) }
     }
 
     /** 取消内部协程（页面销毁时由 UI 调用，避免 DataStore 收集器常驻泄漏）。 */

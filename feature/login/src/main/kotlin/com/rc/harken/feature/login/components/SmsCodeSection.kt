@@ -182,7 +182,9 @@ fun SmsCodeSection(
                     .background(OfficialSplit),
             )
             Box(
-                modifier = Modifier.width(SEND_SLOT_DP),
+                modifier = Modifier
+                    .width(SEND_SLOT_DP)
+                    .clickable { if (uiState.canSendSmsCode) viewModel.sendSmsCode() },
                 contentAlignment = Alignment.Center,
             ) {
                 when {

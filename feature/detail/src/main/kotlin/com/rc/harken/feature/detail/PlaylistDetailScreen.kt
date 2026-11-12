@@ -69,6 +69,12 @@ fun PlaylistDetailScreen(
 
     LaunchedEffect(playlistID) { viewModel.loadPlaylist(playlistID) }
 
+    // 收藏失败必须有可见反馈（原 bug：失败完全静默，按钮点了没变化也没提示）。
+    val subscribeFailedMessage = stringResource(R.string.detail_subscribe_failed)
+    LaunchedEffect(viewModel, subscribeFailedMessage) {
+        viewModel.subscribeFailures.collect { toast.show(subscribeFailedMessage) }
+    }
+
     // 当前播放曲（列表高亮）。
     val controller = LocalMusicController.current
     val playerState by (controller?.state ?: remember { MutableStateFlow(com.rc.harken.player.PlayerState()) })

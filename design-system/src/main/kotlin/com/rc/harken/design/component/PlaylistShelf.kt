@@ -28,6 +28,9 @@ import com.rc.harken.net.model.PlaylistSummary
  * @param onOpen 点击卡片（传入歌单 id）。
  * @param onPlay 播放悬浮钮（传入歌单 id）；传 null 不展示悬浮钮。
  * @param staggered 是否逐个入场（iOS `staggeredAppearance`）。
+ * @param showHeader 是否由本组件自绘分区标题（标题 + 右侧「>」箭头）。调用方已在
+ *   外层画过标题（如搜索结果分区、详情页「热门专辑」）时传 false，避免出现一条
+ *   空白标题行 + 多余箭头。默认 true，保持既有调用点行为不变。
  */
 @Composable
 fun PlaylistShelf(
@@ -36,9 +39,13 @@ fun PlaylistShelf(
     onOpen: (Long) -> Unit,
     onPlay: ((Long) -> Unit)? = null,
     staggered: Boolean = false,
+    showHeader: Boolean = true,
     modifier: Modifier = Modifier,
 ) {
-    SectionHeader(title = title, showChevron = true)
+    // 标题与箭头一起受 showHeader 控制（title 为空时也要能显式关掉空标题行）。
+    if (showHeader) {
+        SectionHeader(title = title, showChevron = true)
+    }
     if (items.isEmpty()) return
     LazyRow(
         modifier = modifier.fillMaxWidth(),

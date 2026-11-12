@@ -27,7 +27,21 @@ data class DetailHeaderState(
     val trackCount: Int = 0,
     val subscribed: Boolean = false,
     val subscribedCount: Int = 0,
-)
+) {
+    /**
+     * 派生一份「收藏态 = [subscribed]」的头部。
+     *
+     * @param adjustCount 是否同时调整收藏数（仅歌单接口回传 `subscribedCount`）。
+     */
+    fun withSubscription(subscribed: Boolean, adjustCount: Boolean): DetailHeaderState = copy(
+        subscribed = subscribed,
+        subscribedCount = if (adjustCount) {
+            (subscribedCount + if (subscribed) 1 else -1).coerceAtLeast(0)
+        } else {
+            subscribedCount
+        },
+    )
+}
 
 /** 详情页单一 UI 状态。 */
 data class DetailUiState(
@@ -42,6 +56,8 @@ data class DetailUiState(
     /** 曲目是否已完整加载（歌单 trackIds → songDetails 补齐完成后为 true）。 */
     val tracksComplete: Boolean = false,
     val totalTrackCount: Int = 0,
+    /** 收藏请求进行中（防连点造成乐观状态互相覆盖）。 */
+    val isSubscribing: Boolean = false,
 ) {
     val isEmpty: Boolean get() = header.id == 0L && !isLoading && error == null
 }

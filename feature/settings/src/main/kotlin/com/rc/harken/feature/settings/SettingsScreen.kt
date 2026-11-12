@@ -53,6 +53,7 @@ import com.rc.harken.design.composition.LocalIsLoggedIn
 import com.rc.harken.design.composition.LocalNeteaseApi
 import com.rc.harken.design.composition.LocalOnLoggedOut
 import com.rc.harken.design.composition.LocalSettingsRepository
+import com.rc.harken.design.composition.LocalToastState
 import com.rc.harken.design.composition.LocalUpdateRepository
 import com.rc.harken.design.theme.Layout
 import com.rc.harken.storage.settings.NavTabOption
@@ -66,6 +67,8 @@ import androidx.activity.result.contract.ActivityResultContracts
 import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
+import android.net.ConnectivityManager
+import android.net.NetworkCapabilities
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
@@ -121,6 +124,9 @@ fun SettingsScreen(
     val isLoggedIn by loggedInFlow.collectAsStateWithLifecycle()
 
     val onLoggedOut = LocalOnLoggedOut.current
+    val toast = LocalToastState.current
+    // 提前取 Context：退出登录需要判网（见 hasNetwork），ViewModel 的 isOnline 依赖它。
+    val ctx = LocalContext.current
     val viewModel = remember(repository, api, updateRepository) {
         SettingsViewModel(
             repository = repository,
@@ -130,6 +136,7 @@ fun SettingsScreen(
             nickname = { "" },
             // 登出成功后刷新全局登录态（AppGraph.onLoggedOut，经 CompositionLocal 下发）。
             onLoggedOut = { onLoggedOut?.invoke() },
+            isOnline = { hasNetwork(ctx) },
         )
     }
     // 页面销毁时取消 ViewModel 内部协程（原 bug：自建 scope 永不取消，DataStore
@@ -137,6 +144,19 @@ fun SettingsScreen(
     DisposableEffect(Unit) { onDispose { viewModel.cancel() } }
     val uiState by viewModel.uiState.collectAsStateWithLifecycle()
     val settings = uiState.settings
+
+    // 退出登录失败必须有可见反馈（原 bug：断网也会显示已退出，且没有任何提示）。
+    val logoutOfflineMessage = stringResource(R.string.settings_logout_offline)
+    val logoutFailedMessage = stringResource(R.string.settings_logout_failed)
+    LaunchedEffect(uiState.logoutFailureSeq) {
+        if (uiState.logoutFailureSeq == 0) return@LaunchedEffect
+        val message = when (uiState.logoutFailure) {
+            LogoutFailure.OFFLINE -> logoutOfflineMessage
+            LogoutFailure.SERVER, null -> logoutFailedMessage
+        }
+        toast.show(message)
+        viewModel.dismissLogoutFailure()
+    }
 
     // 底部导航栏当前可见 Tab（按保存的顺序；未配置时为全部默认顺序）。
     // 「我的」(LIBRARY) 为常驻 Tab：任何配置下强制可见（仅可调整顺序、不可隐藏），
@@ -164,7 +184,7 @@ fun SettingsScreen(
     val settingsScope = rememberCoroutineScope()
 
     // ── 在线检测更新：下载文件、安装权限回调 ──────────────────────
-    val ctx = LocalContext.current
+    // ctx 已在组件顶部取（退出登录判网也用），此处不再重复声明。
     val currentVersion by remember {
         mutableStateOf(
             runCatching { ctx.packageManager.getPackageInfo(ctx.packageName, 0).versionName }
@@ -1182,6 +1202,24 @@ private fun isVivoDevice(): Boolean {
     return listOfNotNull(brand, manufacturer).any { value ->
         value.contains("vivo", ignoreCase = true) || value.contains("iqoo", ignoreCase = true)
     }
+}
+
+/**
+ * 当前是否有可用网络。
+ *
+ * 仅当系统明确报告「没有活动网络」时返回 false；任何查询异常 / 能力缺失
+ * （如 captive portal、VPN、刚连上尚未收敛）一律按「有网」处理——宁可让请求
+ * 自己失败，也不要因为检测误判把用户的退出登录永久拦住。
+ *
+ * 需要 `ACCESS_NETWORK_STATE`（`:app` 清单已声明 INTERNET + ACCESS_NETWORK_STATE）。
+ */
+private fun hasNetwork(context: Context): Boolean {
+    val manager = context.getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager
+        ?: return true
+    val network = runCatching { manager.activeNetwork }.getOrNull() ?: return false
+    val capabilities = runCatching { manager.getNetworkCapabilities(network) }.getOrNull()
+        ?: return false
+    return capabilities.hasCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
 }
 
 /**

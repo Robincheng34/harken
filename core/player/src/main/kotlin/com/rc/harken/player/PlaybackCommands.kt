@@ -8,10 +8,12 @@
 
 package com.rc.harken.player
 
+import android.util.Log
 import com.rc.harken.net.api.NeteaseApi
 import com.rc.harken.net.model.Track
 import com.rc.harken.playback.PlayContext
 import com.rc.harken.playback.PlaySource
+import kotlinx.coroutines.CancellationException
 
 /** 歌单播放编排失败原因（供 UI 提示）。 */
 class PlaybackCommandException(message: String) : Exception(message)
@@ -38,14 +40,16 @@ class PlaybackCommands(
 
     /**
      * 播放整个歌单（iOS `playPlaylist`）：拉详情 → tracks 为空按 trackIds 补齐
-     * （前 500 首）→ 从 0 开始播放。返回 false 表示取数失败（调用方可静默）。
+     * （前 500 首）→ 从 0 开始播放。返回 false 表示取数失败（已由
+     * [runCommand] 记日志并下发用户可见提示，调用方无需再提示）。
      */
     suspend fun playPlaylist(id: Long): Boolean {
-        val detail = runCatching { api.playlistDetail(id) }.getOrNull() ?: return false
+        val detail = runCommand("playlistDetail($id)") { api.playlistDetail(id) } ?: return false
         var tracks = detail.playlist.tracks
         if (tracks.isEmpty()) {
             val ids = detail.playlist.trackIds.map { it.id }
-            tracks = runCatching { api.songDetails(ids.take(500)) }.getOrNull()?.songs ?: emptyList()
+            tracks = runCommand("songDetails(playlist $id)") { api.songDetails(ids.take(500)) }
+                ?.songs ?: emptyList()
         }
         if (tracks.isEmpty()) return false
         play(tracks, PlaySource.PLAYLIST, PlayContext.playlist(id, detail.playlist.name))
@@ -54,7 +58,7 @@ class PlaybackCommands(
 
     /** 播放专辑全部歌曲（iOS HomeView.albumCard 内联逻辑）。 */
     suspend fun playAlbum(id: Long, name: String): Boolean {
-        val detail = runCatching { api.album(id) }.getOrNull() ?: return false
+        val detail = runCommand("album($id)") { api.album(id) } ?: return false
         if (detail.songs.isEmpty()) return false
         play(detail.songs, PlaySource.ALBUM, PlayContext.album(id, name))
         return true
@@ -62,7 +66,7 @@ class PlaybackCommands(
 
     /** 播放歌手热门歌曲（iOS ArtistDetailView 播放全部）。 */
     suspend fun playArtistHotTracks(id: Long, name: String): Boolean {
-        val response = runCatching { api.artist(id) }.getOrNull() ?: return false
+        val response = runCommand("artist($id)") { api.artist(id) } ?: return false
         if (response.hotSongs.isEmpty()) return false
         play(response.hotSongs, PlaySource.ARTIST, PlayContext.artist(id, name))
         return true
@@ -86,7 +90,7 @@ class PlaybackCommands(
 
     /** 播放每日推荐（iOS `Destination.daily`）。 */
     suspend fun playDaily(): Boolean {
-        val tracks = runCatching { api.dailyRecommendSongs() }.getOrNull() ?: return false
+        val tracks = runCommand("dailyRecommendSongs") { api.dailyRecommendSongs() } ?: return false
         if (tracks.isEmpty()) return false
         play(tracks, PlaySource.DAILY, PlayContext.daily)
         return true
@@ -97,8 +101,9 @@ class PlaybackCommands(
      * （iOS `startHeartbeatMode`）。无种子或接口不可用时返回 false。
      */
     suspend fun playHeartbeat(seedTrackId: Long, playlistID: Long): Boolean {
-        val tracks = runCatching { api.intelligenceList(seedTrackId, playlistID) }
-            .getOrNull() ?: return false
+        val tracks = runCommand("intelligenceList($seedTrackId, $playlistID)") {
+            api.intelligenceList(seedTrackId, playlistID)
+        } ?: return false
         if (tracks.isEmpty()) return false
         play(tracks, PlaySource.PLAYLIST, PlayContext.heartbeat)
         return true
@@ -142,4 +147,45 @@ class PlaybackCommands(
     fun fmNext() = controller.fmNext()
 
     fun fmTrash() = controller.fmTrash()
+
+    // MARK: - 命令收口
+
+    /**
+     * 执行一次可能失败的取数命令，统一收口「日志 + 用户可见提示 + 取消语义」。
+     *
+     * 替换掉原先每个调用点各写一遍的 `runCatching { api.xxx() }.getOrNull()`，
+     * 那个写法有两个硬伤：
+     * 1. **对用户完全不可见**：失败只返回 false，而多数调用方直接丢弃返回值
+     *    （`HomeScreen:127` `scope.launch { commands?.playPlaylist(id) }`、
+     *    `ExploreScreen:93` 同款），用户点了歌单/专辑/歌手「播放全部」后
+     *    界面毫无反应，也没有任何提示；
+     * 2. **吞掉协程取消**：`runCatching` 连 `CancellationException` 一起捕获并
+     *    转成 null，页面销毁后已取消的请求仍会跑完并回写结果——既浪费网络，
+     *    也可能用过期数据覆盖新状态。
+     *
+     * @param label 诊断标签（写进日志，真机上据此判断是哪条命令失败）。
+     * @param block 实际取数动作。
+     * @return 成功返回 [block] 的结果；失败返回 null（调用方按原语义
+     *         `?: return false`，**返回值语义未变**）。
+     */
+    private suspend fun <T> runCommand(label: String, block: suspend () -> T): T? = try {
+        block()
+    } catch (cancellation: CancellationException) {
+        // 取消必须原样上抛（重新抛出同一个实例即可，无需包装）：吞掉会破坏
+        // 结构化并发，让已取消的协程继续执行并回写状态。
+        throw cancellation
+    } catch (error: Exception) {
+        Log.w(TAG, "command $label failed", error)
+        notifyCommandFailed()
+        null
+    }
+
+    /** 播放指令失败的统一提示（文案见 `strings.xml` 的 `player_command_failed`）。 */
+    private fun notifyCommandFailed() {
+        controller.notifyToast(R.string.player_command_failed)
+    }
+
+    private companion object {
+        const val TAG = "PlaybackCommands"
+    }
 }

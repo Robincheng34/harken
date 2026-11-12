@@ -79,6 +79,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.Dp
@@ -338,8 +339,9 @@ private fun LoggedInContent(
 
     // 整页 LazyColumn：原实现是 verticalScroll + 近期列表 forEach 全量组合，
     // 播放记录积累到数百条时一进页面就全部渲染（每条带封面加载），首帧与滚动
-    // 都会卡。改 Lazy 后近期曲目按需组合；其余页签内容量有限（几十条），作为
-    // 单个 item 块原样保留。
+    // 都会卡。改 Lazy 后近期曲目按需组合；「创建 / 收藏」两个歌单页签同样逐行
+    // lazy（收藏 200+ 歌单时不再一次性组合全部行）；「专辑」量级有限仍作为单个
+    // item 块保留。
     LazyColumn(
         modifier = modifier.fillMaxWidth(),
         horizontalAlignment = Alignment.CenterHorizontally,
@@ -367,18 +369,42 @@ private fun LoggedInContent(
                     )
                 }
                 when (musicTab) {
-                    0 -> items(visibleTracks, key = { playRecordKey(it) }) { track ->
-                        RecentTrackRow(
-                            track = track,
-                            visibleTracks = visibleTracks,
-                            guard = guard,
-                            api = api,
-                            commands = commands,
-                            scope = scope,
-                        )
+                    0 -> {
+                        // 「近期」空态：原实现 visibleTracks 为空时什么都不渲染，
+                        // 页面上只剩标题栏，用户以为页面没加载出来。与其它三个子页签
+                        // 一致补 EmptyHint（同一组件、同样式）。
+                        if (visibleTracks.isEmpty()) {
+                            item(key = "recent-empty") {
+                                EmptyHint(text = stringResource(R.string.library_empty_recent))
+                            }
+                        }
+                        items(visibleTracks, key = { playRecordKey(it) }) { track ->
+                            RecentTrackRow(
+                                track = track,
+                                visibleTracks = visibleTracks,
+                                guard = guard,
+                                api = api,
+                                commands = commands,
+                                scope = scope,
+                            )
+                        }
                     }
-                    1 -> item { PlaylistRows(playlists = createdWithLiked, onNavigate = onNavigate) }
-                    2 -> item { PlaylistRows(playlists = uiState.subscribedPlaylists, onNavigate = onNavigate) }
+                    // 创建 / 收藏两个歌单页签逐行 lazy（原实现把整个列表塞进单个
+                    // item 里 forEach 全量组合：收藏 200+ 歌单时一进页签就组合全部行）。
+                    1 -> if (createdWithLiked.isEmpty()) {
+                        item(key = "created-empty") { EmptyHint(text = "暂无内容") }
+                    } else {
+                        items(createdWithLiked, key = { "created-${it.id}" }) { playlist ->
+                            PlaylistRow(playlist = playlist, onNavigate = onNavigate)
+                        }
+                    }
+                    2 -> if (uiState.subscribedPlaylists.isEmpty()) {
+                        item(key = "subscribed-empty") { EmptyHint(text = "暂无内容") }
+                    } else {
+                        items(uiState.subscribedPlaylists, key = { "subscribed-${it.id}" }) { playlist ->
+                            PlaylistRow(playlist = playlist, onNavigate = onNavigate)
+                        }
+                    }
                     else -> item { AlbumRows(albums = uiState.likedAlbums, onNavigate = onNavigate) }
                 }
             }
@@ -739,25 +765,25 @@ private fun RecentTrackRow(
     }
 }
 
-/** 歌单列表（创建 / 收藏）。 */
+/**
+ * 歌单单行（「创建」/「收藏」两个子页签由 LazyColumn 逐行调用）。
+ *
+ * 视觉与原 `PlaylistRows`（Column + `spacedBy(4.dp)`）保持一致：左右 20dp 内缩、
+ * 相邻行间距 4dp（每行上下各 2dp）。改为逐行后不再一次性组合整列表。
+ */
 @Composable
-private fun PlaylistRows(playlists: List<PlaylistSummary>, onNavigate: (String) -> Unit) {
-    if (playlists.isEmpty()) {
-        EmptyHint(text = "暂无内容")
-        return
-    }
+private fun PlaylistRow(playlist: PlaylistSummary, onNavigate: (String) -> Unit) {
     Column(
-        modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp),
-        verticalArrangement = Arrangement.spacedBy(4.dp),
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 2.dp),
     ) {
-        playlists.forEach { playlist ->
-            ListRow(
-                coverUrl = playlist.coverURL,
-                title = playlist.name,
-                subtitle = "${playlist.trackCount}首",
-                onClick = { onNavigate(Destinations.playlistDetail(playlist.id)) },
-            )
-        }
+        ListRow(
+            coverUrl = playlist.coverURL,
+            title = playlist.name,
+            subtitle = "${playlist.trackCount}首",
+            onClick = { onNavigate(Destinations.playlistDetail(playlist.id)) },
+        )
     }
 }
 
