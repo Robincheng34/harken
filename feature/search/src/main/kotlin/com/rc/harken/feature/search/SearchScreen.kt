@@ -372,7 +372,6 @@ private fun SearchTopBar(
                     singleLine = true,
                     textStyle = MaterialTheme.typography.bodyLarge.copy(
                         color = MaterialTheme.colorScheme.onSurface,
-                        fontSize = 15.sp,
                     ),
                     cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
                     keyboardOptions = KeyboardOptions(
@@ -390,7 +389,6 @@ private fun SearchTopBar(
                     Text(
                         text = stringResource(R.string.search_hint),
                         style = MaterialTheme.typography.bodyLarge,
-                        fontSize = 15.sp,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                     )
@@ -598,7 +596,7 @@ private fun SuggestionMediaRow(
         Box(
             modifier = Modifier
                 .size(40.dp)
-                .clip(if (roundCover) CircleShape else RoundedCornerShape(4.dp))
+                .clip(if (roundCover) CircleShape else MaterialTheme.shapes.extraSmall)
                 .background(MaterialTheme.colorScheme.surfaceVariant),
         ) {
             if (!coverUrl.isNullOrBlank()) {

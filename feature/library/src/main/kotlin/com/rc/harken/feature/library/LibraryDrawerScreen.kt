@@ -49,6 +49,7 @@ import androidx.compose.material.icons.filled.Star
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -75,13 +76,13 @@ import com.rc.harken.net.model.UserProfile
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
-/** 抽屉面板底色。 */
+/** 抽屉面板底色（刻意保留的品牌深红，非主题 token；与「我的」页 0xFF8C1B2B 不同，勿合并）。 */
 private val DrawerPanelColor = Color(0xFF7A1626)
 
 /** 面板内次要文字（白 60%）。 */
 private val DrawerSecondary = Color.White.copy(alpha = 0.60f)
 
-/** VIP 标题金色。 */
+/** VIP 标题金色（刻意保留的官方 VIP 金，非主题 token，与「我的」页 0xFFF5D28A 同值）。 */
 private val DrawerGold = Color(0xFFF5D28A)
 
 /**
@@ -164,7 +165,8 @@ private fun DrawerPanel(
         modifier = Modifier
             .fillMaxHeight()
             .fillMaxWidth(0.78f)
-            .clip(RoundedCornerShape(topEnd = 24.dp, bottomEnd = 24.dp))
+            // 抽屉右缘圆角 = MaterialTheme.shapes.extraLarge (20dp)，仅圆右侧以贴合屏幕左缘。
+            .clip(RoundedCornerShape(topEnd = 20.dp, bottomEnd = 20.dp))
             .background(DrawerPanelColor)
             // 吞掉面板区域内的点击，避免穿透到遮罩把抽屉关掉。
             .clickable(
@@ -276,7 +278,8 @@ private fun VipCard() {
     Column(
         modifier = Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
+            // 卡片圆角 = MaterialTheme.shapes.large (12dp)。
+            .clip(MaterialTheme.shapes.large)
             .background(Color.White.copy(alpha = 0.08f))
             .padding(horizontal = 14.dp, vertical = 12.dp),
     ) {

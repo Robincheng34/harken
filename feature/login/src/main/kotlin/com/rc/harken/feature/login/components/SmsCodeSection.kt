@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardOptions
@@ -67,7 +68,7 @@ private fun OfficialInputRow(
         modifier = Modifier
             .fillMaxWidth()
             .height(56.dp)
-            .clip(RoundedCornerShape(12.dp))
+            .clip(MaterialTheme.shapes.large)
             .background(OfficialFill),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -222,8 +223,8 @@ fun SmsCodeSection(
         Box(
             modifier = Modifier
                 .fillMaxWidth()
-                .height(46.dp)
-                .clip(RoundedCornerShape(23.dp))
+                .height(48.dp)
+                .clip(CircleShape)
                 .background(
                     if (uiState.canLoginWithSms) {
                         SolidColor(OfficialRed)

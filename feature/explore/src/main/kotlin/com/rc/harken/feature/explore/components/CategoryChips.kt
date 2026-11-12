@@ -158,7 +158,7 @@ private fun CategoryChip(
         Text(
             text = label,
             color = if (selected) Color.White else MaterialTheme.colorScheme.primary,
-            fontSize = 13.sp,
+            style = MaterialTheme.typography.titleMedium,
             fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Medium,
         )
     }

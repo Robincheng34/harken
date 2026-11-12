@@ -62,6 +62,7 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.ModalBottomSheet
 import androidx.compose.material3.Text
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -113,8 +114,11 @@ import kotlinx.coroutines.launch
 
 /** 全屏播放页覆盖层路由（与 `:app` `Routes.NOW_PLAYING` 的字符串契约）。 */
 
-/** 官方红心红（点赞激活色）。 */
+/** 点赞激活红（官方红心色，刻意保留的语义色，非主题 token）。 */
 private val LikeRed = Color(0xFFE8434F)
+
+/** 播放页深底（弹层 / 菜单 / 队列底，刻意保留的语义色，非主题 token）。 */
+private val NowPlayingSurface = Color(0xFF1C1C1E)
 
 /** 播放页中心区内容模式（封面 ⇄ 歌词 AnimatedContent 状态）。 */
 private enum class CenterMode { Lyrics, Cover, Vinyl }
@@ -337,7 +341,7 @@ fun NowPlayingScreen(
                             ) {
                                 Text(
                                     text = track.name,
-                                    fontSize = 14.sp,
+                                    style = MaterialTheme.typography.bodyMedium,
                                     fontWeight = FontWeight.SemiBold,
                                     color = Color.White.copy(alpha = 0.9f),
                                     maxLines = 1,
@@ -345,25 +349,25 @@ fun NowPlayingScreen(
                                 )
                                 Row(verticalAlignment = Alignment.CenterVertically) {
                                     Text(
-                                        text = track.artistNames.ifEmpty { "Harken" },
-                                        fontSize = 11.sp,
+                                    text = track.artistNames.ifEmpty { "Harken" },
+                                    style = MaterialTheme.typography.bodySmall,
                                         color = Color.White.copy(alpha = 0.6f),
                                         maxLines = 1,
                                         overflow = TextOverflow.Ellipsis,
                                         modifier = Modifier.weight(1f, fill = false),
                                     )
                                     Text(
-                                        text = "  ›",
-                                        fontSize = 11.sp,
+                                    text = "  ›",
+                                    style = MaterialTheme.typography.bodySmall,
                                         color = Color.White.copy(alpha = 0.6f),
                                     )
                                 }
                             }
                         } else {
                             Text(
-                                text = state.context?.name
-                                    ?: stringResource(R.string.player_playing),
-                                fontSize = 14.sp,
+                text = state.context?.name
+                    ?: stringResource(R.string.player_playing),
+                style = MaterialTheme.typography.bodyMedium,
                                 fontWeight = FontWeight.SemiBold,
                                 color = Color.White.copy(alpha = 0.9f),
                                 maxLines = 1,
@@ -373,8 +377,8 @@ fun NowPlayingScreen(
                     }
                     if (state.isTrial) {
                         Text(
-                            text = stringResource(R.string.player_trial),
-                            fontSize = 11.sp,
+                                text = stringResource(R.string.player_trial),
+                                style = MaterialTheme.typography.bodySmall,
                             color = Color.White.copy(alpha = 0.7f),
                             modifier = Modifier.padding(end = 8.dp),
                         )
@@ -563,7 +567,7 @@ fun NowPlayingScreen(
                         DropdownMenu(
                             expanded = uiState.showMoreMenu,
                             onDismissRequest = viewModel::toggleMoreMenu,
-                            modifier = Modifier.background(Color(0xFF1C1C1E).copy(alpha = 0.92f)),
+                            modifier = Modifier.background(NowPlayingSurface.copy(alpha = 0.92f)),
                         ) {
                             DropdownMenuItem(
                                 text = {
@@ -613,7 +617,7 @@ fun NowPlayingScreen(
             if (uiState.showQueuePanel) {
                 ModalBottomSheet(
                     onDismissRequest = viewModel::toggleQueuePanel,
-                    containerColor = Color(0xFF1C1C1E).copy(alpha = 0.92f),
+                    containerColor = NowPlayingSurface.copy(alpha = 0.92f),
                     contentColor = Color.White,
                 ) {
                     QueuePanel(
@@ -640,13 +644,13 @@ fun NowPlayingScreen(
             if (showQualitySheet) {
                 ModalBottomSheet(
                     onDismissRequest = { showQualitySheet = false },
-                    containerColor = Color(0xFF1C1C1E).copy(alpha = 0.92f),
+                    containerColor = NowPlayingSurface.copy(alpha = 0.92f),
                     contentColor = Color.White,
                 ) {
                     Column(modifier = Modifier.padding(horizontal = 20.dp, vertical = 12.dp)) {
                         Text(
                             text = stringResource(R.string.player_download_quality),
-                            fontSize = 16.sp,
+                            style = MaterialTheme.typography.bodyLarge,
                             fontWeight = FontWeight.SemiBold,
                             color = Color.White,
                             modifier = Modifier.padding(bottom = 8.dp),
@@ -670,7 +674,7 @@ fun NowPlayingScreen(
                                     .padding(vertical = 14.dp),
                                 verticalAlignment = Alignment.CenterVertically,
                             ) {
-                                Text(text = label, fontSize = 15.sp, color = Color.White)
+                                Text(text = label, style = MaterialTheme.typography.bodyLarge, color = Color.White)
                             }
                         }
                         Spacer(modifier = Modifier.height(8.dp))
@@ -701,7 +705,7 @@ private fun TrackSocialRow(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = track.name,
-                fontSize = 19.sp,
+                style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 color = Color.White,
                 maxLines = 1,
@@ -710,7 +714,7 @@ private fun TrackSocialRow(
             // 关注按钮已移除：无法像官方客户端那样真实关注，不做只改本地状态的壳。
             Text(
                 text = track.artistNames.ifEmpty { "Harken" },
-                fontSize = 13.sp,
+                style = MaterialTheme.typography.titleMedium,
                 color = Color.White.copy(alpha = 0.62f),
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -761,7 +765,7 @@ private fun ImmersiveCover(
         contentScale = ContentScale.Crop,
         modifier = modifier
             .size(size)
-            .clip(RoundedCornerShape(24.dp)),
+            .clip(MaterialTheme.shapes.extraLarge),
     )
 }
 
@@ -825,7 +829,7 @@ private fun SecondaryItem(
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
-            .clip(RoundedCornerShape(12.dp))
+            .clip(MaterialTheme.shapes.large)
             .clickable(onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 6.dp),
     ) {
@@ -838,7 +842,7 @@ private fun SecondaryItem(
         Spacer(modifier = Modifier.height(3.dp))
         Text(
             text = label,
-            fontSize = 10.sp,
+            style = MaterialTheme.typography.labelSmall,
             color = if (active) Color.White else Color.White.copy(alpha = 0.7f),
         )
     }

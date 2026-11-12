@@ -111,15 +111,19 @@ import kotlinx.coroutines.launch
 
 // MARK: - 配色（官方新版「我的」页红底）
 
+/** 整页红底渐变起止色（官方「我的」页品牌红，非主题 token，刻意保留）。 */
+private val PageBrandRed = Color(0xFF8C1B2B)
+private val PageBrandRedDeep = Color(0xFF6B1220)
+
 /** 整页红底渐变（从状态栏铺到底）。 */
 private val PageGradient = Brush.verticalGradient(
-    listOf(Color(0xFF8C1B2B), Color(0xFF6B1220)),
+    listOf(PageBrandRed, PageBrandRedDeep),
 )
 
-/** 官方 VIP 徽标：黑底金字（网易云会员标识）。 */
+/** 官方 VIP 徽标：黑底金字（网易云会员标识，刻意保留的语义色，非主题 token）。 */
 private val VipBadgeBg = Color(0xFF1F1F1F)
 
-/** VIP 徽标上的金色文字。 */
+/** VIP 徽标上的金色文字（官方 VIP 金，非主题 token，刻意保留）。 */
 private val VipBadgeText = Color(0xFFF5D28A)
 
 /** 胶囊/卡片半透明白底。 */
@@ -292,17 +296,17 @@ private fun LoginPrompt(onOpenLogin: () -> Unit, modifier: Modifier = Modifier) 
         verticalArrangement = Arrangement.Center,
     ) {
         Text(
-            text = "登录后查看你的音乐资产",
-            fontSize = 15.sp,
+                text = "登录后查看你的音乐资产",
+                style = MaterialTheme.typography.bodyLarge,
             color = Color.White.copy(alpha = 0.80f),
         )
         Spacer(Modifier.height(16.dp))
         Button(
             onClick = onOpenLogin,
-            shape = RoundedCornerShape(24.dp),
+            shape = MaterialTheme.shapes.extraLarge,
             colors = ButtonDefaults.buttonColors(
                 containerColor = Color.White,
-                contentColor = Color(0xFF8C1B2B),
+                contentColor = PageBrandRed,
             ),
         ) {
             Text(text = "去登录", fontWeight = FontWeight.Bold)
@@ -467,7 +471,7 @@ private fun ProfileSection(
         ) {
             Text(
                 text = uiState.nickname.ifEmpty { "未命名" },
-                fontSize = 20.sp,
+                style = MaterialTheme.typography.headlineSmall,
                 fontWeight = FontWeight.Bold,
                 color = Color.White,
                 maxLines = 1,
@@ -497,7 +501,7 @@ private fun ProfileSection(
             Spacer(Modifier.height(6.dp))
             Text(
                 text = uiState.signature,
-                fontSize = 12.sp,
+                style = MaterialTheme.typography.labelMedium,
                 color = Color.White.copy(alpha = 0.75f),
                 maxLines = 2,
                 overflow = TextOverflow.Ellipsis,
@@ -515,14 +519,14 @@ private fun ProfileSection(
                     Column(horizontalAlignment = Alignment.CenterHorizontally) {
                         Text(
                             text = value,
-                            fontSize = 15.sp,
+                            style = MaterialTheme.typography.bodyLarge,
                             fontWeight = FontWeight.Bold,
                             color = Color.White,
                         )
                         Spacer(Modifier.height(2.dp))
                         Text(
                             text = label,
-                            fontSize = 11.sp,
+                            style = MaterialTheme.typography.bodySmall,
                             color = Color.White.copy(alpha = 0.60f),
                         )
                     }
@@ -540,20 +544,20 @@ private fun ProfileBadge(
     content: Color,
     goldBorder: Boolean = false,
 ) {
-    Text(
-        text = text,
-        fontSize = 10.sp,
-        fontWeight = FontWeight.Bold,
-        color = content,
+        Text(
+            text = text,
+            style = MaterialTheme.typography.labelSmall,
+            fontWeight = FontWeight.Bold,
+            color = content,
         modifier = Modifier
-            .clip(RoundedCornerShape(5.dp))
+            .clip(MaterialTheme.shapes.extraSmall)
             .background(background)
             .then(
                 if (goldBorder) {
                     Modifier.border(
                         0.8.dp,
-                        Color(0xFFF5D28A).copy(alpha = 0.85f),
-                        RoundedCornerShape(5.dp),
+                        VipBadgeText.copy(alpha = 0.85f),
+                        MaterialTheme.shapes.extraSmall,
                     )
                 } else {
                     Modifier
@@ -605,7 +609,7 @@ private fun QuickEntriesRow(onNavigate: (String) -> Unit) {
 private fun QuickCapsule(icon: ImageVector, label: String, onClick: () -> Unit) {
     Row(
         modifier = Modifier
-            .clip(RoundedCornerShape(8.dp))
+            .clip(MaterialTheme.shapes.medium)
             .background(CapsuleBg)
             .clickable(onClick = onClick)
             .padding(horizontal = 10.dp, vertical = 7.dp),
@@ -618,7 +622,7 @@ private fun QuickCapsule(icon: ImageVector, label: String, onClick: () -> Unit) 
             tint = Color.White,
             modifier = Modifier.size(15.dp),
         )
-        Text(text = label, fontSize = 12.sp, color = Color.White)
+        Text(text = label, style = MaterialTheme.typography.labelMedium, color = Color.White)
     }
 }
 
@@ -641,8 +645,8 @@ private fun LibraryTabRow(selected: Int, onSelect: (Int) -> Unit) {
                 horizontalAlignment = Alignment.CenterHorizontally,
             ) {
                 Text(
-                    text = label,
-                    fontSize = 17.sp,
+                text = label,
+                style = MaterialTheme.typography.bodyLarge,
                     fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
                     color = if (active) Color.White else Color.White.copy(alpha = 0.60f),
                 )
@@ -685,8 +689,8 @@ private fun MusicSubTabsRow(
             labels.forEachIndexed { index, label ->
                 val active = index == selected
                 Text(
-                    text = label,
-                    fontSize = 13.sp,
+                text = label,
+                style = MaterialTheme.typography.titleMedium,
                     fontWeight = if (active) FontWeight.Bold else FontWeight.Normal,
                     color = if (active) Color.White else Color.White.copy(alpha = 0.60f),
                     maxLines = 1,
@@ -821,7 +825,7 @@ private fun ListRow(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(8.dp))
+            .clip(MaterialTheme.shapes.medium)
             .clickable(onClick = onClick)
             .padding(vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
@@ -829,7 +833,7 @@ private fun ListRow(
         Box(
             modifier = Modifier
                 .size(52.dp)
-                .clip(RoundedCornerShape(8.dp))
+                .clip(MaterialTheme.shapes.medium)
                 .background(Color.White.copy(alpha = 0.12f)),
             contentAlignment = Alignment.Center,
         ) {
@@ -854,7 +858,7 @@ private fun ListRow(
         Column(modifier = Modifier.weight(1f)) {
             Text(
                 text = title.ifEmpty { "未知" },
-                fontSize = 15.sp,
+                style = MaterialTheme.typography.bodyLarge,
                 color = Color.White,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -862,8 +866,8 @@ private fun ListRow(
             if (!subtitle.isNullOrBlank()) {
                 Spacer(Modifier.height(2.dp))
                 Text(
-                    text = subtitle,
-                    fontSize = 11.sp,
+                text = subtitle,
+                style = MaterialTheme.typography.bodySmall,
                     color = Color.White.copy(alpha = 0.55f),
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
@@ -882,7 +886,7 @@ private fun EmptyHint(text: String) {
     ) {
         Text(
             text = text,
-            fontSize = 14.sp,
+            style = MaterialTheme.typography.bodyMedium,
             color = Color.White.copy(alpha = 0.55f),
         )
     }

@@ -12,6 +12,7 @@ import com.rc.harken.net.client.InMemoryCookieStore
 import com.rc.harken.net.client.NeteaseClient
 import com.rc.harken.net.model.AlbumDetail
 import com.rc.harken.net.model.AlbumDetailResponse
+import com.rc.harken.net.model.AlbumDynamicResponse
 import com.rc.harken.net.model.AlbumSummary
 import com.rc.harken.net.model.ArtistResponse
 import com.rc.harken.net.model.ArtistSummary
@@ -48,6 +49,9 @@ class DetailViewModelTest {
 
         override suspend fun album(id: Long): AlbumDetailResponse =
             album ?: error("no album fixture")
+
+        override suspend fun albumDynamic(id: Long): AlbumDynamicResponse =
+            AlbumDynamicResponse(isSub = false, subCount = 0)
 
         override suspend fun artist(id: Long): ArtistResponse =
             artist ?: error("no artist fixture")

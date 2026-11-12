@@ -120,6 +120,8 @@ class DetailViewModel(
             return
         }
         val album = detail.album
+        // 官方 /album/detail/dynamic 给出真实收藏态（isSub / subCount）；失败不阻断主详情加载。
+        val dynamic = runCatching { api.albumDynamic(id) }.getOrNull()
         _uiState.update {
             it.copy(
                 header = DetailHeaderState(
@@ -131,6 +133,8 @@ class DetailViewModel(
                     creatorName = album.artist?.name.orEmpty(),
                     creatorAvatar = album.artist?.picUrl,
                     trackCount = album.size,
+                    subscribed = dynamic?.isSub ?: false,
+                    subscribedCount = dynamic?.subCount ?: 0,
                 ),
                 tracks = detail.songs,
                 tracksComplete = true,

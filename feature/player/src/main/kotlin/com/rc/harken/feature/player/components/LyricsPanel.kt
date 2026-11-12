@@ -23,6 +23,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Info
 import androidx.compose.material3.Icon
+import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
@@ -91,7 +92,7 @@ fun LyricsPanel(
                     }
                     onSongInfo()
                 },
-                shape = RoundedCornerShape(14.dp),
+                shape = MaterialTheme.shapes.large,
                 // 纯透明液态玻璃：无填充、无投影，只留极淡顶部高光 + 发丝描边界定
                 // 玻璃轮廓（bright() 默认 0.55 alpha 白色泛光会把整颗药丸糊成灰白色，
                 // 不透明——必须同时压掉 specular）。

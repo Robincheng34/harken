@@ -126,13 +126,13 @@ fun MiniPlayerBar(
                     contentScale = ContentScale.Crop,
                     modifier = Modifier
                         .size(32.dp)
-                        .clip(RoundedCornerShape(6.dp)),
+                        .clip(MaterialTheme.shapes.small),
                 )
                 Column {
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text(
                             text = track.name,
-                            fontSize = 13.sp,
+                            style = MaterialTheme.typography.titleMedium,
                             fontWeight = FontWeight.SemiBold,
                             color = MaterialTheme.colorScheme.onSurface,
                             maxLines = 1,
@@ -142,14 +142,14 @@ fun MiniPlayerBar(
                             Spacer(modifier = Modifier.width(4.dp))
                             Text(
                                 text = "VIP",
-                                fontSize = 8.sp,
+                                style = MaterialTheme.typography.labelSmall,
                                 color = com.rc.harken.design.theme.BrandRed,
                             )
                         }
                     }
                     Text(
                         text = track.artistNames,
-                        fontSize = 10.sp,
+                        style = MaterialTheme.typography.labelSmall,
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         maxLines = 1,
                         overflow = TextOverflow.Ellipsis,

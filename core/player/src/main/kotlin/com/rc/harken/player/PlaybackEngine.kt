@@ -33,7 +33,9 @@ import com.rc.harken.storage.settings.SettingsRepository
 import kotlinx.coroutines.CancellationException
 import okhttp3.OkHttpClient
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withContext
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -221,8 +223,12 @@ class PlaybackEngine(
                 // `released` 短路：release 后 ExoPlayer 已释放，再读会抛 ISE。
                 if (!released && deckLoaded && exoPlayer.isPlaying) {
                     _state.update { it.copy(positionMs = exoPlayer.currentPosition.coerceAtLeast(0)) }
+                    delay(POSITION_POLL_MS)
+                } else {
+                    // 非播放态（暂停/空闲/已释放）：进度已冻结，无需 2Hz 轮询，
+                    // 降频到 2s 一探，避免静止期仍每 500ms 唤醒主线程。
+                    delay(POSITION_IDLE_POLL_MS)
                 }
-                delay(POSITION_POLL_MS)
             }
         }
     }
@@ -573,7 +579,10 @@ class PlaybackEngine(
                 return@launch
             }
             if (generation != playGeneration) return@launch
-            _state.update { it.copy(lyrics = LyricsParser.parse(response)) }
+            // 逐字歌词（yrc）的正则全量匹配 + 双路合并为 O(n·m)，长歌词在主线程
+            // 解析会吃掉一帧。移到 Default 解析，结果回主线程写状态流。
+            val parsed = withContext(Dispatchers.Default) { LyricsParser.parse(response) }
+            _state.update { it.copy(lyrics = parsed) }
         }
     }
 
@@ -825,6 +834,7 @@ class PlaybackEngine(
                 "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 
         private const val POSITION_POLL_MS = 500L
+        private const val POSITION_IDLE_POLL_MS = 2000L
         private const val RESTART_THRESHOLD_MS = 4_000L
         private const val MAX_CONSECUTIVE_FAILURES = 5
 

@@ -243,6 +243,8 @@ fun GlassTabBar(
     // 底栏本体 = 真·磨砂玻璃：直接对「背后内容」做高斯模糊，而不是铺白色填充。
     // 白底页面模糊后自然显白（这就是参考图看起来是白色的原因），深色页面则显深色，
     // 不会在非白底上出现一块白色轮廓。极淡的白色 tint（0.05）只给玻璃一点乳感。
+    // 底栏胶囊圆角 30.dp：大于最大 token extraLarge=20，标准形状 token 不足以呈现液态玻璃
+    // 胶囊观感，故刻意保留（非主题 token）。选中镜片半径 26.dp 同理。
     GlassBox(
         shape = RoundedCornerShape(30.dp),
         tokens = glassTokens(strong = true).copy(

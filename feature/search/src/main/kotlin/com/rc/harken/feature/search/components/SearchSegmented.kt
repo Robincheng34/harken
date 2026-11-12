@@ -56,7 +56,7 @@ fun SearchSegmented(
             .fillMaxWidth()
             .padding(horizontal = Layout.contentInset)
             .height(SegmentedHeight)
-            .clip(RoundedCornerShape(8.dp))
+            .clip(MaterialTheme.shapes.medium)
             // iOS 分段控件底板：次要表面色。
             .background(MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.5f)),
     ) {
@@ -72,7 +72,7 @@ fun SearchSegmented(
                         .weight(1f)
                         .fillMaxWidth()
                         .height(SegmentedHeight)
-                        .clip(RoundedCornerShape(8.dp))
+                        .clip(MaterialTheme.shapes.medium)
                         .background(
                             // 选中段：品牌红实底（iOS 选中段为高对比填充）。
                             if (isSelected) {
@@ -86,7 +86,7 @@ fun SearchSegmented(
                 ) {
                     Text(
                         text = stringResource(tab.labelRes()),
-                        fontSize = 13.sp,
+                        style = MaterialTheme.typography.titleMedium,
                         color = if (isSelected) {
                             Color.White
                         } else {

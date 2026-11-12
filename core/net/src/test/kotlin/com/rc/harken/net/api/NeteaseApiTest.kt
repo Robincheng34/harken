@@ -375,6 +375,23 @@ class NeteaseApiTest {
     }
 
     @Test
+    fun `albumDynamic posts to eapi and parses subscription`() = runBlocking {
+        enqueue("""{"code":200,"isSub":true,"subCount":42}""")
+
+        val result = api.albumDynamic(777L)
+
+        assertTrue(result.isSub == true)
+        assertEquals(42, result.subCount)
+
+        val recorded = takeRequest()
+        assertEquals("/eapi/album/detail/dynamic", recorded.path)
+        val message = decryptEapiMessage(formFields(recorded).getValue("params"))
+        assertTrue(message.startsWith("/api/album/detail/dynamic-36cd479b6b5-"))
+        assertTrue(Regex("\"id\"\\s*:\\s*777").containsMatchIn(message))
+        assertTrue(Regex("-36cd479b6b5-[0-9a-f]{32}$").containsMatchIn(message))
+    }
+
+    @Test
     fun `search parses cloudsearch sections`() = runBlocking {
         enqueue(fixture("search-cloud.json"))
 

@@ -146,8 +146,8 @@ private fun FmContent(
             modifier = Modifier
                 .size(240.dp)
                 .scale(coverScale)
-                .shadow(14.dp, RoundedCornerShape(16.dp), ambientColor = androidx.compose.ui.graphics.Color.Black)
-                .clip(RoundedCornerShape(16.dp)),
+                .shadow(14.dp, MaterialTheme.shapes.large, ambientColor = androidx.compose.ui.graphics.Color.Black)
+                .clip(MaterialTheme.shapes.large),
             contentAlignment = Alignment.Center,
         ) {
             if (track?.album?.picUrl != null) {

@@ -49,6 +49,10 @@ import com.rc.harken.design.theme.Layout
 import com.rc.harken.feature.login.components.QrCodeView
 import com.rc.harken.feature.login.components.SmsCodeSection
 
+/** 官方登录品牌色（藏蓝底 / 官方红，刻意保留的语义色，非主题 token）。 */
+private val OfficialNavy = Color(0xFF283248)
+private val OfficialRed = Color(0xFFEC4141)
+
 /** 登录内容（不含弹层承载，宿主见 [LoginOverlay]）。布局 1:1 对照 iOS `LoginSheet`。 */
 @Composable
 fun LoginSheetContent(
@@ -95,7 +99,7 @@ fun LoginSheetContent(
         Text(
             text = stringResource(R.string.login_title),
             fontSize = 18.sp,
-            color = Color(0xFF283248),
+            color = OfficialNavy,
         )
 
         // 登录方式分段选择（iOS segmented Picker，宽 220 居中）。
@@ -151,7 +155,7 @@ private fun QrSection(
         Text(
             text = stringResource(R.string.login_qr_subtitle),
             style = MaterialTheme.typography.bodyMedium,
-            color = Color(0x99283248),
+            color = OfficialNavy.copy(alpha = 0.6f),
         )
 
         val qrUrl = uiState.qrUrl
@@ -168,14 +172,14 @@ private fun QrSection(
         Text(
             text = statusText(uiState),
             style = MaterialTheme.typography.bodyMedium,
-            color = Color(0x99283248),
+            color = OfficialNavy.copy(alpha = 0.6f),
             textAlign = TextAlign.Center,
         )
 
         if (uiState.status == LoginStatus.Expired || uiState.status == LoginStatus.Error) {
             Button(
                 onClick = { viewModel.startQrLogin() },
-                colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEC4141), contentColor = Color.White),
+                colors = ButtonDefaults.buttonColors(containerColor = OfficialRed, contentColor = Color.White),
             ) {
                 Icon(imageVector = Icons.Filled.Refresh, contentDescription = null)
                 Spacer(modifier = Modifier.height(4.dp))

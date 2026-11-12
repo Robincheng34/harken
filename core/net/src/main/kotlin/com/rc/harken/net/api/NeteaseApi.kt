@@ -579,6 +579,10 @@ open class NeteaseApi(private val client: NeteaseClient) {
 
     open suspend fun album(id: Long): AlbumDetailResponse = weapi("/v1/album/$id")
 
+    /** 专辑收藏态（官方 `/api/album/detail/dynamic`，eapi）。用于详情页初始收藏态。 */
+    open suspend fun albumDynamic(id: Long): AlbumDynamicResponse =
+        eapi("/album/detail/dynamic", mapOf("id" to id))
+
     open suspend fun newAlbums(area: String = "ALL", limit: Int = 30, offset: Int = 0): List<AlbumSummary> {
         val response: NewAlbumsResponse = weapi(
             "/album/new",

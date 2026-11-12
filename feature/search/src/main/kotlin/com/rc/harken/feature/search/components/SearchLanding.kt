@@ -61,24 +61,26 @@ import com.rc.harken.feature.search.SearchUiState
 import com.rc.harken.net.model.HotSearchItem
 import kotlin.math.roundToInt
 
-/** 热搜角标「热」底色（官方品牌红）。 */
-private val BadgeHot = Color(0xFFE03C3C)
+/**
+ * 热搜角标 / 排名色（官方榜位色，非主题 token，刻意保留以保持与网易云官方一致）。
+ */
+private object HotSearchColors {
+    val Hot = Color(0xFFE03C3C) // 热
+    val New = Color(0xFF2E7DF6) // 新
+    val Boil = Color(0xFFE8801A) // 沸
+    val Boom = Color(0xFFC20C0C) // 爆
+    val Rank1 = Color(0xFFD03030)
+    val Rank2 = Color(0xFFE8801A)
+    val Rank3 = Color(0xFFF5A623)
+    val RankOther = Color(0xFF9E9E9E)
+}
 
-/** 热搜角标「新」底色（官方蓝）。 */
-private val BadgeNew = Color(0xFF2E7DF6)
-
-/** 热搜角标「沸」底色（官方橙）。 */
-private val BadgeBoil = Color(0xFFE8801A)
-
-/** 热搜角标「爆」底色（官方深红）。 */
-private val BadgeBoom = Color(0xFFC20C0C)
-
-/** 排名颜色：1 红 / 2 橙 / 3 琥珀 / 其余灰（官方热搜榜）。 */
+/** 排名颜色：1 红 / 2 橙 / 3 琥珀 / 其余灰（官方热搜榜，非主题 token）。 */
 private fun rankColor(rank: Int): Color = when (rank) {
-    1 -> Color(0xFFD03030)
-    2 -> Color(0xFFE8801A)
-    3 -> Color(0xFFF5A623)
-    else -> Color(0xFF9E9E9E)
+    1 -> HotSearchColors.Rank1
+    2 -> HotSearchColors.Rank2
+    3 -> HotSearchColors.Rank3
+    else -> HotSearchColors.RankOther
 }
 
 /**
@@ -217,9 +219,8 @@ private fun HotSearchRow(
         item.score?.let { score ->
             Text(
                 text = formatHotScore(score),
-                style = MaterialTheme.typography.labelSmall,
-                fontSize = 11.sp,
-                color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
+                    style = MaterialTheme.typography.labelSmall,
+                    color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.7f),
                 maxLines = 1,
                 textAlign = TextAlign.End,
                 modifier = Modifier.width(56.dp),
@@ -252,21 +253,21 @@ private fun HotSearchBadge(
         return
     }
     val (label, color) = when (iconType) {
-        1 -> stringResource(R.string.search_hot_badge_hot) to BadgeHot
-        2 -> stringResource(R.string.search_hot_badge_new) to BadgeNew
-        3 -> stringResource(R.string.search_hot_badge_boil) to BadgeBoil
-        4 -> stringResource(R.string.search_hot_badge_boom) to BadgeBoom
+        1 -> stringResource(R.string.search_hot_badge_hot) to HotSearchColors.Hot
+        2 -> stringResource(R.string.search_hot_badge_new) to HotSearchColors.New
+        3 -> stringResource(R.string.search_hot_badge_boil) to HotSearchColors.Boil
+        4 -> stringResource(R.string.search_hot_badge_boom) to HotSearchColors.Boom
         else -> return
     }
     Box(
         modifier = modifier
-            .clip(RoundedCornerShape(3.dp))
+            .clip(MaterialTheme.shapes.extraSmall)
             .background(color)
             .padding(horizontal = 4.dp, vertical = 1.dp),
     ) {
         Text(
             text = label,
-            fontSize = 9.sp,
+            style = MaterialTheme.typography.labelSmall,
             color = Color.White,
             maxLines = 1,
         )
@@ -407,7 +408,7 @@ private fun QuickEntryItem(
 ) {
     Column(
         modifier = modifier
-            .clip(RoundedCornerShape(12.dp))
+            .clip(MaterialTheme.shapes.large)
             .clickable(onClick = onClick)
             .padding(vertical = 8.dp),
         horizontalAlignment = Alignment.CenterHorizontally,

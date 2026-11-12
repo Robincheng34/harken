@@ -93,7 +93,7 @@ private fun ToplistCell(
     Row(
         modifier = modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp)) // iOS: Theme.Radius.large
+            .clip(MaterialTheme.shapes.large) // iOS: Theme.Radius.large
             .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.04f))
             .clickable { onOpen(toplist.id) }
             .padding(10.dp),
@@ -105,7 +105,7 @@ private fun ToplistCell(
             contentScale = ContentScale.Crop,
             modifier = Modifier
                 .size(ToplistCoverSize)
-                .clip(RoundedCornerShape(8.dp)), // iOS: Theme.Radius.standard
+                .clip(MaterialTheme.shapes.medium), // iOS: Theme.Radius.standard
         )
         Column(
             modifier = Modifier.weight(1f),
@@ -114,7 +114,7 @@ private fun ToplistCell(
             Text(
                 text = toplist.name,
                 fontWeight = FontWeight.SemiBold,
-                fontSize = 14.sp, // iOS: 14pt semibold
+                style = MaterialTheme.typography.bodyMedium, // iOS: 14pt semibold
                 color = MaterialTheme.colorScheme.onSurface,
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
@@ -123,9 +123,8 @@ private fun ToplistCell(
             if (!frequency.isNullOrEmpty()) {
                 Text(
                     text = frequency,
-                    style = MaterialTheme.typography.bodySmall,
-                    fontSize = 10.5.sp, // iOS: 10.5pt
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodySmall, // iOS: 10.5pt
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
                     maxLines = 1,
                 )
             }
