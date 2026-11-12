@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  :feature:settings 的清单。仅声明包可见性需求，不含 application/组件。
+
+  背景：app 模块 targetSdk=35，Android 11（API 30）起默认启用包可见性过滤，
+  com.vivo.musicwidgetmix 是厂商私有系统组件，不在「自动可见」集合内。若不声明，
+  PackageManager.resolveActivity() / queryIntentActivities() 会返回 null / 空，
+  设置页里「是否直达全部应用页」的预判便失去意义（官方文档同时指出 startActivity()
+  本身不依赖包可见性，故代码里仍保留不预判 + runCatching 的兜底尝试）。
+
+  <queries> 是 <manifest> 级元素，library 模块的清单会由 manifest merger 合并进
+  app 的最终清单，因此无需改动 app/ 下任何文件。
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+    <queries>
+        <package android:name="com.vivo.musicwidgetmix" />
+    </queries>
+</manifest>

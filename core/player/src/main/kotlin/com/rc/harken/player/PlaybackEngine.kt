@@ -532,6 +532,13 @@ class PlaybackEngine(
                     .setArtist(track.artistNames)
                     .setAlbumTitle(track.album.name)
                     .setArtworkUri(track.album.picUrl?.let(Uri::parse))
+                    // 系统 MediaStyle 通知的进度条需要 METADATA_KEY_DURATION：
+                    // media3 的 LegacyConversions 在 ExoPlayer 实际时长未知
+                    // （C.TIME_UNSET，即 prepare/解析完成之前）时回退到 metadata
+                    // 里声明的时长，再写入 MediaMetadataCompat 供 SystemUI 绘制。
+                    // 原先没有时长，通知出现时画不出进度条；这里补曲目时长。
+                    // setDurationMs 只接受非负 Long，0 或负值视为「未知」不写入。
+                    .setDurationMs(track.durationMS.takeIf { it > 0L })
                     .build(),
             )
         // B 站音轨是 .m4s（URL 无媒体扩展名、Content-Type=octet-stream），显式声明

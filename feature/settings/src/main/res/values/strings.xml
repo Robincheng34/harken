@@ -30,6 +30,8 @@
     <string name="settings_miniplayer">迷你播放条</string>
     <string name="settings_swipe_collapse">下滑收起</string>
     <string name="settings_swipe_collapse_summary">下滑迷你播放条可将其收起隐藏</string>
+    <string name="settings_media_controls">通知栏播放控制</string>
+    <string name="settings_media_controls_summary">关闭后通知栏不再显示播放控制卡片（锁屏控制同源会一并隐藏；为保证后台播放，系统仍要求保留一条极简的正在播放提示）</string>
     <string name="settings_collapse_handle">收起后显示把手</string>
     <string name="settings_collapse_handle_summary">实验性功能：收起后底部显示小把手，点击或上滑即可重新唤起</string>
     <string name="settings_vinyl">黑胶</string>
@@ -47,4 +49,11 @@
     <string name="settings_navbar_last_tab">至少保留一个标签页</string>
     <string name="settings_about">关于</string>
     <string name="settings_version">版本</string>
+
+    <!-- OriginOS「原子随身听 / 原子岛」音源应用管理直达入口（仅 vivo / iQOO 显示） -->
+    <string name="settings_atom_island">原子岛 / 原子随身听</string>
+    <string name="settings_atom_island_summary">在原子岛、锁屏、通知中心显示播放控件</string>
+    <string name="settings_atom_island_fallback_title">无法打开原子随身听设置</string>
+    <string name="settings_atom_island_fallback_message">请手动开启：下拉控制中心 → 长按音乐播放控件 → 右上角设置 → 更多设置 → 音源应用管理 → 全部应用 → 勾选「倾耳」。</string>
+    <string name="settings_atom_island_fallback_confirm">知道了</string>
 </resources>

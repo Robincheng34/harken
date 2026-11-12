@@ -91,6 +91,8 @@ data class AppSettings(
     val collapseHandleEnabled: Boolean = false,
     // 最近播放/近期删除确认：开启后左滑停顿出现红条，需继续滑动或点击红区才删除（默认关，保持旧的一滑即删）。
     val recentDeleteGuardEnabled: Boolean = false,
+    // 通知栏播放控制卡片开关：关闭后不再发 MediaStyle 控制卡片，仅保留系统强制的极简前台提示。
+    val mediaControlsEnabled: Boolean = true,
     val tabOrder: List<String> = emptyList(),
     // 主题 / 主图挂件：存稳定 id，null = 未配置（取各自默认套件）。
     val activeThemePackId: String? = null,

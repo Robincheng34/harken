@@ -63,8 +63,11 @@ import com.rc.harken.storage.settings.THEME_CATEGORY_DARK
 import com.rc.harken.storage.settings.ThemeColorPack
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
+import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
 import android.net.Uri
+import android.os.Build
 import android.provider.Settings
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Image
@@ -175,6 +178,13 @@ fun SettingsScreen(
     var showSourceUrlDialog by remember { mutableStateOf(false) }
     var sourceUrlDraft by remember { mutableStateOf("") }
 
+    // 原子岛 / 原子随身听：仅 OriginOS（vivo / iQOO）设备显示直达入口。
+    // 显隐用 Build 常量判断，不用 resolveActivity——Android 11+ 包可见性会让
+    // 厂商私有包的查询返回 null，用查询结果做显隐会把真机上本该出现的入口藏掉。
+    val showAtomIslandEntry = remember { isVivoDevice() }
+    // 所有跳转层都失败时，展示官方完整手动路径（不是「建设中」这类占位提示）。
+    var showAtomIslandGuide by remember { mutableStateOf(false) }
+
     // 安装未知来源权限授予后，重新尝试安装已下载的 APK。
     val installPermissionLauncher = rememberLauncherForActivityResult(
         ActivityResultContracts.StartActivityForResult(),
@@ -265,6 +275,12 @@ fun SettingsScreen(
                     selected = settings.nowPlayingMode,
                     label = { it.displayName },
                     onSelect = viewModel::setNowPlayingMode,
+                )
+                SwitchRow(
+                    title = stringResource(R.string.settings_media_controls),
+                    subtitle = stringResource(R.string.settings_media_controls_summary),
+                    checked = settings.mediaControlsEnabled,
+                    onCheckedChange = viewModel::setMediaControlsEnabled,
                 )
             }
 
@@ -385,6 +401,17 @@ fun SettingsScreen(
                     checked = settings.recentDeleteGuardEnabled,
                     onCheckedChange = viewModel::setRecentDeleteGuardEnabled,
                 )
+                // OriginOS 独有的系统级集成入口：一键直达「原子随身听」音源应用管理页。
+                // 非 vivo / iQOO 设备不渲染此行，避免出现点了没反应的死入口。
+                if (showAtomIslandEntry) {
+                    ClickableSubtitleRow(
+                        title = stringResource(R.string.settings_atom_island),
+                        subtitle = stringResource(R.string.settings_atom_island_summary),
+                        onClick = {
+                            if (!openAtomIslandSettings(ctx)) showAtomIslandGuide = true
+                        },
+                    )
+                }
             }
 
             SettingsGroup(
@@ -547,6 +574,21 @@ fun SettingsScreen(
                             )
                         }
                     },
+                )
+            }
+
+            // 所有 vivo 直达层都失败时的兜底：给出官方完整手动路径（真实可执行，非占位）。
+            // 只有 vivo / iQOO 设备才会走到这里；此时已尽力打开过本 App「应用信息」页。
+            if (showAtomIslandGuide) {
+                AlertDialog(
+                    onDismissRequest = { showAtomIslandGuide = false },
+                    confirmButton = {
+                        TextButton(onClick = { showAtomIslandGuide = false }) {
+                            Text(stringResource(R.string.settings_atom_island_fallback_confirm))
+                        }
+                    },
+                    title = { Text(stringResource(R.string.settings_atom_island_fallback_title)) },
+                    text = { Text(stringResource(R.string.settings_atom_island_fallback_message)) },
                 )
             }
 
@@ -1109,4 +1151,96 @@ private fun updateCheckSubtitle(state: UpdateCheckUi): String = when (state) {
     is UpdateCheckUi.Available -> "发现新版本 ${state.manifest.versionName}"
     is UpdateCheckUi.Error -> "检查失败"
     is UpdateCheckUi.Downloading -> "下载中 ${(state.fraction * 100).toInt()}%"
+}
+
+// ── OriginOS「原子随身听 / 原子岛」音源应用管理直达入口 ──────────────────────
+//
+// 以下常量来自真机 vivo V2408A / OriginOS 7 实测（dumpsys package + am start），非推测：
+//   - 系统组件包名 com.vivo.musicwidgetmix
+//   - WidgetAppEditActivity：标题「原子随身听」，含「音源应用管理 / 全部应用」入口
+//   - AllAppActivity：其二级「全部应用」页，列表中确实列出「倾耳」
+//   - WidgetAppEditActivity 的 intent-filter action：com.vivo.musicwidgetmix.WidgetAppEdit
+//
+// 音源白名单必须由用户在系统页手动勾选，App 无 WRITE_SECURE_SETTINGS、无法代写；
+// 因此这里只做「把 5 步菜单压缩成 1 步」的真实跳转，不做自动授权，也不读取
+// Settings.Secure / Settings.System 去伪造「已授权」状态。
+private const val VIVO_MUSIC_WIDGET_PACKAGE = "com.vivo.musicwidgetmix"
+private const val VIVO_ALL_APP_ACTIVITY = "com.vivo.musicwidgetmix.activity.AllAppActivity"
+private const val VIVO_WIDGET_EDIT_ACTIVITY = "com.vivo.musicwidgetmix.activity.WidgetAppEditActivity"
+private const val VIVO_WIDGET_EDIT_ACTION = "com.vivo.musicwidgetmix.WidgetAppEdit"
+
+/**
+ * 是否为 vivo / iQOO（OriginOS / FuntouchOS）设备。
+ *
+ * 只读 [Build] 常量，不查 PackageManager：Android 11（API 30）起的包可见性过滤会让
+ * 厂商私有包的 resolveActivity 返回 null，用查询结果决定入口显隐会在真机上误藏。
+ * iQOO 设备 Build.MANUFACTURER 为 "vivo"、Build.BRAND 为 "iQOO"，两者一并覆盖。
+ */
+private fun isVivoDevice(): Boolean {
+    val brand: String? = Build.BRAND
+    val manufacturer: String? = Build.MANUFACTURER
+    return listOfNotNull(brand, manufacturer).any { value ->
+        value.contains("vivo", ignoreCase = true) || value.contains("iqoo", ignoreCase = true)
+    }
+}
+
+/**
+ * 安全地发出一次 startActivity。任何异常（ActivityNotFoundException /
+ * SecurityException 等）都吞掉，绝不向上抛导致崩溃。
+ */
+private fun tryStartActivity(context: Context, intent: Intent): Boolean {
+    return runCatching {
+        // context 可能是包装过的 Context，显式加 NEW_TASK 保证任意 Context 均可启动。
+        intent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        context.startActivity(intent)
+    }.isSuccess
+}
+
+/**
+ * 逐层拉起 OriginOS「原子随身听」音源应用管理页。
+ *
+ * 层级顺序：
+ *  1. AllAppActivity（直达「全部应用」勾选页，比官方路径少一步）——按约定先用
+ *     resolveActivity 判断存在。flags 传 0：显式 Intent 已指定 ComponentName，
+ *     MATCH_DEFAULT_ONLY 的 category 过滤对显式组件无意义；也不用
+ *     MATCH_DISABLED_COMPONENTS，避免把被禁用组件误判为可用。
+ *  2. WidgetAppEditActivity（官方实测入口，含「音源应用管理 / 全部应用」）。
+ *  3. 隐式 action + setPackage（ROM 变体若改了类名，仍可能命中 intent-filter）。
+ *  4. 若第 1 层因包可见性被判「不存在」，补一次不预判的直接尝试：官方文档明确
+ *     startActivity 不需要包可见性，显式 Intent 仍可能成功。
+ *  5. 以上 vivo 直达全失败：尽力打开本 App 的「应用信息」系统设置页。
+ *
+ * @return 是否成功直达 vivo 设置页（仅第 1~4 层成功时为 true）。只回退到第 5 层时
+ *         返回 false，调用方据此展示官方完整手动路径，避免用户被丢进一个与原子
+ *         随身听无关的页面却不知下一步。
+ */
+private fun openAtomIslandSettings(context: Context): Boolean {
+    val allAppIntent = Intent().setComponent(
+        ComponentName(VIVO_MUSIC_WIDGET_PACKAGE, VIVO_ALL_APP_ACTIVITY),
+    )
+    val allAppResolvable = runCatching {
+        context.packageManager.resolveActivity(allAppIntent, 0) != null
+    }.getOrDefault(false)
+    if (allAppResolvable && tryStartActivity(context, allAppIntent)) return true
+
+    val editIntent = Intent().setComponent(
+        ComponentName(VIVO_MUSIC_WIDGET_PACKAGE, VIVO_WIDGET_EDIT_ACTIVITY),
+    )
+    if (tryStartActivity(context, editIntent)) return true
+
+    val actionIntent = Intent(VIVO_WIDGET_EDIT_ACTION).setPackage(VIVO_MUSIC_WIDGET_PACKAGE)
+    if (tryStartActivity(context, actionIntent)) return true
+
+    // 包可见性可能让 resolveActivity 误判为「不存在」；再补一次不预判的显式直达。
+    if (!allAppResolvable && tryStartActivity(context, allAppIntent)) return true
+
+    // 倒数第二层兜底：本 App 系统「应用信息」页。不影响返回 false 触发手动路径指引。
+    tryStartActivity(
+        context,
+        Intent(
+            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+            Uri.parse("package:${context.packageName}"),
+        ),
+    )
+    return false
 }
