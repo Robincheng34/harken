@@ -67,8 +67,10 @@ fun LoginSheetContent(
     LaunchedEffect(Unit) { viewModel.startQrLogin() }
     LaunchedEffect(uiState.status) {
         if (uiState.status == LoginStatus.Confirmed) {
+            // onConfirmed 经 LoginOverlay 包装已内含 close()（popBackStack），
+            // 此处切勿再调 onDismiss()——否则 popBackStack 被连调两次，在从非起始
+            // 目的地打开登录时会多退回一页（误导航）。
             onConfirmed()
-            onDismiss()
         }
     }
 

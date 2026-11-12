@@ -58,6 +58,12 @@ class DataStoreCookieStore(private val dataStore: DataStore<Preferences>) : Cook
         // 挂起的读盘必须在锁外（见 cacheLock 注释的死锁警告）。
         val stored = dataStore.data.first()[COOKIES_KEY].orEmpty()
         synchronized(cacheLock) {
+            // 先把「读盘窗口内被内存 update()/clear() 触碰过的 key」的**当前内存值**快照下来：
+            // clear() 之后要原样还原，否则会连同刚吸收进内存、却仍停留在 overlayWrites
+            // 里的登录 Cookie（如 MUSIC_U）一并抹掉——而下面的磁盘回填又会因
+            // overlayWrites 跳过这些 key，最终登录态当场丢失（扫码成功却从不进入登录态）。
+            // 新增的 key 还原为新值，被 clear 删除的 key 还原为「已删除」（本就不在 cache 里）。
+            val overlaySnapshot = cache.filterKeys { it in overlayWrites }
             cache.clear()
             for (entry in stored) {
                 val separator = entry.indexOf('=')
@@ -67,6 +73,8 @@ class DataStoreCookieStore(private val dataStore: DataStore<Preferences>) : Cook
                 if (name in overlayWrites) continue
                 cache[name] = entry.substring(separator + 1)
             }
+            // 还原读盘窗口内的内存写入（新增或保留删除状态），不被旧盘覆盖。
+            cache.putAll(overlaySnapshot)
             overlayWrites.clear()
             // 回写收敛：把合并后的内存态异步落盘，洗掉历史脏盘；也保证若发生
             // 第二次 load()，读到的盘数据已包含读盘窗口内的内存写入。

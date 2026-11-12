@@ -54,4 +54,7 @@ dependencies {
 
     // 下载直连落盘（OkHttp）；net 已 api 暴露，此处显式声明更稳。
     implementation(libs.okhttp)
+
+    testImplementation(libs.junit)
+    testImplementation(libs.kotlinx.coroutines.test)
 }
