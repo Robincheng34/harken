@@ -27,12 +27,12 @@ android {
         minSdk = 26
         targetSdk = 36
         // versionCode 与 Git tag 的语义化版本一一对应：
-        // major*10000 + minor*100 + patch（v1.0.1 → 10001）。
+        // major*10000 + minor*100 + patch（v1.0.2 → 10002）。
         // 应用内「检查更新」把 GitHub Release 的 tag_name 按同一规则换算成
         // versionCode 再与本地比较，两边必须用同一套编码，改这里要同步改
         // core:net 的 UpdateManifest 解析。
-        versionCode = 10001
-        versionName = "1.0.1"
+        versionCode = 10002
+        versionName = "1.0.2"
     }
 
     signingConfigs {
