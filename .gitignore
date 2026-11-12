@@ -21,3 +21,6 @@ Thumbs.db
 *.jks
 *.keystore
 keystore.properties
+
+# 发布产物暂存目录（用 releases 分发）
+dist/
