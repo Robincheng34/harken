@@ -1,4 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <string name="app_name">倾耳</string>
+    <string name="playback_channel_name">播放控制</string>
+    <string name="playback_channel_description">显示正在播放的歌曲与播放控制</string>
 </resources>
